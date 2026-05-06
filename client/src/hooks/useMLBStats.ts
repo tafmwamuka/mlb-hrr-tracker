@@ -1,7 +1,7 @@
 /**
  * useMLBStats — fetches MLB season batting leaderboards from the official MLB Stats API
  * Endpoint: https://statsapi.mlb.com/api/v1/stats
- * No API key required. Data is live 2025 season stats.
+ * No API key required. Data is live current season stats (2026).
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -35,7 +35,7 @@ interface MLBStatsState {
 }
 
 const MLB_API_BASE = "https://statsapi.mlb.com/api/v1";
-const SEASON = "2025";
+const SEASON = new Date().getFullYear().toString(); // Use current year (2026)
 const LIMIT = 50;
 
 const SORT_STAT_MAP: Record<StatCategory, string> = {
