@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1778102061886,
+      "tag": "0000_ambiguous_oracle",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1778102969919,
+      "tag": "0001_freezing_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778103640086,
+      "tag": "0002_dark_roughhouse",
+      "breakpoints": true
+    }
+  ]
+}

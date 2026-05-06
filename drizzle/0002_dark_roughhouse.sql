@@ -1,0 +1,20 @@
+CREATE TABLE `user_favorites` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`userId` int NOT NULL,
+	`gameId` varchar(64) NOT NULL,
+	`playerId` int NOT NULL,
+	`playerName` varchar(128) NOT NULL,
+	`playerTeam` varchar(64) NOT NULL,
+	`statType` enum('hits','runs','rbi') NOT NULL,
+	`prediction` varchar(32) NOT NULL,
+	`line` int,
+	`confidence` int,
+	`reasoning` text,
+	`gameDate` timestamp NOT NULL,
+	`result` enum('pending','hit','miss') NOT NULL DEFAULT 'pending',
+	`resultDate` timestamp,
+	`actualValue` int,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `user_favorites_id` PRIMARY KEY(`id`)
+);

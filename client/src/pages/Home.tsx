@@ -19,7 +19,8 @@ import {
   type PlayerStat,
 } from "@/hooks/useMLBStats";
 import { PlayerModal } from "@/components/PlayerModal";
-import { RefreshCw, TrendingUp, Zap, Target } from "lucide-react";
+import { RefreshCw, TrendingUp, Zap, Target, Sparkles } from "lucide-react";
+import { useLocation } from "wouter";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -308,6 +309,7 @@ export default function Home() {
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerStat | null>(null);
   const { data, loading, error, lastUpdated, refresh } = useMLBStats(activeStat);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [, navigate] = useLocation();
 
   const maxVal = getStatMax(data, activeStat);
   const top3 = data.slice(0, 3);
@@ -511,6 +513,22 @@ export default function Home() {
                     />
                   ))}
                 </div>
+
+                {/* Props CTA */}
+                <motion.button
+                  onClick={() => navigate("/props")}
+                  className="mx-4 mb-4 p-3 rounded-2xl flex items-center gap-2 font-semibold text-white transition-all active:scale-95"
+                  style={{
+                    background: `linear-gradient(135deg, ${cfg.color}40, ${cfg.color}20)`,
+                    border: `1px solid ${cfg.color}60`,
+                  }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <Sparkles size={16} style={{ color: cfg.color }} />
+                  <span>View AI Prop Predictions</span>
+                  <span className="ml-auto text-xs opacity-75">→</span>
+                </motion.button>
 
                 {/* Footer note */}
                 <div className="text-center text-[oklch(0.32_0.015_255)] text-[10px] pb-4 px-4">
