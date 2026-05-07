@@ -138,3 +138,16 @@
 - [x] Weight AI picks by batting position (10% factor)
 - [x] Maximize recommendations based on position
 - [x] Test position-based weighting in AI algorithm
+
+
+## Phase 11: Top Plays Stat Type Display
+- [x] Update AI ranking service to include stat type (Hits/Runs/RBI/Slg %)
+- [x] Determine which stat is best for each player based on factors
+- [x] Update aiPicks router to include statType in response
+- [x] Update TopPlaysTab to display stat type prominently (icon + label)
+- [x] Add stat-specific confidence breakdown (4 boxes showing H/R/RBI/Slg % confidence)
+- [x] Show stat line (e.g., "Hits OVER 3.5")
+- [x] Color-code by stat type (gold for H, red for R, cyan for RBI, purple for Slg %)
+- [x] Test stat type display on all picks
+- [x] Verify correct stat selection based on player data
+- [x] Write and pass 14 vitest tests for stat type logic

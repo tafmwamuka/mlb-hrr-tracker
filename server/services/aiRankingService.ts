@@ -49,9 +49,11 @@ export interface AIPick {
   position: string;
   battingPosition: number;
   pitcher: string;
+  statType: 'hits' | 'runs' | 'rbi' | 'slg';
   prediction: "over";
   line: number;
   confidence: number;
+  statConfidence: { hits: number; runs: number; rbi: number; slg: number };
   reasoning: string;
   factorBreakdown: {
     rc: number; // Runs Created score (0-100)
@@ -182,16 +184,33 @@ export function rankAIPicks(
 
       const reasoning = reasons.join(" • ");
 
+      // Determine best stat type based on player data
+      const stats = playerData.stats;
+      const statScores = {
+        hits: (stats.hits / 50) * 100,
+        runs: (stats.runs / 40) * 100,
+        rbi: (stats.rbi / 80) * 100,
+        slg: (stats.slg / 0.500) * 100,
+      };
+      const bestStat = Object.entries(statScores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as 'hits' | 'runs' | 'rbi' | 'slg';
+
       return {
-        rank: 0, // Will be set after sorting
+        rank: 0,
         playerId: matchup.playerId,
         playerName: matchup.playerName,
         team: matchup.team,
         position: matchup.position,
         battingPosition: matchup.battingPosition,
         pitcher: matchup.pitcher.name,
+        statType: bestStat,
+        statConfidence: {
+          hits: Math.round(Math.min(100, (stats.hits / 50) * 100 * (overallScore / 100))),
+          runs: Math.round(Math.min(100, (stats.runs / 40) * 100 * (overallScore / 100))),
+          rbi: Math.round(Math.min(100, (stats.rbi / 80) * 100 * (overallScore / 100))),
+          slg: Math.round(Math.min(100, (stats.slg / 0.500) * 100 * (overallScore / 100))),
+        },
         prediction: "over" as const,
-        line: 0.5, // Default line, would be updated from actual odds
+        line: 0.5,
         confidence: Math.round(overallScore),
         reasoning,
         factorBreakdown: {

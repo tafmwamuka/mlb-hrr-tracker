@@ -5,9 +5,16 @@
  */
 
 import { trpc } from "@/lib/trpc";
-import { Star, TrendingUp, Zap, Target, AlertCircle, ChevronDown } from "lucide-react";
+import { Star, TrendingUp, Zap, Target, AlertCircle, ChevronDown, Activity } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+
+const STAT_CONFIG = {
+  hits: { label: "Hits", icon: TrendingUp, color: "oklch(0.82_0.17_85)", bgColor: "oklch(0.82_0.17_85/20%)" },
+  runs: { label: "Runs", icon: Zap, color: "oklch(0.68_0.22_25)", bgColor: "oklch(0.68_0.22_25/20%)" },
+  rbi: { label: "RBI", icon: Target, color: "oklch(0.72_0.18_165)", bgColor: "oklch(0.72_0.18_165/20%)" },
+  slg: { label: "Slg %", icon: Activity, color: "oklch(0.75_0.20_290)", bgColor: "oklch(0.75_0.20_290/20%)" },
+};
 
 export function TopPlaysTab() {
   const { data, isLoading, error } = trpc.aiPicks.getComprehensivePicks.useQuery();
@@ -99,10 +106,25 @@ export function TopPlaysTab() {
                   </div>
                 </div>
 
+                {/* Stat Type Badge */}
+                <div className="flex items-center gap-2 px-3 py-1 rounded-lg" style={{ background: STAT_CONFIG[pick.statType].bgColor, borderColor: STAT_CONFIG[pick.statType].color, borderWidth: "1px" }}>
+                  {(() => {
+                    const Icon = STAT_CONFIG[pick.statType].icon;
+                    return (
+                      <>
+                        <Icon size={14} style={{ color: STAT_CONFIG[pick.statType].color }} />
+                        <span className="text-xs font-semibold" style={{ color: STAT_CONFIG[pick.statType].color }}>
+                          {STAT_CONFIG[pick.statType].label}
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+
                 {/* Confidence & Favorite */}
                 <div className="flex items-center gap-2 shrink-0">
                   <div className="text-right">
-                    <div className="text-lg font-bold text-[oklch(0.82_0.17_85)]">{pick.confidence}%</div>
+                    <div className="text-lg font-bold" style={{ color: STAT_CONFIG[pick.statType].color }}>{pick.confidence}%</div>
                     <div className="text-[10px] text-[oklch(0.40_0.015_255)]">Confidence</div>
                   </div>
                   <button
@@ -252,11 +274,28 @@ export function TopPlaysTab() {
                       </div>
                     </div>
 
+                    {/* Stat-Specific Confidence */}
+                    <div>
+                      <div className="text-xs font-semibold text-[oklch(0.50_0.015_255)] uppercase mb-2">Stat-Specific Confidence</div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {Object.entries(STAT_CONFIG).map(([statType, config]) => (
+                          <div key={statType} className="bg-[oklch(1_0_0/4%)] rounded-lg p-2 text-center border" style={{ borderColor: config.color }}>
+                            <div className="text-xs text-[oklch(0.50_0.015_255)] mb-1">{config.label}</div>
+                            <div className="text-sm font-bold" style={{ color: config.color }}>
+                              {pick.statConfidence[statType as keyof typeof pick.statConfidence]}%
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Prediction */}
-                    <div className="bg-[oklch(1_0_0/4%)] rounded-lg p-3 border border-[oklch(0.82_0.17_85/30%)]">
+                    <div className="rounded-lg p-3 border" style={{ background: STAT_CONFIG[pick.statType].bgColor, borderColor: STAT_CONFIG[pick.statType].color }}>
                       <div className="text-xs font-semibold text-[oklch(0.50_0.015_255)] uppercase mb-1">Prediction</div>
                       <div className="flex items-center justify-between">
-                        <span className="text-lg font-bold text-[oklch(0.82_0.17_85)]">{pick.prediction.toUpperCase()}</span>
+                        <span className="text-lg font-bold" style={{ color: STAT_CONFIG[pick.statType].color }}>
+                          {STAT_CONFIG[pick.statType].label} {pick.prediction.toUpperCase()}
+                        </span>
                         <span className="text-sm text-[oklch(0.50_0.015_255)]">Line: {pick.line}</span>
                       </div>
                     </div>

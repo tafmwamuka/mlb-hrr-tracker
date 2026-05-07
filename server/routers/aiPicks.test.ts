@@ -86,6 +86,8 @@ describe("AI Picks Ranking Service", () => {
       expect(pick).toHaveProperty("position");
       expect(pick).toHaveProperty("battingPosition");
       expect(pick).toHaveProperty("pitcher");
+      expect(pick).toHaveProperty("statType");
+      expect(pick).toHaveProperty("statConfidence");
       expect(pick).toHaveProperty("confidence");
       expect(pick).toHaveProperty("prediction");
       expect(pick).toHaveProperty("line");
@@ -167,6 +169,30 @@ describe("AI Picks Ranking Service", () => {
         expect(typeof factor).toBe("number");
         expect(factor).toBeGreaterThanOrEqual(0);
         expect(factor).toBeLessThanOrEqual(100);
+      });
+    });
+
+    it("should determine best stat type based on player data", () => {
+      const picks = rankAIPicks(mockMatchups, mockPlayers, getMockHRTargets(), getMockParkFactors());
+
+      picks.forEach((pick) => {
+        expect(["hits", "runs", "rbi", "slg"]).toContain(pick.statType);
+      });
+    });
+
+    it("should include stat-specific confidence scores", () => {
+      const picks = rankAIPicks(mockMatchups, mockPlayers, getMockHRTargets(), getMockParkFactors());
+      const pick = picks[0];
+
+      expect(pick.statConfidence).toHaveProperty("hits");
+      expect(pick.statConfidence).toHaveProperty("runs");
+      expect(pick.statConfidence).toHaveProperty("rbi");
+      expect(pick.statConfidence).toHaveProperty("slg");
+
+      Object.values(pick.statConfidence).forEach((conf) => {
+        expect(typeof conf).toBe("number");
+        expect(conf).toBeGreaterThanOrEqual(0);
+        expect(conf).toBeLessThanOrEqual(100);
       });
     });
   });
