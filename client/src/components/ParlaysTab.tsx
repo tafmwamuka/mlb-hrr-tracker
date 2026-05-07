@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { SaferPlayTip } from "@/components/SaferPlayTip";
 
 const STAT_CONFIG = {
   hits: { label: "HITS", icon: TrendingUp, color: "oklch(0.82 0.17 85)" },
@@ -461,6 +462,8 @@ export function ParlaysTab() {
           </div>
         </div>
       </motion.div>
+
+      <SaferPlayTip />
 
       {/* Data Source Indicator */}
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[oklch(1_0_0/3%)] border border-[oklch(1_0_0/6%)]">

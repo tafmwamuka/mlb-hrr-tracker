@@ -1,6 +1,7 @@
 import { Trophy, TrendingUp, Zap, Target, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 import { trpc } from "@/lib/trpc";
+import { SaferPlayTip } from "@/components/SaferPlayTip";
 
 const STAT_CONFIG = {
   hits: { label: "Hits", icon: TrendingUp, color: "oklch(0.82_0.17_85)" },
@@ -66,6 +67,8 @@ export function ResultsTab() {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-3 pb-6">
+      <SaferPlayTip />
+
       {/* Summary Card */}
       <motion.div
         className="mb-5 rounded-xl p-4 border"

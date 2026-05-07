@@ -335,3 +335,6 @@
 ## Rename Top Plays → Money Picks (May 7 - User Request)
 - [x] Rename "Top Plays" tab label to "Money Picks"
 - [x] Make Money Picks tab show HRR-based picks (combined H+R+RBI prop) as value plays
+
+## Safer Play Tip Note (May 7 - User Request)
+- [x] Add tip note on all tabs suggesting users play HRR combined at the same line value for a safer play

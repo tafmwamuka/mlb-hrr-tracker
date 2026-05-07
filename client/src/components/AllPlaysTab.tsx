@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import { Star, TrendingUp, Zap, Target, Crown, ChevronDown, BarChart3, Flame } from "lucide-react";
 import { useState } from "react";
+import { SaferPlayTip } from "@/components/SaferPlayTip";
 
 const STAT_CONFIG = {
   hits: { label: "HITS", icon: TrendingUp, color: "oklch(0.82 0.17 85)", abbr: "H/O", gradient: "from-amber-500/20 to-yellow-500/5" },
@@ -260,6 +261,8 @@ export function AllPlaysTab() {
           <span className="text-[9px] text-[oklch(0.55_0.015_255)]">Savant + RC</span>
         </div>
       </div>
+
+      <SaferPlayTip />
 
       {/* All pick cards */}
       <div className="space-y-2">

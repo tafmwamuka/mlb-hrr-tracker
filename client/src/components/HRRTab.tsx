@@ -8,6 +8,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, TrendingUp, Zap, Target, Activity, BarChart3, Flame } from "lucide-react";
+import { SaferPlayTip } from "@/components/SaferPlayTip";
 
 interface HRRPick {
   playerName: string;
@@ -357,6 +358,8 @@ export function HRRTab() {
           </div>
         </div>
       </div>
+
+      <SaferPlayTip />
 
       {/* HRR Pick Cards */}
       <div className="space-y-3">
