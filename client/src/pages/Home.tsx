@@ -64,9 +64,9 @@ const STAT_CONFIG = {
 
 const TAB_CONFIG = {
   topPlays: {
-    label: "Top Plays",
+    label: "Money Picks",
     icon: Flame,
-    color: "oklch(0.68 0.22 25)",
+    color: "oklch(0.82 0.17 85)",
   },
   allPlays: {
     label: "All Plays",
@@ -592,7 +592,7 @@ export default function Home() {
               transition={{ duration: 0.2 }}
               className="flex-1 overflow-y-auto flex flex-col"
             >
-              <TopPlaysTab />
+              <HRRTab />
             </motion.div>
           )}
 

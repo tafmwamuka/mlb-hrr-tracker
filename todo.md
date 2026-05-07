@@ -331,3 +331,7 @@
 - [x] Update Results tab display order by stat priority — results sorted Hits first
 - [x] Update Parlays tab to prefer Hits-heavy parlays — stat priority tiebreaker in buildParlays
 - [x] Verify tab navigation order matches priority (already correct: Top Plays, All Plays, HRR, Parlays, Results)
+
+## Rename Top Plays → Money Picks (May 7 - User Request)
+- [x] Rename "Top Plays" tab label to "Money Picks"
+- [x] Make Money Picks tab show HRR-based picks (combined H+R+RBI prop) as value plays
