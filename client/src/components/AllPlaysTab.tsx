@@ -28,6 +28,7 @@ interface MatchupPlay {
     k: number;
   };
   confidence: number;
+  line: number;
 }
 
 const RANK_COLORS: Record<number, string> = {
@@ -54,7 +55,6 @@ const STAT_CONFIG = {
   rbi: { label: "RBI", icon: Target, color: "oklch(0.72_0.18_165)", abbr: "RBI/O" },
 };
 
-// Mock function to determine best prop based on RC and stats
 function determineBestProp(rc: number, stats: any): keyof typeof STAT_CONFIG {
   if (rc > 35) return "rbi";
   if (rc > 30) return "hits";
@@ -65,15 +65,28 @@ export function AllPlaysTab() {
   const { data: propsData, isLoading } = trpc.props.getTodayProps.useQuery();
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  // Convert props data to display format
-  const matchups = propsData?.slice(0, 15).map((prop: any, idx: number) => ({
-    rank: idx + 1,
-    batter: { name: prop.playerName, id: String(prop.playerId), team: 'TBD', handedness: 'R' },
-    pitcher: { name: 'TBD', id: 'TBD', team: 'TBD' },
-    matchup: { vs: 'TBD' },
-    stats: { rc: 30, hr: 0, xb: 0, oneB: 0, bb: 0, k: 0 },
-    confidence: 85,
-  })) || [];
+  // Convert props data to display format with real prediction data
+  const matchups = propsData?.slice(0, 15).map((prop: any, idx: number) => {
+    // Get the best prediction (highest confidence)
+    const predictions = [
+      { type: "hits", data: prop.hitsPrediction },
+      { type: "runs", data: prop.runsPrediction },
+      { type: "rbi", data: prop.rbiPrediction },
+    ];
+    const bestPred = predictions.reduce((a, b) =>
+      (a.data?.confidence || 0) > (b.data?.confidence || 0) ? a : b
+    );
+
+    return {
+      rank: idx + 1,
+      batter: { name: prop.playerName, id: String(prop.playerId), team: "MLB", handedness: "R" },
+      pitcher: { name: "Pitcher", id: "TBD", team: "TBD" },
+      matchup: { vs: "Today" },
+      stats: { rc: 30, hr: 0, xb: 0, oneB: 0, bb: 0, k: 0 },
+      confidence: bestPred.data?.confidence || 0,
+      line: bestPred.data?.line || 0.5,
+    };
+  }) || [];
 
   const toggleFavorite = (batterId: string, pitcherId: string) => {
     const key = `${batterId}-${pitcherId}`;
@@ -148,78 +161,51 @@ export function AllPlaysTab() {
                   {!isTopPlay && play.rank}
                 </div>
 
-                {/* Batter info */}
+                {/* Player name and matchup */}
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-white truncate">{play.batter.name}</div>
-                  <div className="text-xs text-[oklch(0.50_0.015_255)]">
-                    {play.batter.team} vs {play.pitcher.name}
-                  </div>
+                  <div className="font-bold text-white text-sm truncate">{play.batter.name}</div>
+                  <div className="text-xs text-[oklch(0.50_0.015_255)] truncate">{play.matchup.vs}</div>
                 </div>
               </div>
 
-              {/* Best Prop Badge */}
-              <div
-                className="flex items-center gap-1 px-2 py-1 rounded-lg ml-2 shrink-0"
-                style={{ background: bestPropConfig.color + "20", borderColor: bestPropConfig.color, borderWidth: "1px" }}
-              >
-                <BestIcon size={12} style={{ color: bestPropConfig.color }} />
-                <span className="text-xs font-bold" style={{ color: bestPropConfig.color }}>
-                  {bestPropConfig.abbr} OVER {play.stats.rc}
+              {/* Prop badge and favorite */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div
+                  className="px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1"
+                  style={{ background: `${color}30`, color }}
+                >
+                  <BestIcon size={12} />
+                  {bestPropConfig.abbr} {play.line}
+                </div>
+                <button
+                  onClick={() => toggleFavorite(play.batter.id, play.pitcher.id)}
+                  className="hover:scale-110 transition-transform"
+                >
+                  <Star
+                    size={18}
+                    className={isFavorited ? "fill-current text-[oklch(0.82_0.17_85)]" : "text-[oklch(0.40_0.015_255)]"}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* Confidence bar and stats */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[oklch(0.50_0.015_255)]">AI CONFIDENCE</span>
+                <span className="font-bold" style={{ color }}>
+                  {Math.round(play.confidence)}%
                 </span>
               </div>
-            </div>
-
-            {/* Stats grid */}
-            <div className="grid grid-cols-6 gap-1 mb-2 text-xs">
-              <div className="bg-[oklch(1_0_0/4%)] rounded p-1.5 text-center">
-                <div className="text-[oklch(0.50_0.015_255)] text-[10px]">RC</div>
-                <div className="font-bold text-white">{play.stats.rc}</div>
-              </div>
-              <div className="bg-[oklch(1_0_0/4%)] rounded p-1.5 text-center">
-                <div className="text-[oklch(0.50_0.015_255)] text-[10px]">HR</div>
-                <div className="font-bold text-white">{play.stats.hr}</div>
-              </div>
-              <div className="bg-[oklch(1_0_0/4%)] rounded p-1.5 text-center">
-                <div className="text-[oklch(0.50_0.015_255)] text-[10px]">XB</div>
-                <div className="font-bold text-white">{play.stats.xb}</div>
-              </div>
-              <div className="bg-[oklch(1_0_0/4%)] rounded p-1.5 text-center">
-                <div className="text-[oklch(0.50_0.015_255)] text-[10px]">1B</div>
-                <div className="font-bold text-white">{play.stats.oneB}</div>
-              </div>
-              <div className="bg-[oklch(1_0_0/4%)] rounded p-1.5 text-center">
-                <div className="text-[oklch(0.50_0.015_255)] text-[10px]">BB</div>
-                <div className="font-bold text-white">{play.stats.bb}</div>
-              </div>
-              <div className="bg-[oklch(1_0_0/4%)] rounded p-1.5 text-center">
-                <div className="text-[oklch(0.50_0.015_255)] text-[10px]">K</div>
-                <div className="font-bold text-white">{play.stats.k}</div>
-              </div>
-            </div>
-
-            {/* Confidence and favorite */}
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-2 overflow-hidden">
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ background: color }}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${play.confidence}%` }}
-                    transition={{ delay: idx * 0.03 + 0.2, duration: 0.6 }}
-                  />
-                </div>
-                <div className="text-xs text-[oklch(0.40_0.015_255)] mt-1">{play.confidence}% confidence</div>
-              </div>
-              <button
-                onClick={() => toggleFavorite(play.batter.id, play.pitcher.id)}
-                className="ml-2 p-1.5 hover:bg-[oklch(1_0_0/8%)] rounded transition-colors"
-              >
-                <Star
-                  size={16}
-                  className={isFavorited ? "fill-[oklch(0.82_0.17_85)] text-[oklch(0.82_0.17_85)]" : "text-[oklch(0.40_0.015_255)]"}
+              <div className="h-2 rounded-full bg-[oklch(1_0_0/8%)] overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: color }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${play.confidence}%` }}
+                  transition={{ delay: idx * 0.03 + 0.2, duration: 0.6 }}
                 />
-              </button>
+              </div>
             </div>
           </motion.div>
         );
