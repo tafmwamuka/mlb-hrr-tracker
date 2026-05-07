@@ -77,6 +77,7 @@ export interface AIPick {
   confidence: number;
   statConfidence: { hits: number; runs: number; rbi: number; slg: number };
   reasoning: string;
+  ballparkReasoning?: string; // Explicit ballpark-based reasoning
   factorBreakdown: {
     rc: number; // Runs Created score (0-100)
     playerStats: number; // Historical stats score (0-100)
@@ -206,6 +207,10 @@ export function rankAIPicks(
 
       const reasoning = reasons.join(" • ");
 
+      // Build ballpark-specific reasoning
+      const parkFactorValue = parkFactorScore > 70 ? "hitter-friendly" : parkFactorScore < 50 ? "pitcher-friendly" : "neutral";
+      const ballparkReasoning = `Playing at ${parkFactorValue} park. RC ranking: ${Math.round(matchup.rc)}/100. ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ""}`;
+
       // Determine best stat type based on player data (H/R/RBI only - no Slg %)
       const stats = playerData.stats;
       const statScores = {
@@ -214,6 +219,24 @@ export function rankAIPicks(
         rbi: (stats.rbi / 80) * 100,
       };
       const bestStat = Object.entries(statScores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as 'hits' | 'runs' | 'rbi';
+
+      // Calculate realistic prop line based on season average and park factor
+      // Standard MLB prop lines are typically: Hits 3.5, Runs 2.5, RBI 3.5
+      const calculateRealisticLine = (stat: 'hits' | 'runs' | 'rbi', value: number, parkFactor: number): number => {
+        const seasonAverage = value / 162; // Assuming 162 game season
+        const baseLines = {
+          hits: 3.5,
+          runs: 2.5,
+          rbi: 3.5,
+        };
+        // Adjust base line by season average and park factor
+        const adjustedLine = baseLines[stat] * (seasonAverage / 0.25) * (parkFactor / 1.0);
+        // Round to nearest 0.5
+        return Math.round(adjustedLine * 2) / 2;
+      };
+
+      const adjustedParkFactor = parkFactorScore / 100;
+      const line = calculateRealisticLine(bestStat, stats[bestStat], adjustedParkFactor);
 
       return {
         rank: 0,
@@ -231,9 +254,10 @@ export function rankAIPicks(
           slg: Math.round(Math.min(100, (stats.slg / 0.500) * 100 * (overallScore / 100))),
         },
         prediction: "over" as const,
-        line: bestStat === 'hits' ? Math.round(stats.hits / 10) + 0.5 : bestStat === 'runs' ? Math.round(stats.runs / 10) + 0.5 : Math.round(stats.rbi / 15) + 0.5,
+        line,
         confidence: Math.round(overallScore),
         reasoning,
+        ballparkReasoning,
         factorBreakdown: {
           rc: Math.round(rcScore),
           playerStats: Math.round(playerStatsScore),
@@ -243,7 +267,7 @@ export function rankAIPicks(
           battingPosition: Math.round(battingPositionScore),
         },
         overallScore: Math.round(overallScore),
-      };
+      } as AIPick;
     })
     .filter((pick): pick is AIPick => pick !== null)
     .sort((a, b) => b.overallScore - a.overallScore)

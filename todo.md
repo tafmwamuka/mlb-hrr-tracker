@@ -237,3 +237,12 @@
 - [x] Fix TypeScript errors in Props.tsx (slgPrediction references) - FIXED
 - [x] Fix failing test in favorites.test.ts - FIXED
 - [x] Verify All Plays displays 15 plays - VERIFIED
+
+
+## CRITICAL DATA ACCURACY FIXES (User Reported) - IN PROGRESS
+- [ ] Integrate real Bet365 odds from The Odds API (replace mock prop lines)
+- [ ] Base AI reasoning on ballpark.com data (park factors, dimensions, weather)
+- [ ] Display yesterday's model performance (hit rate, accuracy metrics)
+- [ ] Show transparent reasoning for each prediction (why RBI 6.5 for Judge, etc.)
+- [ ] Verify prop line calculations are realistic and market-based
+- [ ] Test all predictions against real sportsbook data

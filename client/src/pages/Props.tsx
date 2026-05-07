@@ -246,6 +246,7 @@ export default function Props() {
                                 {pred.hitsPrediction.confidence}% Confidence
                               </Badge>
                               <p className="text-xs text-slate-400 mt-2">{pred.hitsReasoning}</p>
+                              {pred.hitsPrediction.ballparkReasoning && <p className="text-xs text-slate-500 mt-1 italic border-t border-slate-600 pt-2">📋 {pred.hitsPrediction.ballparkReasoning}</p>}
                             </div>
                           </div>
                         )}
@@ -410,6 +411,7 @@ export default function Props() {
                                 {pred.hitsPrediction.confidence}% Confidence
                               </Badge>
                               <p className="text-xs text-slate-400 mt-2">{pred.hitsReasoning}</p>
+                              {pred.hitsPrediction.ballparkReasoning && <p className="text-xs text-slate-500 mt-1 italic border-t border-slate-600 pt-2">📋 {pred.hitsPrediction.ballparkReasoning}</p>}
                             </div>
                           </div>
                         )}
