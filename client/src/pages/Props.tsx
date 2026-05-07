@@ -13,6 +13,9 @@ import {
   Info,
   CheckCircle2,
   BarChart3,
+  Activity,
+  Crosshair,
+  Gauge,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -44,7 +47,6 @@ function getRCGrade(rc: number) {
 }
 
 function determinePropType(stats: MatchupPlay["stats"]): { type: string; line: number; reasoning: string } {
-  // Determine best prop based on RC breakdown
   const hitPotential = stats.oneB + stats.xb;
   const powerPotential = stats.hr + stats.xb;
   const runPotential = stats.bb + stats.oneB + stats.xb;
@@ -58,16 +60,31 @@ function determinePropType(stats: MatchupPlay["stats"]): { type: string; line: n
   } else if (stats.hr >= 4) {
     return { type: "RBI", line: 0.5, reasoning: `Power threat (${stats.hr} HR rate). RBI upside in favorable matchup.` };
   } else {
-    return { type: "HITS", line: 0.5, reasoning: `Contact-first approach (${stats.oneB} 1B). Solid hit probability vs ${stats.k < 20 ? "low-K" : "this"} pitcher.` };
+    return { type: "HITS", line: 0.5, reasoning: `Contact-first approach (${stats.oneB} 1B). Solid hit probability vs this pitcher.` };
   }
 }
 
+// ─── Savant Metric Display ────────────────────────────────────────────────────
+function SavantMetricCard({ icon: Icon, label, value, color, description }: {
+  icon: any; label: string; value: string; color: string; description: string;
+}) {
+  return (
+    <div className="text-center p-2 rounded-lg bg-slate-800/50 border border-slate-700/30 group relative">
+      <div className="flex items-center justify-center gap-1 mb-0.5">
+        <Icon size={10} style={{ color }} />
+        <p className="text-[9px] text-slate-500 uppercase font-semibold">{label}</p>
+      </div>
+      <p className="text-sm font-bold" style={{ color }}>{value}</p>
+      <p className="text-[8px] text-slate-600 mt-0.5">{description}</p>
+    </div>
+  );
+}
+
 // ─── Pick Card Component ──────────────────────────────────────────────────────
-function PickCard({ pick, rank }: { pick: MatchupPlay; rank: number }) {
+function PickCard({ pick, rank, savantData }: { pick: MatchupPlay; rank: number; savantData?: any }) {
   const [expanded, setExpanded] = useState(false);
   const [, navigate] = useLocation();
   const addFavoriteMutation = trpc.favorites.addFavorite.useMutation();
-
   const conf = getConfidenceLevel(pick.confidence);
   const rcGrade = getRCGrade(pick.stats.rc);
   const prop = determinePropType(pick.stats);
@@ -96,11 +113,9 @@ function PickCard({ pick, rank }: { pick: MatchupPlay; rank: number }) {
         {/* Header Row */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
-            {/* Rank Badge */}
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${rank <= 3 ? "bg-amber-500/20 text-amber-400" : "bg-slate-700/50 text-slate-400"}`}>
               {rank}
             </div>
-            {/* Player Info */}
             <div>
               <h3 className="text-lg font-bold text-white leading-tight">{pick.batter.name}</h3>
               <p className="text-sm text-slate-400">
@@ -108,8 +123,6 @@ function PickCard({ pick, rank }: { pick: MatchupPlay; rank: number }) {
               </p>
             </div>
           </div>
-
-          {/* Prop Badge */}
           <div className="flex items-center gap-2">
             <Badge className={`${conf.bg} ${conf.color} border ${conf.border} px-3 py-1 text-xs font-bold`}>
               {prop.type} O {prop.line}
@@ -125,18 +138,15 @@ function PickCard({ pick, rank }: { pick: MatchupPlay; rank: number }) {
 
         {/* Stats Row */}
         <div className="flex items-center gap-4 mb-3">
-          {/* RC Score */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-slate-500 uppercase font-semibold">RC</span>
             <span className={`text-lg font-bold ${rcGrade.color}`}>{pick.stats.rc}</span>
             <span className={`text-xs font-bold ${rcGrade.color}`}>({rcGrade.grade})</span>
           </div>
-          {/* Confidence */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-slate-500 uppercase font-semibold">Conf</span>
             <span className={`text-lg font-bold ${conf.color}`}>{pick.confidence}%</span>
           </div>
-          {/* Confidence bar */}
           <div className="flex-1 h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-500"
@@ -151,46 +161,100 @@ function PickCard({ pick, rank }: { pick: MatchupPlay; rank: number }) {
         {/* Reasoning Preview */}
         <p className="text-sm text-slate-300 leading-relaxed mb-3">{prop.reasoning}</p>
 
+        {/* Savant Quick Metrics (always visible) */}
+        {savantData && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            <span className="text-[9px] px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 font-medium border border-blue-500/20">
+              xwOBA {savantData.xwOBA.toFixed(3)}
+            </span>
+            <span className="text-[9px] px-2 py-0.5 rounded-md bg-orange-500/10 text-orange-400 font-medium border border-orange-500/20">
+              HH% {savantData.hardHitPct.toFixed(0)}%
+            </span>
+            <span className="text-[9px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-medium border border-emerald-500/20">
+              EV {savantData.exitVelocity.toFixed(0)} mph
+            </span>
+            <span className="text-[9px] px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-400 font-medium border border-purple-500/20">
+              Barrel {savantData.barrelPct.toFixed(1)}%
+            </span>
+          </div>
+        )}
+
         {/* Expand Button */}
         <button
           onClick={() => setExpanded(!expanded)}
           className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
         >
           {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          {expanded ? "Less" : "Ballpark Breakdown"}
+          {expanded ? "Less" : "Full Analysis (Savant + Ballpark)"}
         </button>
 
         {/* Expanded Details */}
         {expanded && (
-          <div className="mt-4 pt-4 border-t border-white/5">
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-              <div className="text-center p-2 rounded-lg bg-slate-800/50">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">HR</p>
-                <p className="text-sm font-bold text-red-400">{pick.stats.hr}</p>
+          <div className="mt-4 pt-4 border-t border-white/5 space-y-4">
+            {/* Savant Statcast Section */}
+            {savantData && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Activity size={12} className="text-blue-400" />
+                  <span className="text-xs font-bold text-blue-400">SAVANT STATCAST</span>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  <SavantMetricCard icon={Crosshair} label="xwOBA" value={savantData.xwOBA.toFixed(3)} color="#60a5fa" description="Expected wOBA" />
+                  <SavantMetricCard icon={Activity} label="HH%" value={`${savantData.hardHitPct.toFixed(0)}%`} color="#f97316" description="Hard Hit Rate" />
+                  <SavantMetricCard icon={Gauge} label="EV" value={`${savantData.exitVelocity.toFixed(0)}`} color="#34d399" description="Exit Velocity" />
+                  <SavantMetricCard icon={Target} label="Brl%" value={`${savantData.barrelPct.toFixed(1)}%`} color="#a78bfa" description="Barrel Rate" />
+                  <SavantMetricCard icon={TrendingUp} label="xBA" value={savantData.xBA.toFixed(3)} color="#fbbf24" description="Expected BA" />
+                  <SavantMetricCard icon={Zap} label="xSLG" value={savantData.xSLG.toFixed(3)} color="#f472b6" description="Expected SLG" />
+                </div>
+                {/* Savant Factors */}
+                {savantData.savantFactors && savantData.savantFactors.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {savantData.savantFactors.map((factor: string, i: number) => (
+                      <span key={i} className="text-[9px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                        {factor}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="text-center p-2 rounded-lg bg-slate-800/50">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">XBH</p>
-                <p className="text-sm font-bold text-orange-400">{pick.stats.xb}</p>
+            )}
+
+            {/* Ballpark.com Section */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <BarChart3 size={12} className="text-emerald-400" />
+                <span className="text-xs font-bold text-emerald-400">BALLPARK.COM RC BREAKDOWN</span>
               </div>
-              <div className="text-center p-2 rounded-lg bg-slate-800/50">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">1B</p>
-                <p className="text-sm font-bold text-blue-400">{pick.stats.oneB}</p>
-              </div>
-              <div className="text-center p-2 rounded-lg bg-slate-800/50">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">BB</p>
-                <p className="text-sm font-bold text-green-400">{pick.stats.bb}</p>
-              </div>
-              <div className="text-center p-2 rounded-lg bg-slate-800/50">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">K</p>
-                <p className="text-sm font-bold text-slate-400">{pick.stats.k}</p>
-              </div>
-              <div className="text-center p-2 rounded-lg bg-slate-800/50">
-                <p className="text-[10px] text-slate-500 uppercase font-semibold">RC</p>
-                <p className={`text-sm font-bold ${rcGrade.color}`}>{pick.stats.rc}</p>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                <div className="text-center p-2 rounded-lg bg-slate-800/50">
+                  <p className="text-[9px] text-slate-500 uppercase font-semibold">HR</p>
+                  <p className="text-sm font-bold text-red-400">{pick.stats.hr}</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-slate-800/50">
+                  <p className="text-[9px] text-slate-500 uppercase font-semibold">XBH</p>
+                  <p className="text-sm font-bold text-orange-400">{pick.stats.xb}</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-slate-800/50">
+                  <p className="text-[9px] text-slate-500 uppercase font-semibold">1B</p>
+                  <p className="text-sm font-bold text-blue-400">{pick.stats.oneB}</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-slate-800/50">
+                  <p className="text-[9px] text-slate-500 uppercase font-semibold">BB</p>
+                  <p className="text-sm font-bold text-green-400">{pick.stats.bb}</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-slate-800/50">
+                  <p className="text-[9px] text-slate-500 uppercase font-semibold">K</p>
+                  <p className="text-sm font-bold text-slate-400">{pick.stats.k}</p>
+                </div>
+                <div className="text-center p-2 rounded-lg bg-slate-800/50">
+                  <p className="text-[9px] text-slate-500 uppercase font-semibold">RC</p>
+                  <p className={`text-sm font-bold ${rcGrade.color}`}>{pick.stats.rc}</p>
+                </div>
               </div>
             </div>
-            <p className="text-xs text-slate-500 mt-3 italic">
-              Data sourced from ballpark.com — RC (Runs Created) measures overall offensive contribution in this specific matchup.
+
+            <p className="text-xs text-slate-500 italic">
+              Combined analysis: Savant Statcast measures quality of contact and expected outcomes. Ballpark.com RC measures matchup-specific offensive production. Together they provide the most complete picture.
             </p>
           </div>
         )}
@@ -203,9 +267,20 @@ function PickCard({ pick, rank }: { pick: MatchupPlay; rank: number }) {
 export default function Props() {
   const [, navigate] = useLocation();
   const { data: matchups, isLoading } = trpc.ballpark.getTodayMatchups.useQuery();
+  const { data: aiData } = trpc.aiPicks.getComprehensivePicks.useQuery();
+
+  // Build a map of savant data by player name for quick lookup
+  const savantMap = new Map<string, any>();
+  if (aiData?.picks) {
+    for (const pick of aiData.picks) {
+      if (pick.savantMetrics) {
+        savantMap.set(pick.playerName.toLowerCase(), pick.savantMetrics);
+      }
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[oklch(0.11_0.025_255)] to-[oklch(0.09_0.020_255)]">
+    <div className="min-h-screen" style={{ background: "linear-gradient(180deg, oklch(0.11 0.025 255) 0%, oklch(0.09 0.020 255) 100%)" }}>
       <div className="max-w-3xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -216,7 +291,7 @@ export default function Props() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-white">AI Predictions</h1>
-                <p className="text-sm text-slate-400">Powered by ballpark.com matchup data</p>
+                <p className="text-sm text-slate-400">Savant Statcast + Ballpark.com combined analysis</p>
               </div>
             </div>
             <button
@@ -228,41 +303,49 @@ export default function Props() {
             </button>
           </div>
 
-          {/* How it works - compact */}
+          {/* How it works - updated with Savant */}
           <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-4">
             <div className="flex items-start gap-3">
               <Info className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
               <div className="text-sm text-slate-400 leading-relaxed">
-                <span className="text-slate-300 font-medium">How it works:</span> We analyze today's batter vs pitcher matchups from{" "}
-                <span className="text-blue-400">ballpark.com</span>, ranking them by{" "}
-                <span className="text-emerald-400 font-medium">Runs Created (RC)</span> — a composite stat measuring expected offensive output. Each pick includes the optimal OVER prop based on the player's contact, power, and plate discipline profile.
+                <span className="text-slate-300 font-medium">How it works:</span> We combine{" "}
+                <span className="text-blue-400">Baseball Savant Statcast</span> data (xwOBA, Hard Hit%, EV, Barrel%) with{" "}
+                <span className="text-emerald-400">Ballpark.com</span> RC matchup analysis to identify the strongest OVER props.
+                Savant measures quality of contact; Ballpark measures matchup-specific production.
               </div>
             </div>
           </div>
         </div>
 
-        {/* Performance Summary */}
-        <div className="mb-6 grid grid-cols-3 gap-3">
+        {/* Data Source Summary */}
+        <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-3 text-center">
             <div className="flex items-center justify-center gap-1.5 mb-1">
-              <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-[10px] text-slate-500 uppercase font-semibold">Source</span>
+              <Activity className="w-3.5 h-3.5 text-blue-400" />
+              <span className="text-[10px] text-slate-500 uppercase font-semibold">Savant</span>
             </div>
-            <p className="text-sm font-bold text-white">Ballpark.com</p>
+            <p className="text-xs font-bold text-white">Statcast</p>
           </div>
           <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-3 text-center">
             <div className="flex items-center justify-center gap-1.5 mb-1">
-              <Target className="w-3.5 h-3.5 text-emerald-400" />
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-[10px] text-slate-500 uppercase font-semibold">Ballpark</span>
+            </div>
+            <p className="text-xs font-bold text-white">RC Data</p>
+          </div>
+          <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-3 text-center">
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <Target className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-[10px] text-slate-500 uppercase font-semibold">Method</span>
             </div>
-            <p className="text-sm font-bold text-white">RC Ranked</p>
+            <p className="text-xs font-bold text-white">Combined</p>
           </div>
           <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-3 text-center">
             <div className="flex items-center justify-center gap-1.5 mb-1">
-              <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-violet-400" />
               <span className="text-[10px] text-slate-500 uppercase font-semibold">Type</span>
             </div>
-            <p className="text-sm font-bold text-white">OVERS Only</p>
+            <p className="text-xs font-bold text-white">OVERS</p>
           </div>
         </div>
 
@@ -270,7 +353,7 @@ export default function Props() {
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Zap className="w-4 h-4 text-amber-400" />
-            Today's Top Picks
+            Today's Picks
           </h2>
           <span className="text-xs text-slate-500">{matchups?.length || 0} matchups analyzed</span>
         </div>
@@ -278,13 +361,22 @@ export default function Props() {
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
-            <p className="text-sm text-slate-400">Analyzing today's matchups...</p>
+            <p className="text-sm text-slate-400">Analyzing Savant + Ballpark data...</p>
           </div>
         ) : matchups && matchups.length > 0 ? (
           <div className="space-y-3">
-            {matchups.map((pick: MatchupPlay) => (
-              <PickCard key={`${pick.batter.id}-${pick.rank}`} pick={pick} rank={pick.rank} />
-            ))}
+            {matchups.map((pick: MatchupPlay) => {
+              // Try to find Savant data for this player
+              const savantData = savantMap.get(pick.batter.name.toLowerCase());
+              return (
+                <PickCard
+                  key={`${pick.batter.id}-${pick.rank}`}
+                  pick={pick}
+                  rank={pick.rank}
+                  savantData={savantData}
+                />
+              );
+            })}
           </div>
         ) : (
           <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-12 text-center">
@@ -297,7 +389,7 @@ export default function Props() {
         {/* Footer note */}
         <div className="mt-8 text-center">
           <p className="text-xs text-slate-600">
-            All predictions are OVER props only. Data refreshed daily from ballpark.com matchup analysis.
+            All predictions are OVER props only. Data from Baseball Savant Statcast + Ballpark.com matchup analysis. Refreshed daily.
           </p>
         </div>
       </div>

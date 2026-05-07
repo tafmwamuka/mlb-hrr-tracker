@@ -279,3 +279,11 @@
 - [x] Update All Plays to show detailed combined-source analysis (Savant + Ballpark)
 - [x] Show Savant metrics in pick cards (xwOBA, Hard Hit%, EV, Barrel%)
 - [x] Ensure Top Plays and All Plays can have different selections
+
+## Parlays & AI Tab Savant Integration (May 7 - User Request)
+- [x] Update Parlays tab to use combined Savant + Ballpark scoring for parlay selection
+- [x] 2-leg parlays should pair highest combined-score picks from different games
+- [x] 3-leg parlays should use diversified high-confidence selections
+- [x] Show Savant metrics and reasoning for each parlay leg
+- [x] Display combined confidence score for each parlay
+- [x] Update AI Predictions tab to show Savant metrics alongside RC data

@@ -71,6 +71,7 @@ export interface AIPick {
   position: string;
   battingPosition: number;
   pitcher: string;
+  pitcherTeam: string; // Opposing pitcher's team (for game identification)
   statType: 'hits' | 'runs' | 'rbi' | 'slg';
   prediction: "over";
   line: number;
@@ -284,6 +285,7 @@ export function rankAIPicks(
         position: matchup.position,
         battingPosition: matchup.battingPosition,
         pitcher: matchup.pitcher.name,
+        pitcherTeam: matchup.pitcher.team,
         statType: bestStat as 'hits' | 'runs' | 'rbi' | 'slg',
         statConfidence: {
           hits: Math.round(Math.min(100, (stats.hits / 50) * 100 * (overallScore / 100))),

@@ -1,11 +1,14 @@
 /**
- * Parlays Tab — Smart Parlay Suggestions
- * Shows 2-leg (safe) and 3-leg parlay options
- * Emphasizes responsible gambling and bankroll management
+ * Parlays Tab — Smart Parlay Suggestions (Savant + Ballpark Combined)
+ * Uses combined Savant Statcast + Ballpark.com RC data for the safest selections
+ * Shows 2-leg (safe) and 3-leg parlay options with detailed reasoning
  */
 
 import { trpc } from "@/lib/trpc";
-import { Shield, AlertTriangle, TrendingUp, Zap, Target, Lock, Layers, ChevronDown, Info } from "lucide-react";
+import {
+  Shield, AlertTriangle, TrendingUp, Zap, Target, Lock, Layers,
+  ChevronDown, Info, BarChart3, Activity, Crosshair, Gauge
+} from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -15,13 +18,30 @@ const STAT_CONFIG = {
   rbi: { label: "RBI", icon: Target, color: "oklch(0.72 0.18 165)" },
 };
 
+interface SavantMetrics {
+  xwOBA: number;
+  hardHitPct: number;
+  exitVelocity: number;
+  barrelPct: number;
+  kPct: number;
+  bbPct: number;
+  xBA: number;
+  xSLG: number;
+  sprintSpeed: number;
+  savantScore: number;
+  savantFactors: string[];
+}
+
 interface ParlayLeg {
   playerName: string;
   team: string;
   statType: string;
   line: number;
   confidence: number;
+  combinedScore: number;
   reasoning: string;
+  ballparkReasoning: string;
+  savantMetrics?: SavantMetrics;
 }
 
 interface Parlay {
@@ -29,99 +49,149 @@ interface Parlay {
   type: "2-leg" | "3-leg";
   legs: ParlayLeg[];
   combinedConfidence: number;
+  avgCombinedScore: number;
   riskLevel: "low" | "medium";
   reasoning: string;
 }
+
+/**
+ * Check if two players are in the same game.
+ * Same game = player A's team is player B's pitcherTeam or vice versa.
+ */
+function isSameGame(a: any, b: any): boolean {
+  // If pitcherTeam is available, use it for precise game identification
+  if (a.pitcherTeam && b.pitcherTeam) {
+    return (a.team === b.pitcherTeam || b.team === a.pitcherTeam);
+  }
+  // Fallback: same team = same game
+  return a.team === b.team;
+}
+
+// Minimum combined score threshold for parlay inclusion
+const MIN_2LEG_SCORE = 75;
+const MIN_3LEG_SCORE = 70;
 
 function buildParlays(picks: any[]): Parlay[] {
   if (!picks || picks.length < 4) return [];
 
   const parlays: Parlay[] = [];
 
-  // Sort by confidence for best combinations
-  const sorted = [...picks].sort((a, b) => b.confidence - a.confidence);
+  // Sort by combinedScore (Savant + Ballpark) for best combinations
+  const sorted = [...picks]
+    .sort((a, b) => (b.combinedScore || b.confidence) - (a.combinedScore || a.confidence));
 
-  // Generate 2-leg parlays (safe plays) from top confidence picks
-  // Pair picks from different games/teams for diversity
+  // Filter to only high-confidence picks for parlays
+  const eligible2Leg = sorted.filter(p => (p.combinedScore || p.confidence) >= MIN_2LEG_SCORE);
+  const eligible3Leg = sorted.filter(p => (p.combinedScore || p.confidence) >= MIN_3LEG_SCORE);
+
+  // Generate 2-leg parlays (safe plays) — pair highest combined-score picks from DIFFERENT GAMES
   const usedFor2Leg = new Set<number>();
-  for (let i = 0; i < sorted.length && parlays.length < 4; i++) {
-    for (let j = i + 1; j < sorted.length && parlays.length < 4; j++) {
-      if (sorted[i].team === sorted[j].team) continue; // Different teams
+  for (let i = 0; i < eligible2Leg.length && parlays.length < 4; i++) {
+    for (let j = i + 1; j < eligible2Leg.length && parlays.length < 4; j++) {
+      // Enforce different games (not just different teams)
+      if (isSameGame(eligible2Leg[i], eligible2Leg[j])) continue;
       if (usedFor2Leg.has(i) || usedFor2Leg.has(j)) continue;
 
-      const combined = Math.round((sorted[i].confidence + sorted[j].confidence) / 2 * 0.92);
+      const avgScore = Math.round(((eligible2Leg[i].combinedScore || eligible2Leg[i].confidence) + (eligible2Leg[j].combinedScore || eligible2Leg[j].confidence)) / 2);
+      const combined = Math.round(avgScore * 0.92);
+
+      const savantFactors1 = eligible2Leg[i].savantMetrics?.savantFactors || [];
+      const savantFactors2 = eligible2Leg[j].savantMetrics?.savantFactors || [];
+
       parlays.push({
         id: `2leg-${i}-${j}`,
         type: "2-leg",
         legs: [
           {
-            playerName: sorted[i].playerName,
-            team: sorted[i].team,
-            statType: sorted[i].statType,
-            line: sorted[i].line,
-            confidence: sorted[i].confidence,
-            reasoning: sorted[i].reasoning,
+            playerName: eligible2Leg[i].playerName,
+            team: eligible2Leg[i].team,
+            statType: eligible2Leg[i].statType,
+            line: eligible2Leg[i].line,
+            confidence: eligible2Leg[i].confidence,
+            combinedScore: eligible2Leg[i].combinedScore || eligible2Leg[i].confidence,
+            reasoning: eligible2Leg[i].reasoning,
+            ballparkReasoning: eligible2Leg[i].ballparkReasoning || "",
+            savantMetrics: eligible2Leg[i].savantMetrics,
           },
           {
-            playerName: sorted[j].playerName,
-            team: sorted[j].team,
-            statType: sorted[j].statType,
-            line: sorted[j].line,
-            confidence: sorted[j].confidence,
-            reasoning: sorted[j].reasoning,
+            playerName: eligible2Leg[j].playerName,
+            team: eligible2Leg[j].team,
+            statType: eligible2Leg[j].statType,
+            line: eligible2Leg[j].line,
+            confidence: eligible2Leg[j].confidence,
+            combinedScore: eligible2Leg[j].combinedScore || eligible2Leg[j].confidence,
+            reasoning: eligible2Leg[j].reasoning,
+            ballparkReasoning: eligible2Leg[j].ballparkReasoning || "",
+            savantMetrics: eligible2Leg[j].savantMetrics,
           },
         ],
         combinedConfidence: combined,
+        avgCombinedScore: avgScore,
         riskLevel: "low",
-        reasoning: `High-confidence pairing: Both players rank in the top tier of today's matchups with strong RC scores and favorable pitcher matchups.`,
+        reasoning: `Both legs backed by elite Savant Statcast data + Ballpark.com RC analysis. ${savantFactors1[0] || "Strong matchup"} (${eligible2Leg[i].playerName}) paired with ${savantFactors2[0] || "favorable conditions"} (${eligible2Leg[j].playerName}). Different games reduce correlation risk.`,
       });
       usedFor2Leg.add(i);
       usedFor2Leg.add(j);
     }
   }
 
-  // Generate 3-leg parlays (moderate risk)
+  // Generate 3-leg parlays (moderate risk) — diversified across DIFFERENT GAMES
   const usedFor3Leg = new Set<number>();
-  for (let i = 0; i < sorted.length - 2 && parlays.length < 7; i++) {
-    for (let j = i + 1; j < sorted.length - 1; j++) {
-      for (let k = j + 1; k < sorted.length; k++) {
+  for (let i = 0; i < eligible3Leg.length - 2 && parlays.length < 7; i++) {
+    for (let j = i + 1; j < eligible3Leg.length - 1; j++) {
+      for (let k = j + 1; k < eligible3Leg.length; k++) {
         if (parlays.length >= 7) break;
-        if (sorted[i].team === sorted[j].team || sorted[j].team === sorted[k].team || sorted[i].team === sorted[k].team) continue;
+        // Enforce ALL legs from different games
+        if (isSameGame(eligible3Leg[i], eligible3Leg[j])) continue;
+        if (isSameGame(eligible3Leg[j], eligible3Leg[k])) continue;
+        if (isSameGame(eligible3Leg[i], eligible3Leg[k])) continue;
         if (usedFor3Leg.has(i) || usedFor3Leg.has(j) || usedFor3Leg.has(k)) continue;
 
-        const combined = Math.round((sorted[i].confidence + sorted[j].confidence + sorted[k].confidence) / 3 * 0.85);
+        const avgScore = Math.round(((eligible3Leg[i].combinedScore || eligible3Leg[i].confidence) + (eligible3Leg[j].combinedScore || eligible3Leg[j].confidence) + (eligible3Leg[k].combinedScore || eligible3Leg[k].confidence)) / 3);
+        const combined = Math.round(avgScore * 0.85);
+
         parlays.push({
           id: `3leg-${i}-${j}-${k}`,
           type: "3-leg",
           legs: [
             {
-              playerName: sorted[i].playerName,
-              team: sorted[i].team,
-              statType: sorted[i].statType,
-              line: sorted[i].line,
-              confidence: sorted[i].confidence,
-              reasoning: sorted[i].reasoning,
+              playerName: eligible3Leg[i].playerName,
+              team: eligible3Leg[i].team,
+              statType: eligible3Leg[i].statType,
+              line: eligible3Leg[i].line,
+              confidence: eligible3Leg[i].confidence,
+              combinedScore: eligible3Leg[i].combinedScore || eligible3Leg[i].confidence,
+              reasoning: eligible3Leg[i].reasoning,
+              ballparkReasoning: eligible3Leg[i].ballparkReasoning || "",
+              savantMetrics: eligible3Leg[i].savantMetrics,
             },
             {
-              playerName: sorted[j].playerName,
-              team: sorted[j].team,
-              statType: sorted[j].statType,
-              line: sorted[j].line,
-              confidence: sorted[j].confidence,
-              reasoning: sorted[j].reasoning,
+              playerName: eligible3Leg[j].playerName,
+              team: eligible3Leg[j].team,
+              statType: eligible3Leg[j].statType,
+              line: eligible3Leg[j].line,
+              confidence: eligible3Leg[j].confidence,
+              combinedScore: eligible3Leg[j].combinedScore || eligible3Leg[j].confidence,
+              reasoning: eligible3Leg[j].reasoning,
+              ballparkReasoning: eligible3Leg[j].ballparkReasoning || "",
+              savantMetrics: eligible3Leg[j].savantMetrics,
             },
             {
-              playerName: sorted[k].playerName,
-              team: sorted[k].team,
-              statType: sorted[k].statType,
-              line: sorted[k].line,
-              confidence: sorted[k].confidence,
-              reasoning: sorted[k].reasoning,
+              playerName: eligible3Leg[k].playerName,
+              team: eligible3Leg[k].team,
+              statType: eligible3Leg[k].statType,
+              line: eligible3Leg[k].line,
+              confidence: eligible3Leg[k].confidence,
+              combinedScore: eligible3Leg[k].combinedScore || eligible3Leg[k].confidence,
+              reasoning: eligible3Leg[k].reasoning,
+              ballparkReasoning: eligible3Leg[k].ballparkReasoning || "",
+              savantMetrics: eligible3Leg[k].savantMetrics,
             },
           ],
           combinedConfidence: combined,
+          avgCombinedScore: avgScore,
           riskLevel: "medium",
-          reasoning: `Diversified across ${sorted[i].team}, ${sorted[j].team}, and ${sorted[k].team}. Each leg has strong individual confidence backed by ballpark.com matchup data.`,
+          reasoning: `Diversified across ${eligible3Leg[i].team}, ${eligible3Leg[j].team}, and ${eligible3Leg[k].team}. All legs scored ${MIN_3LEG_SCORE}+ combined (Savant + Ballpark). Different games eliminate correlation risk.`,
         });
         usedFor3Leg.add(i);
         usedFor3Leg.add(j);
@@ -135,6 +205,18 @@ function buildParlays(picks: any[]): Parlay[] {
   return parlays;
 }
 
+// ─── Savant Metric Pill ───────────────────────────────────────────────────────
+function MetricPill({ icon: Icon, label, value, color }: { icon: any; label: string; value: string; color: string }) {
+  return (
+    <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[oklch(1_0_0/4%)] border border-[oklch(1_0_0/8%)]">
+      <Icon size={10} style={{ color }} />
+      <span className="text-[9px] text-[oklch(0.45_0.015_255)] uppercase">{label}</span>
+      <span className="text-[10px] font-bold" style={{ color }}>{value}</span>
+    </div>
+  );
+}
+
+// ─── Parlay Card ──────────────────────────────────────────────────────────────
 function ParlayCard({ parlay, index }: { parlay: Parlay; index: number }) {
   const [expanded, setExpanded] = useState(false);
   const is2Leg = parlay.type === "2-leg";
@@ -157,8 +239,8 @@ function ParlayCard({ parlay, index }: { parlay: Parlay; index: number }) {
         className="h-0.5 w-full"
         style={{
           background: is2Leg
-            ? "linear-gradient(90deg, oklch(0.72 0.18 165), oklch(0.72 0.18 165 / 30%))"
-            : "linear-gradient(90deg, oklch(0.65 0.15 280), oklch(0.65 0.15 280 / 30%))",
+            ? "linear-gradient(90deg, oklch(0.72 0.18 165), oklch(0.82 0.17 85), oklch(0.72 0.18 165 / 30%))"
+            : "linear-gradient(90deg, oklch(0.65 0.15 280), oklch(0.68 0.22 25), oklch(0.65 0.15 280 / 30%))",
         }}
       />
 
@@ -190,12 +272,14 @@ function ParlayCard({ parlay, index }: { parlay: Parlay; index: number }) {
             )}
           </div>
 
-          {/* Combined confidence */}
+          {/* Combined scores */}
           <div className="text-right">
             <div className="font-stat text-lg font-bold" style={{ color: is2Leg ? "oklch(0.72 0.18 165)" : "oklch(0.75 0.15 280)" }}>
               {parlay.combinedConfidence}%
             </div>
-            <div className="text-[9px] text-[oklch(0.45_0.015_255)] uppercase">Combined</div>
+            <div className="text-[9px] text-[oklch(0.45_0.015_255)] uppercase">
+              Score: {parlay.avgCombinedScore}
+            </div>
           </div>
         </div>
 
@@ -205,7 +289,7 @@ function ParlayCard({ parlay, index }: { parlay: Parlay; index: number }) {
             const statCfg = STAT_CONFIG[leg.statType as keyof typeof STAT_CONFIG] || STAT_CONFIG.hits;
             const StatIcon = statCfg.icon;
             return (
-              <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-[oklch(1_0_0/3%)]">
+              <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-[oklch(1_0_0/3%)] border border-[oklch(1_0_0/5%)]">
                 <div className="w-5 h-5 rounded-full bg-[oklch(1_0_0/6%)] flex items-center justify-center shrink-0">
                   <span className="text-[10px] font-bold text-[oklch(0.55_0.015_255)]">{i + 1}</span>
                 </div>
@@ -214,14 +298,32 @@ function ParlayCard({ parlay, index }: { parlay: Parlay; index: number }) {
                     <span className="text-sm font-semibold text-white truncate">{leg.playerName}</span>
                     <span className="text-[10px] text-[oklch(0.45_0.015_255)]">{leg.team}</span>
                   </div>
+                  {/* Mini Savant indicators */}
+                  {leg.savantMetrics && (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-medium">
+                        xwOBA {leg.savantMetrics.xwOBA.toFixed(3)}
+                      </span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 font-medium">
+                        HH {leg.savantMetrics.hardHitPct.toFixed(0)}%
+                      </span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-medium">
+                        EV {leg.savantMetrics.exitVelocity.toFixed(0)}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md shrink-0" style={{ background: `${statCfg.color}15` }}>
-                  <StatIcon size={10} style={{ color: statCfg.color }} />
-                  <span className="text-[10px] font-bold" style={{ color: statCfg.color }}>
-                    {statCfg.label} O{leg.line}
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md" style={{ background: `${statCfg.color}15` }}>
+                    <StatIcon size={10} style={{ color: statCfg.color }} />
+                    <span className="text-[10px] font-bold" style={{ color: statCfg.color }}>
+                      {statCfg.label} O{leg.line}
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-stat font-bold text-[oklch(0.55_0.015_255)]">
+                    CS: {leg.combinedScore}
                   </span>
                 </div>
-                <span className="text-[10px] font-stat font-bold text-[oklch(0.60_0.015_255)] shrink-0">{leg.confidence}%</span>
               </div>
             );
           })}
@@ -229,13 +331,16 @@ function ParlayCard({ parlay, index }: { parlay: Parlay; index: number }) {
 
         {/* Expand indicator */}
         <div className="flex items-center justify-center mt-3 pt-2 border-t border-[oklch(1_0_0/6%)]">
+          <span className="text-[10px] text-[oklch(0.40_0.015_255)] mr-1">
+            {expanded ? "Hide" : "View"} Savant Analysis
+          </span>
           <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
             <ChevronDown size={14} className="text-[oklch(0.40_0.015_255)]" />
           </motion.div>
         </div>
       </button>
 
-      {/* Expanded reasoning */}
+      {/* Expanded Savant Analysis */}
       <AnimatePresence>
         {expanded && (
           <motion.div
@@ -246,14 +351,54 @@ function ParlayCard({ parlay, index }: { parlay: Parlay; index: number }) {
             className="overflow-hidden"
           >
             <div className="px-4 pb-4 space-y-3">
+              {/* Parlay reasoning */}
               <div className="p-3 rounded-lg bg-[oklch(1_0_0/3%)] border border-[oklch(1_0_0/6%)]">
-                <p className="text-xs text-[oklch(0.60_0.015_255)] leading-relaxed">{parlay.reasoning}</p>
+                <div className="flex items-start gap-2">
+                  <BarChart3 size={12} className="text-blue-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-[oklch(0.60_0.015_255)] leading-relaxed">{parlay.reasoning}</p>
+                </div>
               </div>
+
+              {/* Per-leg Savant breakdown */}
               {parlay.legs.map((leg, i) => (
-                <div key={i} className="pl-3 border-l-2 border-[oklch(1_0_0/10%)]">
-                  <p className="text-[11px] text-[oklch(0.50_0.015_255)]">
-                    <span className="font-semibold text-white">{leg.playerName}:</span> {leg.reasoning}
+                <div key={i} className="rounded-lg border border-[oklch(1_0_0/8%)] bg-[oklch(1_0_0/2%)] p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-bold text-white">{leg.playerName}</span>
+                    <span className="text-[9px] text-[oklch(0.45_0.015_255)]">({leg.team})</span>
+                  </div>
+
+                  {/* Savant metrics grid */}
+                  {leg.savantMetrics && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      <MetricPill icon={Crosshair} label="xwOBA" value={leg.savantMetrics.xwOBA.toFixed(3)} color="#60a5fa" />
+                      <MetricPill icon={Activity} label="HH%" value={`${leg.savantMetrics.hardHitPct.toFixed(0)}%`} color="#f97316" />
+                      <MetricPill icon={Gauge} label="EV" value={`${leg.savantMetrics.exitVelocity.toFixed(0)}`} color="#34d399" />
+                      <MetricPill icon={Target} label="Brl%" value={`${leg.savantMetrics.barrelPct.toFixed(1)}%`} color="#a78bfa" />
+                      <MetricPill icon={TrendingUp} label="xBA" value={leg.savantMetrics.xBA.toFixed(3)} color="#fbbf24" />
+                      <MetricPill icon={Zap} label="xSLG" value={leg.savantMetrics.xSLG.toFixed(3)} color="#f472b6" />
+                    </div>
+                  )}
+
+                  {/* Savant factors */}
+                  {leg.savantMetrics?.savantFactors && leg.savantMetrics.savantFactors.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {leg.savantMetrics.savantFactors.slice(0, 3).map((factor, fi) => (
+                        <span key={fi} className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                          {factor}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Reasoning */}
+                  <p className="text-[11px] text-[oklch(0.50_0.015_255)] leading-relaxed">
+                    {leg.reasoning}
                   </p>
+                  {leg.ballparkReasoning && (
+                    <p className="text-[10px] text-[oklch(0.40_0.015_255)] italic mt-1">
+                      {leg.ballparkReasoning}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -281,7 +426,7 @@ export function ParlaysTab() {
             animate={{ rotate: 360 }}
             transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
           />
-          <p className="text-sm text-[oklch(0.50_0.015_255)]">Building parlay options...</p>
+          <p className="text-sm text-[oklch(0.50_0.015_255)]">Analyzing Savant + Ballpark data...</p>
         </div>
       </div>
     );
@@ -302,12 +447,20 @@ export function ParlaysTab() {
           <div>
             <h4 className="text-xs font-bold text-amber-300 mb-1">BANKROLL MANAGEMENT</h4>
             <p className="text-[11px] text-[oklch(0.60_0.015_255)] leading-relaxed">
-              We suggest not exceeding your bankroll limits. Bet within your means and treat this as entertainment, not income. 
+              We suggest not exceeding your bankroll limits. Bet within your means and treat this as entertainment, not income.
               Never chase losses. Set a daily/weekly budget and stick to it.
             </p>
           </div>
         </div>
       </motion.div>
+
+      {/* Data Source Indicator */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[oklch(1_0_0/3%)] border border-[oklch(1_0_0/6%)]">
+        <BarChart3 size={12} className="text-blue-400" />
+        <span className="text-[10px] text-[oklch(0.55_0.015_255)]">
+          Parlays built from <span className="text-blue-400 font-semibold">Savant Statcast</span> + <span className="text-emerald-400 font-semibold">Ballpark.com RC</span> combined scoring
+        </span>
+      </div>
 
       {/* Filter tabs */}
       <div className="flex items-center gap-2">
@@ -337,7 +490,7 @@ export function ParlaysTab() {
             <Shield size={14} className="text-emerald-400" />
             <h3 className="text-sm font-bold text-white">Safe Plays (2-Leg)</h3>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              LOWER RISK
+              HIGHEST COMBINED SCORE
             </span>
           </div>
           <div className="space-y-3">
@@ -357,7 +510,7 @@ export function ParlaysTab() {
             <Layers size={14} className="text-purple-400" />
             <h3 className="text-sm font-bold text-white">3-Leg Parlays</h3>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
-              MODERATE RISK
+              DIVERSIFIED RISK
             </span>
           </div>
           <div className="space-y-3">
@@ -380,8 +533,8 @@ export function ParlaysTab() {
         <div className="flex items-start gap-2">
           <Lock size={12} className="text-[oklch(0.40_0.015_255)] mt-0.5 shrink-0" />
           <p className="text-[10px] text-[oklch(0.40_0.015_255)] leading-relaxed">
-            Parlay suggestions are based on AI analysis of ballpark.com matchup data, RC scores, and park factors. 
-            Past performance does not guarantee future results. All picks are OVER props only. 
+            Parlay suggestions use combined Savant Statcast metrics (xwOBA, Hard Hit%, EV, Barrel%) + Ballpark.com RC analysis.
+            Past performance does not guarantee future results. All picks are OVER props only.
             Please gamble responsibly — if you or someone you know has a gambling problem, call 1-800-GAMBLER.
           </p>
         </div>

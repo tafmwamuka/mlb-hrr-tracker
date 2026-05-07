@@ -62,4 +62,32 @@ describe("Parlays - AI Picks Data Source", () => {
     // All Plays should show 15-20 players
     expect(result.picks.length).toBeGreaterThanOrEqual(15);
   });
+
+  it("should include pitcherTeam field for game-level diversification", async () => {
+    const result = await caller.getComprehensivePicks();
+    
+    // Each pick should have pitcherTeam for parlay game-level checks
+    for (const pick of result.picks) {
+      expect(pick.pitcherTeam).toBeDefined();
+      expect(typeof pick.pitcherTeam).toBe("string");
+      expect(pick.pitcherTeam.length).toBeGreaterThan(0);
+      // pitcherTeam should be different from player's team
+      expect(pick.pitcherTeam).not.toBe(pick.team);
+    }
+  });
+
+  it("should have picks from different games (team vs pitcherTeam pairs)", async () => {
+    const result = await caller.getComprehensivePicks();
+    
+    // Build game identifiers: sort team pair alphabetically
+    const games = new Set(
+      result.picks.map((p: any) => {
+        const pair = [p.team, p.pitcherTeam].sort();
+        return `${pair[0]}-${pair[1]}`;
+      })
+    );
+    
+    // Should have at least 3 different games for proper parlay diversification
+    expect(games.size).toBeGreaterThanOrEqual(3);
+  });
 });
