@@ -76,10 +76,10 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-white text-sm truncate">{pick.playerName}</span>
-                <span className="text-[10px] text-[oklch(0.45_0.015_255)]">{pick.team}</span>
+                <span className="text-[10px] text-[oklch(0.45_0.015_255)]">{pick.team} vs {pick.pitcherTeam}</span>
               </div>
               <div className="text-[11px] text-[oklch(0.50_0.015_255)] truncate">
-                vs {pick.pitcher} • Bat #{pick.battingPosition}
+                vs {pick.pitcher} ({pick.pitcherTeam}) • Bat #{pick.battingPosition}
               </div>
             </div>
 

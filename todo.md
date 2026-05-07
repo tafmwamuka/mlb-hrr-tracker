@@ -363,3 +363,8 @@
 - [x] Results page: only show plays we suggested that were 75%+ probability
 - [x] Results page: make design more attractive/visually appealing (circular progress, animated bars, color-coded cards)
 - [x] Results updates: backfill after the last game of the day
+
+## Game Matchup + HRR Parlays (May 7 - User Request)
+- [x] Add game matchup (team vs team) to Money Picks cards
+- [x] Add game matchup to All Plays cards
+- [x] Incorporate HRR combined props as legs in the Parlays tab (with HRR Parlays filter)

@@ -7,7 +7,7 @@
 import { trpc } from "@/lib/trpc";
 import {
   Shield, AlertTriangle, TrendingUp, Zap, Target, Lock, Layers,
-  ChevronDown, Info, BarChart3, Activity, Crosshair, Gauge
+  ChevronDown, Info, BarChart3, Activity, Crosshair, Gauge, Flame
 } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -17,6 +17,7 @@ const STAT_CONFIG = {
   hits: { label: "HITS", icon: TrendingUp, color: "oklch(0.82 0.17 85)" },
   runs: { label: "RUNS", icon: Zap, color: "oklch(0.68 0.22 25)" },
   rbi: { label: "RBI", icon: Target, color: "oklch(0.72 0.18 165)" },
+  hrr: { label: "HRR", icon: Flame, color: "oklch(0.75 0.15 280)" },
 };
 
 interface SavantMetrics {
@@ -418,12 +419,98 @@ function ParlayCard({ parlay, index }: { parlay: Parlay; index: number }) {
   );
 }
 
+/**
+ * Build HRR-only parlays — all legs are HRR combined props
+ */
+function buildHRRParlays(hrrLegs: any[]): Parlay[] {
+  if (!hrrLegs || hrrLegs.length < 2) return [];
+  const parlays: Parlay[] = [];
+
+  // Sort by confidence
+  const sorted = [...hrrLegs].sort((a, b) => b.confidence - a.confidence);
+
+  // Build 2-leg HRR parlays from different games
+  const used2 = new Set<number>();
+  for (let i = 0; i < sorted.length && parlays.length < 3; i++) {
+    for (let j = i + 1; j < sorted.length && parlays.length < 3; j++) {
+      if (used2.has(i) || used2.has(j)) continue;
+      if (isSameGame(sorted[i], sorted[j])) continue;
+      const avgConf = Math.round((sorted[i].confidence + sorted[j].confidence) / 2);
+      parlays.push({
+        id: `hrr-2leg-${i}-${j}`,
+        type: "2-leg",
+        legs: [sorted[i], sorted[j]],
+        combinedConfidence: Math.round(avgConf * 0.92),
+        avgCombinedScore: avgConf,
+        riskLevel: "low",
+        reasoning: `Both legs are HRR combined props (Hits+Runs+RBI) — the safest prop type. ${sorted[i].playerName} and ${sorted[j].playerName} from different games.`,
+      });
+      used2.add(i);
+      used2.add(j);
+    }
+  }
+
+  // Build 3-leg HRR parlays
+  const used3 = new Set<number>();
+  for (let i = 0; i < sorted.length - 2 && parlays.length < 5; i++) {
+    for (let j = i + 1; j < sorted.length - 1; j++) {
+      for (let k = j + 1; k < sorted.length; k++) {
+        if (parlays.length >= 5) break;
+        if (used3.has(i) || used3.has(j) || used3.has(k)) continue;
+        if (isSameGame(sorted[i], sorted[j]) || isSameGame(sorted[j], sorted[k]) || isSameGame(sorted[i], sorted[k])) continue;
+        const avgConf = Math.round((sorted[i].confidence + sorted[j].confidence + sorted[k].confidence) / 3);
+        parlays.push({
+          id: `hrr-3leg-${i}-${j}-${k}`,
+          type: "3-leg",
+          legs: [sorted[i], sorted[j], sorted[k]],
+          combinedConfidence: Math.round(avgConf * 0.85),
+          avgCombinedScore: avgConf,
+          riskLevel: "medium",
+          reasoning: `All HRR combined props across 3 different games. Lower risk per leg since HRR combines all offensive production.`,
+        });
+        used3.add(i);
+        used3.add(j);
+        used3.add(k);
+        break;
+      }
+      if (parlays.length >= 5) break;
+    }
+  }
+
+  return parlays;
+}
+
 export function ParlaysTab() {
   const { data, isLoading } = trpc.aiPicks.getComprehensivePicks.useQuery();
-  const [activeFilter, setActiveFilter] = useState<"all" | "2-leg" | "3-leg">("all");
+  const { data: hrrData } = trpc.aiPicks.getHRRPicks.useQuery();
+  const [activeFilter, setActiveFilter] = useState<"all" | "2-leg" | "3-leg" | "hrr">("all");
 
-  const parlays = buildParlays(data?.picks || []);
-  const filteredParlays = activeFilter === "all" ? parlays : parlays.filter(p => p.type === activeFilter);
+  // Convert HRR picks into parlay-compatible format
+  const hrrLegs = (hrrData?.picks || []).map((pick: any) => ({
+    playerName: pick.playerName,
+    team: pick.team,
+    pitcherTeam: pick.pitcherTeam,
+    statType: "hrr",
+    line: pick.alternateLines?.find((a: any) => a.overProb >= 0.75)?.line || pick.alternateLines?.[0]?.line || 1.5,
+    confidence: Math.round((pick.alternateLines?.find((a: any) => a.overProb >= 0.75)?.overProb || pick.overProbability || 0.7) * 100),
+    combinedScore: Math.round((pick.overProbability || 0.7) * 100),
+    reasoning: pick.reasoning || "",
+    ballparkReasoning: pick.ballparkReasoning || "",
+    savantMetrics: pick.savantMetrics,
+  }));
+
+  // Merge individual picks with HRR picks for parlay building
+  const allLegs = [...(data?.picks || []), ...hrrLegs];
+  const parlays = buildParlays(allLegs);
+  
+  // Also build HRR-only parlays (all legs are HRR combined)
+  const hrrParlays = buildHRRParlays(hrrLegs);
+  
+  const filteredParlays = activeFilter === "all" 
+    ? [...parlays, ...hrrParlays]
+    : activeFilter === "hrr" 
+      ? hrrParlays 
+      : parlays.filter(p => p.type === activeFilter);
 
   if (isLoading) {
     return (
@@ -474,15 +561,16 @@ export function ParlaysTab() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {[
           { key: "all", label: "All Parlays" },
           { key: "2-leg", label: "2-Leg Safe" },
           { key: "3-leg", label: "3-Leg" },
-        ].map((tab) => (
+          { key: "hrr", label: "HRR Parlays" },
+        ].map((tab: { key: string; label: string }) => (
           <button
             key={tab.key}
-            onClick={() => setActiveFilter(tab.key as any)}
+            onClick={() => setActiveFilter(tab.key as "all" | "2-leg" | "3-leg" | "hrr")}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeFilter === tab.key
                 ? "bg-white/10 text-white border border-white/20"
@@ -506,10 +594,28 @@ export function ParlaysTab() {
           </div>
           <div className="space-y-3">
             {filteredParlays
-              .filter(p => p.type === "2-leg")
-              .map((parlay, i) => (
+              .filter((p: Parlay) => p.type === "2-leg" && !p.id.startsWith("hrr-"))
+              .map((parlay: Parlay, i: number) => (
                 <ParlayCard key={parlay.id} parlay={parlay} index={i} />
               ))}
+          </div>
+        </div>
+      )}
+
+      {/* Section: HRR Parlays */}
+      {(activeFilter === "all" || activeFilter === "hrr") && hrrParlays.length > 0 && (
+        <div className={activeFilter === "all" ? "mt-6" : ""}>
+          <div className="flex items-center gap-2 mb-3">
+            <Flame size={14} className="text-purple-400" />
+            <h3 className="text-sm font-bold text-white">HRR Combined Parlays</h3>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              SAFEST PROP TYPE
+            </span>
+          </div>
+          <div className="space-y-3">
+            {hrrParlays.map((parlay: Parlay, i: number) => (
+              <ParlayCard key={parlay.id} parlay={parlay} index={i} />
+            ))}
           </div>
         </div>
       )}
@@ -526,8 +632,8 @@ export function ParlaysTab() {
           </div>
           <div className="space-y-3">
             {filteredParlays
-              .filter(p => p.type === "3-leg")
-              .map((parlay, i) => (
+              .filter((p: Parlay) => p.type === "3-leg" && !p.id.startsWith("hrr-"))
+              .map((parlay: Parlay, i: number) => (
                 <ParlayCard key={parlay.id} parlay={parlay} index={i} />
               ))}
           </div>

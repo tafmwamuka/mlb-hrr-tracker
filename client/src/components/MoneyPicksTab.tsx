@@ -90,7 +90,10 @@ function MoneyPickCard({ pick, rank }: { pick: MoneyPick; rank: number }) {
             <div>
               <div className="text-white font-bold text-base">{pick.playerName}</div>
               <div className="text-[oklch(0.55_0.015_255)] text-xs">
-                {pick.team} · #{pick.battingPosition} · vs {pick.pitcher}
+                {pick.team} vs {pick.pitcherTeam} · #{pick.battingPosition}
+              </div>
+              <div className="text-[oklch(0.42_0.015_255)] text-[10px] mt-0.5">
+                vs {pick.pitcher} ({pick.pitcherTeam})
               </div>
             </div>
           </div>
