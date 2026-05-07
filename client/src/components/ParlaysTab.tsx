@@ -77,8 +77,16 @@ function buildParlays(picks: any[]): Parlay[] {
   const parlays: Parlay[] = [];
 
   // Sort by combinedScore (Savant + Ballpark) for best combinations
+  // Stat priority tiebreaker: Hits > Runs > RBI (RBI is riskiest)
+  const STAT_PRIORITY: Record<string, number> = { hits: 3, runs: 2, rbi: 1, slg: 0 };
   const sorted = [...picks]
-    .sort((a, b) => (b.combinedScore || b.confidence) - (a.combinedScore || a.confidence));
+    .sort((a, b) => {
+      const scoreDiff = (b.combinedScore || b.confidence) - (a.combinedScore || a.confidence);
+      if (Math.abs(scoreDiff) < 3) {
+        return (STAT_PRIORITY[b.statType] || 0) - (STAT_PRIORITY[a.statType] || 0);
+      }
+      return scoreDiff;
+    });
 
   // Filter to only high-confidence picks for parlays
   const eligible2Leg = sorted.filter(p => (p.combinedScore || p.confidence) >= MIN_2LEG_SCORE);

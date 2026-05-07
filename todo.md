@@ -321,3 +321,13 @@
 - [x] Update scheduled task to: store daily picks + fetch previous day results — added /api/scheduled/backfill-results endpoint
 - [x] Write Vitest tests for results comparison logic (27 tests passing)
 - [x] Verify automatic daily updates work end-to-end — Results tab shows 108 real predictions from DB, pending backfill
+
+## Stat Priority Reorder (May 7 - User Request)
+- [x] Define global stat priority: Hits > HRR > Runs > RBI (RBI = riskiest)
+- [x] Update AI pick ranking to weight Hits highest, RBI lowest — added STAT_PRIORITY_BONUS in aiRankingService
+- [x] Update Top Plays tab sorting to prioritize Hits picks over Runs/RBI — stat priority tiebreaker in sort
+- [x] Update All Plays tab sorting to follow stat priority — same tiebreaker applied
+- [x] Update HRR tab positioning (already second in nav)
+- [x] Update Results tab display order by stat priority — results sorted Hits first
+- [x] Update Parlays tab to prefer Hits-heavy parlays — stat priority tiebreaker in buildParlays
+- [x] Verify tab navigation order matches priority (already correct: Top Plays, All Plays, HRR, Parlays, Results)

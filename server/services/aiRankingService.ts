@@ -228,11 +228,14 @@ export function rankAIPicks(
       const ballparkReasoning = `Playing at ${parkFactorValue} park. RC ranking: ${Math.round(matchup.rc)}/100. ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ""}`;
 
       // Determine best stat type based on player data (H/R/RBI only - no Slg %)
+      // Priority order: Hits > Runs > RBI (RBI is riskiest)
+      // Apply priority bonus so Hits are strongly preferred unless another stat is significantly better
       const stats = playerData.stats;
+      const STAT_PRIORITY_BONUS = { hits: 25, runs: 10, rbi: 0 };
       const statScores = {
-        hits: (stats.hits / 50) * 100,
-        runs: (stats.runs / 40) * 100,
-        rbi: (stats.rbi / 80) * 100,
+        hits: (stats.hits / 50) * 100 + STAT_PRIORITY_BONUS.hits,
+        runs: (stats.runs / 40) * 100 + STAT_PRIORITY_BONUS.runs,
+        rbi: (stats.rbi / 80) * 100 + STAT_PRIORITY_BONUS.rbi,
       };
       const bestStat = Object.entries(statScores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as 'hits' | 'runs' | 'rbi';
 
@@ -310,7 +313,15 @@ export function rankAIPicks(
       } as AIPick;
     })
     .filter((pick): pick is AIPick => pick !== null)
-    .sort((a, b) => b.overallScore - a.overallScore)
+    .sort((a, b) => {
+      const scoreDiff = b.overallScore - a.overallScore;
+      if (Math.abs(scoreDiff) < 3) {
+        // Within 3 points, prefer by stat priority: Hits > Runs > RBI
+        const STAT_PRIORITY: Record<string, number> = { hits: 3, runs: 2, rbi: 1, slg: 0 };
+        return (STAT_PRIORITY[b.statType] || 0) - (STAT_PRIORITY[a.statType] || 0);
+      }
+      return scoreDiff;
+    })
     .map((pick, index) => ({
       ...pick,
       rank: index + 1,

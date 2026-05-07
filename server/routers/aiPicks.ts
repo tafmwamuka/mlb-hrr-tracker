@@ -650,8 +650,17 @@ export const aiPicksRouter = router({
       const enrichedPicks = enrichPicksWithSavant(allPicks);
       
       // Re-sort by combinedScore (Savant + Ballpark) for top picks
+      // Stat priority tiebreaker: Hits > Runs > RBI (RBI is riskiest)
+      const STAT_SORT_PRIORITY: Record<string, number> = { hits: 3, runs: 2, rbi: 1, slg: 0 };
       const topPicks = [...enrichedPicks]
-        .sort((a, b) => (b.combinedScore || b.overallScore) - (a.combinedScore || a.overallScore))
+        .sort((a, b) => {
+          const scoreDiff = (b.combinedScore || b.overallScore) - (a.combinedScore || a.overallScore);
+          if (Math.abs(scoreDiff) < 3) {
+            // Within 3 points, prefer by stat priority
+            return (STAT_SORT_PRIORITY[b.statType] || 0) - (STAT_SORT_PRIORITY[a.statType] || 0);
+          }
+          return scoreDiff;
+        })
         .slice(0, 5)
         .map((pick, idx) => ({ ...pick, rank: idx + 1 }));
       
@@ -686,10 +695,22 @@ export const aiPicksRouter = router({
       
       // Enrich all picks with Savant data
       const enrichedPicks = enrichPicksWithSavant(picks);
+      
+      // Re-sort with stat priority tiebreaker: Hits > Runs > RBI (RBI is riskiest)
+      const STAT_SORT_PRIORITY_ALL: Record<string, number> = { hits: 3, runs: 2, rbi: 1, slg: 0 };
+      const sortedPicks = [...enrichedPicks]
+        .sort((a, b) => {
+          const scoreDiff = (b.combinedScore || b.overallScore) - (a.combinedScore || a.overallScore);
+          if (Math.abs(scoreDiff) < 3) {
+            return (STAT_SORT_PRIORITY_ALL[b.statType] || 0) - (STAT_SORT_PRIORITY_ALL[a.statType] || 0);
+          }
+          return scoreDiff;
+        })
+        .map((pick, idx) => ({ ...pick, rank: idx + 1 }));
 
       return {
         success: true,
-        picks: enrichedPicks,
+        picks: sortedPicks,
         timestamp: new Date(),
       };
     } catch (error) {

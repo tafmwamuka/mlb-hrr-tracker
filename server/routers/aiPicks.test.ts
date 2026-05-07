@@ -180,6 +180,34 @@ describe("AI Picks Ranking Service", () => {
       });
     });
 
+    it("should prioritize Hits over Runs and RBI due to stat priority bonus", () => {
+      const picks = rankAIPicks(mockMatchups, mockPlayers, getMockHRTargets(), getMockParkFactors());
+      
+      // Count stat types - Hits should dominate since they get a +25 priority bonus
+      const statCounts = { hits: 0, runs: 0, rbi: 0, slg: 0 };
+      picks.forEach((pick) => {
+        statCounts[pick.statType as keyof typeof statCounts]++;
+      });
+      
+      // Hits should be the most common stat type due to priority bonus
+      expect(statCounts.hits).toBeGreaterThanOrEqual(statCounts.rbi);
+    });
+
+    it("should use stat priority as tiebreaker when scores are within 3 points", () => {
+      const picks = rankAIPicks(mockMatchups, mockPlayers, getMockHRTargets(), getMockParkFactors());
+      
+      // Check that when two adjacent picks have similar scores, Hits pick comes first
+      for (let i = 0; i < picks.length - 1; i++) {
+        const scoreDiff = Math.abs(picks[i].overallScore - picks[i + 1].overallScore);
+        if (scoreDiff < 3) {
+          const STAT_PRIORITY: Record<string, number> = { hits: 3, runs: 2, rbi: 1, slg: 0 };
+          const priorityA = STAT_PRIORITY[picks[i].statType] || 0;
+          const priorityB = STAT_PRIORITY[picks[i + 1].statType] || 0;
+          expect(priorityA).toBeGreaterThanOrEqual(priorityB);
+        }
+      }
+    });
+
     it("should include stat-specific confidence scores", () => {
       const picks = rankAIPicks(mockMatchups, mockPlayers, getMockHRTargets(), getMockParkFactors());
       const pick = picks[0];

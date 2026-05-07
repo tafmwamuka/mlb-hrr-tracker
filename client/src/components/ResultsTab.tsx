@@ -53,9 +53,15 @@ export function ResultsTab() {
     );
   }
 
+  // Sort results by stat priority: Hits > Runs > RBI (RBI is riskiest)
+  const STAT_PRIORITY: Record<string, number> = { hits: 3, runs: 2, rbi: 1 };
+  const sortedResults = [...results].sort((a: any, b: any) => {
+    return (STAT_PRIORITY[b.statType] || 0) - (STAT_PRIORITY[a.statType] || 0);
+  });
+
   // Separate results into resolved (have actuals) and pending
-  const resolvedResults = results.filter((r: any) => r.actualValue !== null);
-  const pendingResults = results.filter((r: any) => r.actualValue === null);
+  const resolvedResults = sortedResults.filter((r: any) => r.actualValue !== null);
+  const pendingResults = sortedResults.filter((r: any) => r.actualValue === null);
   const hitCount = resolvedResults.filter((r: any) => r.hit === true).length;
 
   return (
