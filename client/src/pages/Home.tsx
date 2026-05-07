@@ -25,6 +25,7 @@ import { AllPlaysTab } from "@/components/AllPlaysTab";
 import { ParlaysTab } from "@/components/ParlaysTab";
 import { MoneyPicksTab } from "@/components/MoneyPicksTab";
 import { ResultsTab } from "@/components/ResultsTab";
+import { GameCards } from "@/components/GameCards";
 import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Calendar, Trophy, Zap as ZapIcon, Layers, Ticket, Activity } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -592,6 +593,7 @@ export default function Home() {
               transition={{ duration: 0.2 }}
               className="flex-1 overflow-y-auto flex flex-col"
             >
+              <GameCards />
               <MoneyPicksTab />
             </motion.div>
           )}

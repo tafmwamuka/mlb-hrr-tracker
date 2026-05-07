@@ -10,6 +10,8 @@ import { getMockSavantData, calculateCombinedScore, type SavantHitter, type Sava
 import { generateHRRProjections } from "../services/hrrService";
 import { fetchHRRMarketData, getBestHRRLine, americanToImpliedProbability, removeVig } from "../services/oddsApiService";
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from "../services/poissonModel";
+import { getAdaptedLineupData, getGamesForUI } from "../services/lineupAdapter";
+import type { MLBGame } from "../services/mlbLineupService";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -641,9 +643,15 @@ export const aiPicksRouter = router({
    */
   getTopPicks: publicProcedure.query(async () => {
     try {
+      // Try real lineup data first, fall back to mock
+      const lineupData = await getAdaptedLineupData();
+      const useReal = lineupData.matchups.length > 0;
+      const matchups = useReal ? lineupData.matchups : MOCK_MATCHUPS;
+      const players = useReal ? lineupData.playerDataMap : MOCK_PLAYERS;
+
       const allPicks = rankAIPicks(
-        MOCK_MATCHUPS,
-        MOCK_PLAYERS,
+        matchups,
+        players,
         getMockHRTargets(),
         getMockParkFactors()
       );
@@ -688,9 +696,15 @@ export const aiPicksRouter = router({
    */
   getComprehensivePicks: publicProcedure.query(async () => {
     try {
+      // Try real lineup data first, fall back to mock
+      const lineupData = await getAdaptedLineupData();
+      const useReal = lineupData.matchups.length > 0;
+      const matchups = useReal ? lineupData.matchups : MOCK_MATCHUPS;
+      const players = useReal ? lineupData.playerDataMap : MOCK_PLAYERS;
+
       const picks = rankAIPicks(
-        MOCK_MATCHUPS,
-        MOCK_PLAYERS,
+        matchups,
+        players,
         getMockHRTargets(),
         getMockParkFactors()
       );
@@ -733,6 +747,12 @@ export const aiPicksRouter = router({
    */
   getHRRPicks: publicProcedure.query(async () => {
     try {
+      // Try real lineup data first, fall back to mock
+      const lineupData = await getAdaptedLineupData();
+      const useReal = lineupData.matchups.length > 0;
+      const matchups = useReal ? lineupData.matchups : MOCK_MATCHUPS;
+      const players = useReal ? lineupData.playerDataMap : MOCK_PLAYERS;
+
       // Get park factors
       const parkFactors = getMockParkFactors();
       
@@ -752,8 +772,8 @@ export const aiPicksRouter = router({
       
       // Generate HRR projections using real player stats
       const projections = generateHRRProjections(
-        MOCK_MATCHUPS,
-        MOCK_PLAYERS,
+        matchups,
+        players,
         parkFactors,
         savantMap
       );
@@ -878,4 +898,28 @@ export const aiPicksRouter = router({
         };
       }
     }),
+
+  /**
+   * Get today's games with lineups for game cards UI
+   * Returns real MLB schedule data with batting orders and probable pitchers
+   */
+  getTodaysGames: publicProcedure.query(async () => {
+    try {
+      const games = await getGamesForUI();
+      return {
+        success: true,
+        games,
+        timestamp: new Date(),
+        lineupAvailable: games.some(g => g.homeLineup.length > 0 || g.awayLineup.length > 0),
+      };
+    } catch (error) {
+      console.error("Error fetching today's games:", error);
+      return {
+        success: false,
+        games: [] as MLBGame[],
+        timestamp: new Date(),
+        lineupAvailable: false,
+      };
+    }
+  }),
 });

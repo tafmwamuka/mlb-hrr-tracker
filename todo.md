@@ -373,3 +373,11 @@
 - [x] Add streak indicator on picks (e.g., "Hit 4 of last 5")
 - [x] Add quick filter buttons on Money Picks (All 75%+ / 85%+ / 90%+ Locks)
 - [x] Add parlay builder — tap "Add to Parlay" on any pick, floating builder shows combined probability
+
+## Game Cards + Real Lineups (May 7 - User Request)
+- [x] Fetch today's real MLB games from MLB Stats API (mlbLineupService.ts)
+- [x] Fetch actual starting lineups/batting orders for each game
+- [x] Map players to their CURRENT teams (e.g., Bichette → NYM)
+- [x] Only generate picks for players in today's lineup (with mock fallback)
+- [x] Add game cards UI showing today's matchups with lineups (GameCards.tsx)
+- [x] Replace mock player data with real lineup-based player pool (lineupAdapter.ts)

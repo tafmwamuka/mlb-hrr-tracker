@@ -17,7 +17,7 @@ describe("Parlays - AI Picks Data Source", () => {
     expect(Array.isArray(result.picks)).toBe(true);
     // Need at least 6 picks to build both 2-leg and 3-leg parlays
     expect(result.picks.length).toBeGreaterThanOrEqual(6);
-  });
+  }, 30000);
 
   it("should return picks with required fields for parlay building", async () => {
     const result = await caller.getComprehensivePicks();
@@ -37,7 +37,7 @@ describe("Parlays - AI Picks Data Source", () => {
       expect(pick.line).toBeDefined();
       expect(typeof pick.line).toBe("number");
     }
-  });
+  }, 15000);
 
   it("should return picks from diverse teams (needed for cross-game parlays)", async () => {
     const result = await caller.getComprehensivePicks();
@@ -45,7 +45,7 @@ describe("Parlays - AI Picks Data Source", () => {
     const teams = new Set(result.picks.map((p: any) => p.team));
     // Need at least 3 different teams for 3-leg parlays
     expect(teams.size).toBeGreaterThanOrEqual(3);
-  });
+  }, 15000);
 
   it("should return picks sorted by rank", async () => {
     const result = await caller.getComprehensivePicks();
