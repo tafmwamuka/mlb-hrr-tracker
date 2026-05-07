@@ -42,16 +42,16 @@ export default function Props() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 p-4">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">MLB Prop Predictions</h1>
-            <p className="text-slate-400">AI-powered H/R/RBI/Slg % prop lines with park adjustments</p>
+            <h1 className="text-4xl font-bold text-white mb-2">AI Prop Predictions</h1>
+            <p className="text-slate-400 text-lg">Methodical analysis of today's best prop opportunities</p>
           </div>
           <button
             onClick={() => navigate("/favorites")}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
+            className="flex items-center gap-2 px-6 py-3 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors font-semibold"
           >
             <Star className="w-5 h-5 fill-current" />
             My Plays
@@ -60,38 +60,43 @@ export default function Props() {
 
         {/* Performance Stats */}
         {performance && (
-          <Card className="mb-6 bg-slate-800 border-slate-700 p-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm text-slate-400">Overall Hit Rate</p>
-                <p className="text-2xl font-bold text-white">{performance.overallHitRate}%</p>
+          <div className="mb-8">
+            <h2 className="text-lg font-bold text-white mb-4">Model Performance</h2>
+            <Card className="bg-gradient-to-r from-slate-800 to-slate-700 border-slate-600 p-6">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="border-r border-slate-600 pr-4">
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Overall Hit Rate</p>
+                  <p className="text-3xl font-bold text-white mt-1">{performance.overallHitRate}%</p>
+                </div>
+                <div className="border-r border-slate-600 pr-4">
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Hits Accuracy</p>
+                  <p className="text-3xl font-bold text-amber-400 mt-1">{performance.hitsHitRate}%</p>
+                </div>
+                <div className="border-r border-slate-600 pr-4">
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Runs Accuracy</p>
+                  <p className="text-3xl font-bold text-orange-400 mt-1">{performance.runsHitRate}%</p>
+                </div>
+                <div className="border-r border-slate-600 pr-4">
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">RBI Accuracy</p>
+                  <p className="text-3xl font-bold text-emerald-400 mt-1">{performance.rbiHitRate}%</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 uppercase tracking-wide">Slg % Accuracy</p>
+                  <p className="text-3xl font-bold text-purple-400 mt-1">{performance.slgHitRate || "N/A"}%</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-slate-400">Hits Accuracy</p>
-                <p className="text-2xl font-bold text-amber-400">{performance.hitsHitRate}%</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-400">Runs Accuracy</p>
-                <p className="text-2xl font-bold text-orange-400">{performance.runsHitRate}%</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-400">RBI Accuracy</p>
-                <p className="text-2xl font-bold text-emerald-400">{performance.rbiHitRate}%</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-400">Slg % Accuracy</p>
-                <p className="text-2xl font-bold text-purple-400">{performance.slgHitRate || "N/A"}%</p>
-              </div>
-            </div>
-          </Card>
+            </Card>
+          </div>
         )}
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "all" | "high-confidence")} className="mb-6">
-          <TabsList className="bg-slate-800 border border-slate-700">
-            <TabsTrigger value="all">All Predictions</TabsTrigger>
-            <TabsTrigger value="high-confidence">High Confidence (75%+)</TabsTrigger>
-          </TabsList>
+        <div className="mb-8">
+          <h2 className="text-lg font-bold text-white mb-4">Today's Predictions</h2>
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "all" | "high-confidence")} className="">
+            <TabsList className="bg-slate-800 border border-slate-700 mb-6">
+              <TabsTrigger value="all">All Predictions</TabsTrigger>
+              <TabsTrigger value="high-confidence">High Confidence (75%+)</TabsTrigger>
+            </TabsList>
 
           <TabsContent value="all" className="space-y-4 mt-4">
             {isLoading ? (
@@ -324,7 +329,8 @@ export default function Props() {
               </div>
             )}
           </TabsContent>
-        </Tabs>
+          </Tabs>
+        </div>
       </div>
     </div>
   );
