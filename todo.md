@@ -49,9 +49,11 @@
 - [ ] Track rest days and fatigue
 - [ ] Fetch injury status from MLB API
 - [ ] Update daily job to include all data sources
-- [ ] Integrate all factors into confidence calculation
+- [ ] Integrate all factors into confidence calculation (weighted into rankAIPicks)
 - [ ] Test improved accuracy with full data model
 - [ ] Display matchup context on Props page
+- [x] Fix MOCK_MATCHUPS pitcher data types
+- [ ] Integrate advanced data into AI ranking algorithm (handedness, workload, weather, recent form)
 
 ## Phase 5: Testing & Optimization
 - [ ] Write vitest tests for prop prediction model
