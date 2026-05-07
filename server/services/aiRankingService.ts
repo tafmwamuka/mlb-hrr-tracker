@@ -223,16 +223,39 @@ export function rankAIPicks(
       // Calculate realistic prop line based on season average and park factor
       // Standard MLB prop lines are typically: Hits 3.5, Runs 2.5, RBI 3.5
       const calculateRealisticLine = (stat: 'hits' | 'runs' | 'rbi', value: number, parkFactor: number): number => {
-        const seasonAverage = value / 162; // Assuming 162 game season
-        const baseLines = {
-          hits: 3.5,
-          runs: 2.5,
-          rbi: 3.5,
-        };
-        // Adjust base line by season average and park factor
-        const adjustedLine = baseLines[stat] * (seasonAverage / 0.25) * (parkFactor / 1.0);
-        // Round to nearest 0.5
-        return Math.round(adjustedLine * 2) / 2;
+        // Calculate per-game average from season totals
+        // Assuming ~40 games played so far in season (early-mid season)
+        const gamesPlayed = 40;
+        const perGameAvg = value / gamesPlayed;
+        
+        // Real sportsbook lines are set slightly below the player's average
+        // to create balanced action. Common lines:
+        // Hits: 0.5, 1.5, 2.5 (most players 1.5)
+        // Runs: 0.5, 1.5 (most players 0.5)
+        // RBI: 0.5, 1.5 (most players 0.5)
+        let line: number;
+        
+        if (stat === 'hits') {
+          // Avg hits per game: ~1.0-1.5 for good hitters
+          if (perGameAvg >= 1.5) line = 1.5;
+          else if (perGameAvg >= 1.0) line = 1.5;
+          else line = 0.5;
+        } else if (stat === 'runs') {
+          // Avg runs per game: ~0.5-0.8 for good hitters
+          if (perGameAvg >= 0.9) line = 1.5;
+          else line = 0.5;
+        } else {
+          // RBI: Avg per game ~0.5-0.7 for good hitters, elite ~0.8+
+          if (perGameAvg >= 0.9) line = 1.5;
+          else line = 0.5;
+        }
+        
+        // Park factor can bump up the line for hitter-friendly parks
+        if (parkFactor > 1.1 && line === 0.5) {
+          line = 1.5;
+        }
+        
+        return line;
       };
 
       const adjustedParkFactor = parkFactorScore / 100;
