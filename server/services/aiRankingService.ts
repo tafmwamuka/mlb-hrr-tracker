@@ -148,7 +148,7 @@ export function rankAIPicks(
   hrTargetsMap: Map<string, HRTargetData>,
   parkFactors: Map<string, number>
 ): AIPick[] {
-  const picks: AIPick[] = matchups
+  const picks = matchups
     .map((matchup) => {
       const playerData = playerDataMap.get(matchup.playerId);
       const hrTargets = hrTargetsMap.get(matchup.playerName);
@@ -184,15 +184,14 @@ export function rankAIPicks(
 
       const reasoning = reasons.join(" • ");
 
-      // Determine best stat type based on player data
+      // Determine best stat type based on player data (H/R/RBI only - no Slg %)
       const stats = playerData.stats;
       const statScores = {
         hits: (stats.hits / 50) * 100,
         runs: (stats.runs / 40) * 100,
         rbi: (stats.rbi / 80) * 100,
-        slg: (stats.slg / 0.500) * 100,
       };
-      const bestStat = Object.entries(statScores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as 'hits' | 'runs' | 'rbi' | 'slg';
+      const bestStat = Object.entries(statScores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as 'hits' | 'runs' | 'rbi';
 
       return {
         rank: 0,
@@ -202,7 +201,7 @@ export function rankAIPicks(
         position: matchup.position,
         battingPosition: matchup.battingPosition,
         pitcher: matchup.pitcher.name,
-        statType: bestStat,
+        statType: bestStat as 'hits' | 'runs' | 'rbi' | 'slg',
         statConfidence: {
           hits: Math.round(Math.min(100, (stats.hits / 50) * 100 * (overallScore / 100))),
           runs: Math.round(Math.min(100, (stats.runs / 40) * 100 * (overallScore / 100))),
