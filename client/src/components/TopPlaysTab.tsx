@@ -125,7 +125,7 @@ export function TopPlaysTab() {
                 <div className="mb-3">
                   <h3 className="text-lg font-bold text-white mb-1">{pick.playerName}</h3>
                   <p className="text-sm text-[oklch(0.50_0.015_255)]">
-                    {pick.team} • Batting #{pick.battingPosition} vs Pitcher
+                    {pick.team} • Batting #{pick.battingPosition} vs {(pick as any).pitcher || 'Pitcher'}
                   </p>
                 </div>
 
@@ -158,10 +158,10 @@ export function TopPlaysTab() {
                 <div className="flex items-center justify-between text-xs mb-3">
                   <div className="flex gap-2">
                     <div className="px-2 py-1 rounded bg-[oklch(1_0_0/4%)] text-[oklch(0.60_0.015_255)]">
-                      RC: <span className="font-bold text-white">{Math.round(pick.confidence * 0.4)}</span>
+                      RC: <span className="font-bold text-white">{(pick as any).factorBreakdown?.rc ?? Math.round(pick.confidence * 0.4)}</span>
                     </div>
                     <div className="px-2 py-1 rounded bg-[oklch(1_0_0/4%)] text-[oklch(0.60_0.015_255)]">
-                      Park: <span className="font-bold text-white">{Math.round(pick.confidence * 0.85)}</span>
+                      Park: <span className="font-bold text-white">{(pick as any).factorBreakdown?.parkFactors ?? Math.round(pick.confidence * 0.85)}</span>
                     </div>
                   </div>
                   <motion.button
@@ -211,18 +211,23 @@ export function TopPlaysTab() {
                           Why This Pick
                         </h4>
                         <p className="text-sm text-[oklch(0.55_0.015_255)] leading-relaxed">{pick.reasoning}</p>
+                        {(pick as any).ballparkReasoning && (
+                          <p className="text-xs text-[oklch(0.45_0.015_255)] mt-2 italic border-l-2 pl-2" style={{ borderColor: statConfig.color }}>
+                            {(pick as any).ballparkReasoning}
+                          </p>
+                        )}
                       </div>
 
                       {/* Factor breakdown */}
                       <div className="space-y-2">
                         <h4 className="text-sm font-bold text-white mb-2">Factor Breakdown</h4>
                         {[
-                          { label: "RC Score", value: Math.round(pick.confidence * 0.4), max: 40 },
-                          { label: "Player Stats", value: Math.round(pick.confidence * 0.95), max: 100 },
-                          { label: "Park Factor", value: Math.round(pick.confidence * 0.85), max: 100 },
-                          { label: "HR Targets", value: Math.round(pick.confidence * 0.90), max: 100 },
-                          { label: "Pitcher Matchup", value: Math.round(pick.confidence * 0.80), max: 100 },
-                          { label: "Position Weight", value: Math.round(pick.confidence * 0.75), max: 100 },
+                          { label: "RC Score", value: (pick as any).factorBreakdown?.rc ?? Math.round(pick.confidence * 0.4), max: 100 },
+                          { label: "Player Stats", value: (pick as any).factorBreakdown?.playerStats ?? Math.round(pick.confidence * 0.95), max: 100 },
+                          { label: "Park Factor", value: (pick as any).factorBreakdown?.parkFactors ?? Math.round(pick.confidence * 0.85), max: 100 },
+                          { label: "HR Targets", value: (pick as any).factorBreakdown?.hrTargets ?? Math.round(pick.confidence * 0.90), max: 100 },
+                          { label: "Pitcher Matchup", value: (pick as any).factorBreakdown?.pitcherMatchup ?? Math.round(pick.confidence * 0.80), max: 100 },
+                          { label: "Position Weight", value: (pick as any).factorBreakdown?.battingPosition ?? Math.round(pick.confidence * 0.75), max: 100 },
                         ].map((factor, i) => (
                           <div key={i} className="flex items-center gap-2">
                             <span className="text-xs text-[oklch(0.50_0.015_255)] w-24">{factor.label}</span>
@@ -245,9 +250,9 @@ export function TopPlaysTab() {
                         <h4 className="text-sm font-bold text-white mb-2">Stat Confidence</h4>
                         <div className="grid grid-cols-3 gap-2">
                           {[
-                          { stat: "Hits", conf: Math.max(75, Math.round(pick.confidence * 0.95)), icon: "📊" },
-                          { stat: "Runs", conf: Math.max(70, Math.round(pick.confidence * 0.92)), icon: "⚡" },
-                          { stat: "RBI", conf: Math.max(80, Math.round(pick.confidence * 0.98)), icon: "🎯" },
+                          { stat: "Hits", conf: (pick as any).statConfidence?.hits ?? Math.round(pick.confidence * 0.95), icon: "📊" },
+                          { stat: "Runs", conf: (pick as any).statConfidence?.runs ?? Math.round(pick.confidence * 0.92), icon: "⚡" },
+                          { stat: "RBI", conf: (pick as any).statConfidence?.rbi ?? Math.round(pick.confidence * 0.98), icon: "🎯" },
                           ].map((s, i) => (
                             <div key={i} className="bg-[oklch(1_0_0/4%)] rounded p-2 text-center">
                               <div className="text-lg mb-1">{s.icon}</div>

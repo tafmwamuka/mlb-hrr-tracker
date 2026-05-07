@@ -246,3 +246,7 @@
 - [ ] Show transparent reasoning for each prediction (why RBI 6.5 for Judge, etc.)
 - [ ] Verify prop line calculations are realistic and market-based
 - [ ] Test all predictions against real sportsbook data
+
+## BUGS - User Reported (May 7)
+- [x] Fix All Plays tab repeating same 3-4 players (should show diverse picks) - FIXED: switched to AI picks endpoint + added 15 unique players
+- [x] Fix crown/fav icons sticking when scrolling down (CSS positioning issue) - FIXED: removed absolute positioning from Crown icon

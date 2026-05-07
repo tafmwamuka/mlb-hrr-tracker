@@ -62,31 +62,24 @@ function determineBestProp(rc: number, stats: any): keyof typeof STAT_CONFIG {
 }
 
 export function AllPlaysTab() {
-  const { data: propsData, isLoading } = trpc.props.getTodayProps.useQuery();
+  const { data: aiPicksData, isLoading } = trpc.aiPicks.getComprehensivePicks.useQuery();
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  // Convert props data to display format with real prediction data
-  const matchups = propsData?.slice(0, 15).map((prop: any, idx: number) => {
-    // Get the best prediction (highest confidence)
-    const predictions = [
-      { type: "hits", data: prop.hitsPrediction },
-      { type: "runs", data: prop.runsPrediction },
-      { type: "rbi", data: prop.rbiPrediction },
-    ];
-    const bestPred = predictions.reduce((a, b) =>
-      (a.data?.confidence || 0) > (b.data?.confidence || 0) ? a : b
-    );
-
+  // Convert AI picks data to display format
+  const matchups = (aiPicksData?.picks || []).slice(0, 15).map((pick: any, idx: number) => {
     return {
       rank: idx + 1,
-      batter: { name: prop.playerName, id: String(prop.playerId), team: "MLB", handedness: "R" },
-      pitcher: { name: "Pitcher", id: "TBD", team: "TBD" },
-      matchup: { vs: "Today" },
-      stats: { rc: 30, hr: 0, xb: 0, oneB: 0, bb: 0, k: 0 },
-      confidence: bestPred.data?.confidence || 0,
-      line: bestPred.data?.line || 0.5,
+      batter: { name: pick.playerName, id: String(pick.playerId), team: pick.team, handedness: "R" },
+      pitcher: { name: pick.pitcher || "TBD", id: `pitcher-${idx}`, team: "OPP" },
+      matchup: { vs: `vs ${pick.pitcher || 'TBD'}` },
+      stats: { rc: pick.factorBreakdown?.rc || 0, hr: 0, xb: 0, oneB: 0, bb: 0, k: 0 },
+      confidence: pick.confidence || 0,
+      line: pick.line || 0.5,
+      statType: pick.statType || "hits",
+      reasoning: pick.reasoning || "",
+      ballparkReasoning: pick.ballparkReasoning || "",
     };
-  }) || [];
+  });
 
   const toggleFavorite = (batterId: string, pitcherId: string) => {
     const key = `${batterId}-${pitcherId}`;
@@ -124,7 +117,7 @@ export function AllPlaysTab() {
       {topPlays.map((play, idx) => {
         const color = RANK_COLORS[play.rank as keyof typeof RANK_COLORS] || "oklch(0.50 0.015 255)";
         const isTopPlay = play.rank <= 3;
-        const bestProp = determineBestProp(play.stats.rc, play.stats);
+        const bestProp = (play as any).statType && STAT_CONFIG[(play as any).statType as keyof typeof STAT_CONFIG] ? (play as any).statType as keyof typeof STAT_CONFIG : determineBestProp(play.stats.rc, play.stats);
         const bestPropConfig = STAT_CONFIG[bestProp];
         const BestIcon = bestPropConfig.icon;
         const isFavorited = favorites.has(`${play.batter.id}-${play.pitcher.id}`);
@@ -149,7 +142,7 @@ export function AllPlaysTab() {
               <div className="flex items-center gap-2 flex-1">
                 {/* Rank badge */}
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
+                  className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 relative ${
                     isTopPlay ? "ring-2" : ""
                   }`}
                   style={{
@@ -157,7 +150,7 @@ export function AllPlaysTab() {
                     color,
                   }}
                 >
-                  {isTopPlay && <Crown size={14} className="absolute" />}
+                  {isTopPlay && <Crown size={14} />}
                   {!isTopPlay && play.rank}
                 </div>
 
