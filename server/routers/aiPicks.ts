@@ -8,6 +8,8 @@ import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/a
 import type { AIPick } from "../services/aiRankingService";
 import { getMockSavantData, calculateCombinedScore, type SavantHitter, type SavantPitcher } from "../services/savantService";
 import { generateHRRProjections } from "../services/hrrService";
+import { fetchHRRMarketData, getBestHRRLine, americanToImpliedProbability, removeVig } from "../services/oddsApiService";
+import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from "../services/poissonModel";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -19,20 +21,20 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 4,
     handedness: 'R' as const,
     stats: {
-      hits: 45,
-      runs: 38,
-      rbi: 92,
-      slg: 0.520,
-      avg: 0.285,
+      hits: 42,
+      runs: 30,
+      rbi: 32,
+      slg: 0.580,
+      avg: 0.275,
       obp: 0.380,
       power: 0.185,
     },
     recentForm: {
       last15Games: {
-        hits: 18,
-        runs: 15,
-        rbi: 38,
-        avg: 0.310,
+        hits: 16,
+        runs: 12,
+        rbi: 14,
+        avg: 0.295,
       },
       trend: 'hot' as const,
     },
@@ -45,9 +47,9 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 3,
     handedness: 'L' as const,
     stats: {
-      hits: 52,
-      runs: 41,
-      rbi: 88,
+      hits: 48,
+      runs: 32,
+      rbi: 28,
       slg: 0.545,
       avg: 0.310,
       obp: 0.420,
@@ -55,9 +57,9 @@ const MOCK_PLAYERS = new Map([
     },
     recentForm: {
       last15Games: {
-        hits: 20,
-        runs: 17,
-        rbi: 35,
+        hits: 19,
+        runs: 13,
+        rbi: 11,
         avg: 0.325,
       },
       trend: 'hot' as const,
@@ -72,8 +74,8 @@ const MOCK_PLAYERS = new Map([
     handedness: 'R' as const,
     stats: {
       hits: 38,
-      runs: 35,
-      rbi: 72,
+      runs: 24,
+      rbi: 22,
       slg: 0.480,
       avg: 0.275,
       obp: 0.360,
@@ -88,13 +90,13 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 5,
     handedness: 'R' as const,
     stats: {
-      hits: 48,
-      runs: 36,
-      rbi: 85,
-      slg: 0.510,
-      avg: 0.295,
-      obp: 0.375,
-      power: 0.180,
+      hits: 44,
+      runs: 22,
+      rbi: 26,
+      slg: 0.470,
+      avg: 0.280,
+      obp: 0.340,
+      power: 0.160,
     },
   }],
   [665742, {
@@ -105,9 +107,9 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 3,
     handedness: 'L' as const,
     stats: {
-      hits: 42,
-      runs: 33,
-      rbi: 78,
+      hits: 40,
+      runs: 24,
+      rbi: 25,
       slg: 0.495,
       avg: 0.280,
       obp: 0.365,
@@ -122,13 +124,13 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 1,
     handedness: 'R' as const,
     stats: {
-      hits: 52,
-      runs: 41,
-      rbi: 88,
-      slg: 0.545,
-      avg: 0.310,
-      obp: 0.420,
-      power: 0.195,
+      hits: 46,
+      runs: 30,
+      rbi: 24,
+      slg: 0.530,
+      avg: 0.295,
+      obp: 0.385,
+      power: 0.185,
     },
   }],
   [605141, {
@@ -139,12 +141,12 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 6,
     handedness: 'R' as const,
     stats: {
-      hits: 35,
-      runs: 28,
-      rbi: 65,
+      hits: 32,
+      runs: 18,
+      rbi: 24,
       slg: 0.450,
-      avg: 0.260,
-      obp: 0.340,
+      avg: 0.240,
+      obp: 0.320,
       power: 0.155,
     },
   }],
@@ -156,13 +158,13 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 2,
     handedness: 'L' as const,
     stats: {
-      hits: 50,
-      runs: 42,
-      rbi: 90,
-      slg: 0.535,
+      hits: 48,
+      runs: 34,
+      rbi: 30,
+      slg: 0.580,
       avg: 0.305,
-      obp: 0.410,
-      power: 0.190,
+      obp: 0.400,
+      power: 0.210,
     },
   }],
   [668939, {
@@ -173,13 +175,13 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 1,
     handedness: 'R' as const,
     stats: {
-      hits: 48,
-      runs: 44,
-      rbi: 72,
-      slg: 0.520,
-      avg: 0.300,
-      obp: 0.395,
-      power: 0.185,
+      hits: 44,
+      runs: 30,
+      rbi: 20,
+      slg: 0.500,
+      avg: 0.285,
+      obp: 0.380,
+      power: 0.175,
     },
   }],
   [665487, {
@@ -190,12 +192,12 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 4,
     handedness: 'L' as const,
     stats: {
-      hits: 40,
-      runs: 35,
-      rbi: 85,
+      hits: 38,
+      runs: 24,
+      rbi: 30,
       slg: 0.510,
-      avg: 0.275,
-      obp: 0.370,
+      avg: 0.260,
+      obp: 0.355,
       power: 0.180,
     },
   }],
@@ -207,12 +209,12 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 3,
     handedness: 'L' as const,
     stats: {
-      hits: 46,
-      runs: 38,
-      rbi: 80,
+      hits: 44,
+      runs: 26,
+      rbi: 28,
       slg: 0.500,
       avg: 0.290,
-      obp: 0.380,
+      obp: 0.370,
       power: 0.175,
     },
   }],
@@ -224,13 +226,13 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 1,
     handedness: 'L' as const,
     stats: {
-      hits: 44,
-      runs: 40,
-      rbi: 55,
-      slg: 0.460,
-      avg: 0.285,
-      obp: 0.365,
-      power: 0.150,
+      hits: 42,
+      runs: 28,
+      rbi: 18,
+      slg: 0.440,
+      avg: 0.280,
+      obp: 0.355,
+      power: 0.140,
     },
   }],
   [665750, {
@@ -241,12 +243,12 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 2,
     handedness: 'R' as const,
     stats: {
-      hits: 47,
-      runs: 39,
-      rbi: 78,
+      hits: 45,
+      runs: 28,
+      rbi: 26,
       slg: 0.515,
-      avg: 0.295,
-      obp: 0.385,
+      avg: 0.290,
+      obp: 0.370,
       power: 0.180,
     },
   }],
@@ -258,12 +260,12 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 3,
     handedness: 'R' as const,
     stats: {
-      hits: 42,
-      runs: 36,
-      rbi: 70,
+      hits: 40,
+      runs: 26,
+      rbi: 22,
       slg: 0.490,
-      avg: 0.270,
-      obp: 0.350,
+      avg: 0.265,
+      obp: 0.330,
       power: 0.175,
     },
   }],
@@ -275,13 +277,13 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 1,
     handedness: 'R' as const,
     stats: {
-      hits: 50,
-      runs: 38,
-      rbi: 62,
-      slg: 0.470,
-      avg: 0.295,
-      obp: 0.360,
-      power: 0.155,
+      hits: 46,
+      runs: 26,
+      rbi: 20,
+      slg: 0.450,
+      avg: 0.285,
+      obp: 0.340,
+      power: 0.145,
     },
   }],
   [663728, {
@@ -292,13 +294,13 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 3,
     handedness: 'S' as const,
     stats: {
-      hits: 44,
-      runs: 34,
-      rbi: 75,
-      slg: 0.485,
-      avg: 0.280,
-      obp: 0.375,
-      power: 0.165,
+      hits: 40,
+      runs: 24,
+      rbi: 26,
+      slg: 0.470,
+      avg: 0.270,
+      obp: 0.365,
+      power: 0.160,
     },
   }],
   [666971, {
@@ -309,13 +311,13 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 5,
     handedness: 'R' as const,
     stats: {
-      hits: 41,
-      runs: 32,
-      rbi: 78,
-      slg: 0.500,
-      avg: 0.275,
-      obp: 0.365,
-      power: 0.175,
+      hits: 38,
+      runs: 22,
+      rbi: 26,
+      slg: 0.490,
+      avg: 0.270,
+      obp: 0.355,
+      power: 0.170,
     },
   }],
   [670541, {
@@ -326,11 +328,11 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 2,
     handedness: 'R' as const,
     stats: {
-      hits: 55,
-      runs: 42,
-      rbi: 68,
+      hits: 50,
+      runs: 30,
+      rbi: 24,
       slg: 0.510,
-      avg: 0.305,
+      avg: 0.310,
       obp: 0.350,
       power: 0.170,
     },
@@ -343,12 +345,12 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 4,
     handedness: 'R' as const,
     stats: {
-      hits: 43,
-      runs: 30,
-      rbi: 72,
+      hits: 40,
+      runs: 22,
+      rbi: 28,
       slg: 0.480,
-      avg: 0.278,
-      obp: 0.355,
+      avg: 0.270,
+      obp: 0.345,
       power: 0.165,
     },
   }],
@@ -360,12 +362,12 @@ const MOCK_PLAYERS = new Map([
     battingPosition: 3,
     handedness: 'R' as const,
     stats: {
-      hits: 46,
-      runs: 35,
-      rbi: 74,
+      hits: 42,
+      runs: 24,
+      rbi: 26,
       slg: 0.495,
-      avg: 0.282,
-      obp: 0.345,
+      avg: 0.275,
+      obp: 0.340,
       power: 0.170,
     },
   }],
@@ -756,10 +758,76 @@ export const aiPicksRouter = router({
         savantMap
       );
 
+      // Fetch real sportsbook lines from The Odds API (non-blocking, falls back gracefully)
+      let marketData = new Map<string, any>();
+      try {
+        marketData = await fetchHRRMarketData();
+      } catch (e) {
+        console.warn("Odds API unavailable, using model-only lines");
+      }
+
+      // Enrich projections with Poisson probabilities and real sportsbook lines
+      const enrichedPicks = projections.map((proj) => {
+        // Lambda = expected HRR total per game (from our model)
+        const lambda = proj.expectedTotal;
+
+        // Get sportsbook line if available, otherwise use model line
+        const bestLine = getBestHRRLine(proj.playerName, marketData, proj.hrrLine);
+        const activeLine = bestLine.line;
+
+        // Calculate Poisson probability of going OVER the active line
+        const modelOverProb = poissonOverProbability(activeLine, lambda);
+
+        // Calculate edge vs sportsbook
+        const bookImpliedProb = bestLine.impliedProb || 0.5; // Default 50% if no book data
+        const edge = calculateEdge(modelOverProb, bookImpliedProb);
+        const pickQuality = getPickQuality(edge);
+
+        // Generate alternate lines with probabilities
+        const alternates = calculateAlternateLines(lambda, 5.5);
+
+        // Find the fair line (closest to 50/50)
+        const fairLine = findFairLine(lambda);
+
+        return {
+          ...proj,
+          // Override line with sportsbook line if available
+          hrrLine: activeLine,
+          lineSource: bestLine.source,
+          // Poisson-based probabilities
+          overProbability: Math.round(modelOverProb * 100),
+          // Edge vs book
+          edge: Math.round(edge * 100), // as percentage points
+          pickQuality,
+          bookOdds: bestLine.odds,
+          bookImpliedProb: bestLine.impliedProb ? Math.round(bestLine.impliedProb * 100) : null,
+          // Alternate lines
+          alternateLines: alternates.map(alt => ({
+            line: alt.line,
+            overProb: Math.round(alt.overProb * 100),
+            underProb: Math.round(alt.underProb * 100),
+          })),
+          fairLine,
+          // Expected value (lambda)
+          expectedTotal: Math.round(lambda * 10) / 10,
+        };
+      });
+
+      // Re-sort by: picks with edge > 0 first, then by overProbability
+      enrichedPicks.sort((a, b) => {
+        // Primary: pick quality (strong > moderate > lean > avoid)
+        const qualityOrder = { strong: 4, moderate: 3, lean: 2, avoid: 1 };
+        const qDiff = qualityOrder[b.pickQuality] - qualityOrder[a.pickQuality];
+        if (qDiff !== 0) return qDiff;
+        // Secondary: over probability
+        return b.overProbability - a.overProbability;
+      });
+
       return {
         success: true,
-        picks: projections,
+        picks: enrichedPicks,
         timestamp: new Date(),
+        hasOddsData: marketData.size > 0,
       };
     } catch (error) {
       console.error("Error generating HRR picks:", error);
@@ -768,6 +836,7 @@ export const aiPicksRouter = router({
         picks: [],
         error: "Failed to generate HRR picks",
         timestamp: new Date(),
+        hasOddsData: false,
       };
     }
   }),

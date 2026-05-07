@@ -1,14 +1,20 @@
 /**
  * HRR Tab - Combined Hits + Runs + RBI Props
- * Uses dedicated getHRRPicks endpoint that calculates projections from real player stats
- * Ranked by HRR-specific probability (not general AI pick order)
+ * Uses dedicated getHRRPicks endpoint with Poisson probability model
+ * Shows alternate lines, real sportsbook odds, edge vs book, and pick quality
  */
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, TrendingUp, Zap, Target, Activity, BarChart3, Flame } from "lucide-react";
+import { ChevronDown, TrendingUp, Zap, Target, Activity, BarChart3, Flame, Shield, DollarSign } from "lucide-react";
 import { SaferPlayTip } from "@/components/SaferPlayTip";
+
+interface AlternateLine {
+  line: number;
+  overProb: number;
+  underProb: number;
+}
 
 interface HRRPick {
   playerName: string;
@@ -34,27 +40,40 @@ interface HRRPick {
     exitVelocity: number;
     barrelPct: number;
   };
+  // New enriched fields
+  overProbability: number;
+  pickQuality: "strong" | "moderate" | "lean" | "avoid";
+  lineSource: string;
+  bookOdds: number | null;
+  bookImpliedProb: number | null;
+  alternateLines: AlternateLine[];
+  fairLine: number;
 }
 
-function getGrade(score: number): { label: string; color: string } {
-  if (score >= 90) return { label: "A+", color: "oklch(0.72 0.18 165)" };
-  if (score >= 80) return { label: "A", color: "oklch(0.75 0.17 150)" };
-  if (score >= 70) return { label: "B+", color: "oklch(0.82 0.17 85)" };
-  if (score >= 60) return { label: "B", color: "oklch(0.70 0.12 60)" };
-  return { label: "C+", color: "oklch(0.60 0.10 30)" };
+function getQualityConfig(quality: string) {
+  switch (quality) {
+    case "strong":
+      return { label: "STRONG EDGE", color: "oklch(0.72 0.18 165)", bg: "oklch(0.72 0.18 165)" };
+    case "moderate":
+      return { label: "MODERATE EDGE", color: "oklch(0.82 0.17 85)", bg: "oklch(0.82 0.17 85)" };
+    case "lean":
+      return { label: "LEAN", color: "oklch(0.68 0.22 25)", bg: "oklch(0.68 0.22 25)" };
+    default:
+      return { label: "LOW EDGE", color: "oklch(0.50 0.10 255)", bg: "oklch(0.50 0.10 255)" };
+  }
 }
 
-function getConfidenceColor(confidence: number): string {
-  if (confidence >= 85) return "oklch(0.72 0.18 165)";
-  if (confidence >= 75) return "oklch(0.82 0.17 85)";
-  if (confidence >= 65) return "oklch(0.68 0.22 25)";
+function getProbColor(prob: number): string {
+  if (prob >= 70) return "oklch(0.72 0.18 165)";
+  if (prob >= 55) return "oklch(0.82 0.17 85)";
+  if (prob >= 40) return "oklch(0.68 0.22 25)";
   return "oklch(0.55 0.15 255)";
 }
 
 function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
   const [expanded, setExpanded] = useState(false);
-  const grade = getGrade(pick.combinedScore);
-  const confColor = getConfidenceColor(pick.hrrConfidence);
+  const qualityCfg = getQualityConfig(pick.pickQuality);
+  const probColor = getProbColor(pick.overProbability);
 
   const rankBadge = rank <= 3
     ? { bg: "linear-gradient(135deg, oklch(0.82 0.17 85), oklch(0.68 0.22 25))", label: rank === 1 ? "🔥 BEST BET" : rank === 2 ? "⚡ ELITE" : "✨ STRONG" }
@@ -92,21 +111,44 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
             </div>
           </div>
 
-          {/* HRR Line Badge */}
+          {/* HRR Line + Probability */}
           <div className="flex flex-col items-end gap-1">
             <div
               className="px-3 py-1.5 rounded-lg text-sm font-bold"
               style={{
-                background: `${confColor}20`,
-                color: confColor,
-                border: `1px solid ${confColor}40`,
+                background: `${probColor}20`,
+                color: probColor,
+                border: `1px solid ${probColor}40`,
               }}
             >
               HRR O {pick.hrrLine}
             </div>
-            <span className="text-xs font-semibold" style={{ color: confColor }}>
-              {pick.hrrConfidence}% conf
+            <span className="text-xs font-bold" style={{ color: probColor }}>
+              {pick.overProbability}% over prob
             </span>
+          </div>
+        </div>
+
+        {/* Pick Quality + Edge Badge */}
+        <div className="flex items-center gap-2 mb-3">
+          <div
+            className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
+            style={{ background: `${qualityCfg.bg}20`, color: qualityCfg.color, border: `1px solid ${qualityCfg.bg}30` }}
+          >
+            <Shield size={10} className="inline mr-0.5" />{qualityCfg.label}
+          </div>
+          {pick.edge > 0 && (
+            <div className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: "oklch(0.72 0.18 165 / 15%)", color: "oklch(0.72 0.18 165)" }}>
+              +{pick.edge}% edge vs book
+            </div>
+          )}
+          {pick.bookOdds && (
+            <div className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "oklch(0.20 0.02 255)", color: "oklch(0.60 0.15 200)" }}>
+              <DollarSign size={9} className="inline" />{pick.bookOdds > 0 ? `+${pick.bookOdds}` : pick.bookOdds}
+            </div>
+          )}
+          <div className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "oklch(0.20 0.02 255)", color: "oklch(0.50 0.015 255)" }}>
+            {pick.lineSource}
           </div>
         </div>
 
@@ -115,7 +157,7 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-[oklch(0.55_0.015_255)]">Expected Breakdown</span>
             <span className="text-sm font-bold text-white">
-              Total: <span style={{ color: confColor }}>{pick.expectedTotal.toFixed(1)}</span>
+              Proj: <span style={{ color: probColor }}>{pick.expectedTotal}</span> vs Line: <span className="text-[oklch(0.55_0.015_255)]">{pick.hrrLine}</span>
             </span>
           </div>
 
@@ -167,28 +209,35 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
           </div>
         </div>
 
-        {/* Score pills */}
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          <div className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "oklch(0.20 0.02 255)", color: grade.color }}>
-            <BarChart3 size={10} className="inline mr-0.5" />RC {pick.rcScore}
+        {/* Alternate Lines */}
+        {pick.alternateLines.length > 0 && (
+          <div className="mb-3">
+            <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)] uppercase tracking-wide">Alternate Lines</span>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {pick.alternateLines.map((alt) => {
+                const isActive = alt.line === pick.hrrLine;
+                const altColor = getProbColor(alt.overProb);
+                return (
+                  <div
+                    key={alt.line}
+                    className="px-2 py-1 rounded-lg text-center"
+                    style={{
+                      background: isActive ? `${altColor}20` : "oklch(0.16 0.02 255)",
+                      border: isActive ? `1px solid ${altColor}50` : "1px solid oklch(1 0 0 / 5%)",
+                    }}
+                  >
+                    <div className="text-[10px] font-bold" style={{ color: isActive ? altColor : "oklch(0.65 0.015 255)" }}>
+                      O {alt.line}
+                    </div>
+                    <div className="text-[9px] font-semibold" style={{ color: altColor }}>
+                      {alt.overProb}%
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "oklch(0.20 0.02 255)", color: "oklch(0.75 0.15 200)" }}>
-            <Activity size={10} className="inline mr-0.5" />Combined {pick.combinedScore}
-          </div>
-          {pick.savantMetrics && (
-            <>
-              <div className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "oklch(0.20 0.02 255)", color: "oklch(0.70 0.12 60)" }}>
-                xwOBA {pick.savantMetrics.xwOBA.toFixed(3)}
-              </div>
-              <div className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "oklch(0.20 0.02 255)", color: "oklch(0.65 0.15 30)" }}>
-                HH% {pick.savantMetrics.hardHitPct.toFixed(0)}
-              </div>
-            </>
-          )}
-          <div className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "oklch(0.20 0.02 255)", color: pick.edge > 0.5 ? "oklch(0.72 0.18 165)" : "oklch(0.60 0.10 30)" }}>
-            Edge +{pick.edge.toFixed(2)}
-          </div>
-        </div>
+        )}
 
         {/* Reasoning */}
         <p className="text-xs text-[oklch(0.60_0.015_255)] leading-relaxed mb-2">
@@ -200,7 +249,7 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
           onClick={() => setExpanded(!expanded)}
           className="w-full flex items-center justify-center gap-1 py-2 text-xs font-medium text-[oklch(0.50_0.015_255)] hover:text-white transition-colors"
         >
-          {expanded ? "Hide Details" : "View Analysis"}
+          {expanded ? "Hide Details" : "View Full Analysis"}
           <ChevronDown size={14} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
 
@@ -215,25 +264,51 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
               className="overflow-hidden"
             >
               <div className="pt-3 border-t border-[oklch(1_0_0/8%)] space-y-3">
-                {/* Per-stat confidence */}
+                {/* Per-stat projection */}
                 <div>
                   <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)] uppercase tracking-wide">Per-Stat Projection (per game)</span>
                   <div className="mt-2 space-y-2">
-                    <StatBar label="Hits" value={pick.expectedHits} max={3} color="oklch(0.82 0.17 85)" />
-                    <StatBar label="Runs" value={pick.expectedRuns} max={2.5} color="oklch(0.68 0.22 25)" />
-                    <StatBar label="RBI" value={pick.expectedRBI} max={3} color="oklch(0.72 0.18 165)" />
+                    <StatBar label="Hits" value={pick.expectedHits} max={2.5} color="oklch(0.82 0.17 85)" />
+                    <StatBar label="Runs" value={pick.expectedRuns} max={1.5} color="oklch(0.68 0.22 25)" />
+                    <StatBar label="RBI" value={pick.expectedRBI} max={1.5} color="oklch(0.72 0.18 165)" />
                   </div>
                 </div>
 
                 {/* Savant metrics */}
                 {pick.savantMetrics && (
                   <div>
-                    <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)] uppercase tracking-wide">Savant Metrics vs Pitcher</span>
+                    <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)] uppercase tracking-wide">Statcast Metrics</span>
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <MetricBox label="xwOBA" value={pick.savantMetrics.xwOBA.toFixed(3)} good={pick.savantMetrics.xwOBA > 0.370} />
                       <MetricBox label="Hard Hit%" value={`${pick.savantMetrics.hardHitPct.toFixed(0)}%`} good={pick.savantMetrics.hardHitPct > 45} />
                       <MetricBox label="Exit Velo" value={`${pick.savantMetrics.exitVelocity.toFixed(1)}`} good={pick.savantMetrics.exitVelocity > 90} />
                       <MetricBox label="Barrel%" value={`${pick.savantMetrics.barrelPct.toFixed(0)}%`} good={pick.savantMetrics.barrelPct > 10} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Book comparison */}
+                {pick.bookImpliedProb && (
+                  <div className="p-2.5 rounded-lg" style={{ background: "oklch(0.12 0.018 255)" }}>
+                    <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)]">BOOK vs MODEL</span>
+                    <div className="mt-1.5 flex items-center gap-3">
+                      <div className="flex-1">
+                        <div className="text-[10px] text-[oklch(0.50_0.015_255)]">Book implied</div>
+                        <div className="text-sm font-bold text-[oklch(0.60_0.015_255)]">{pick.bookImpliedProb}%</div>
+                      </div>
+                      <div className="text-lg font-bold" style={{ color: pick.edge > 0 ? "oklch(0.72 0.18 165)" : "oklch(0.55 0.15 255)" }}>
+                        →
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-[10px] text-[oklch(0.50_0.015_255)]">Our model</div>
+                        <div className="text-sm font-bold" style={{ color: probColor }}>{pick.overProbability}%</div>
+                      </div>
+                      <div className="flex-1 text-right">
+                        <div className="text-[10px] text-[oklch(0.50_0.015_255)]">Edge</div>
+                        <div className="text-sm font-bold" style={{ color: pick.edge > 0 ? "oklch(0.72 0.18 165)" : "oklch(0.68 0.22 25)" }}>
+                          {pick.edge > 0 ? "+" : ""}{pick.edge}%
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -246,18 +321,18 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
                   </p>
                 </div>
 
-                {/* Line explanation */}
+                {/* Fair line info */}
                 <div className="p-2.5 rounded-lg" style={{ background: "oklch(0.12 0.018 255)" }}>
-                  <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)]">WHY THIS LINE?</span>
+                  <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)]">LINE ANALYSIS</span>
                   <p className="text-[11px] text-[oklch(0.60_0.015_255)] mt-1 leading-relaxed">
-                    Expected total of <strong className="text-white">{pick.expectedTotal.toFixed(1)} HRR</strong> vs line of{" "}
-                    <strong className="text-white">{pick.hrrLine}</strong>.
-                    {pick.edge > 0.5
-                      ? " Strong edge — projected well above the line."
-                      : pick.edge > 0.2
-                      ? " Moderate edge — projected above the line."
-                      : " Thin edge — close to the line, higher variance."}
-                    {" "}Park factor: {pick.parkFactor > 1.05 ? "hitter-friendly" : pick.parkFactor < 0.95 ? "pitcher-friendly" : "neutral"} ({pick.parkFactor.toFixed(2)}).
+                    Fair line (50/50): <strong className="text-white">O {pick.fairLine}</strong>.
+                    Active line: <strong className="text-white">O {pick.hrrLine}</strong>.
+                    {pick.hrrLine < pick.fairLine
+                      ? " Line is below fair value — edge on the OVER."
+                      : pick.hrrLine === pick.fairLine
+                      ? " Line is at fair value — coin flip."
+                      : " Line is above fair value — tighter margin."}
+                    {" "}Expected total: <strong className="text-white">{pick.expectedTotal}</strong>.
                   </p>
                 </div>
               </div>
@@ -292,7 +367,7 @@ function MetricBox({ label, value, good }: { label: string; value: string; good:
 }
 
 export function HRRTab() {
-  // Use the dedicated HRR endpoint with real stat-based calculations
+  // Use the dedicated HRR endpoint with Poisson model + Odds API
   const { data, isLoading } = trpc.aiPicks.getHRRPicks.useQuery();
 
   const hrrPicks: HRRPick[] = (data?.picks || []).map((pick: any) => ({
@@ -307,24 +382,34 @@ export function HRRTab() {
     expectedRuns: pick.expectedRuns,
     expectedRBI: pick.expectedRBI,
     expectedTotal: pick.expectedTotal,
-    edge: pick.edge,
+    edge: pick.edge ?? 0,
     reasoning: pick.reasoning,
     ballparkReasoning: pick.ballparkReasoning,
     rcScore: pick.rcScore,
     combinedScore: pick.combinedScore,
     parkFactor: pick.parkFactor,
     savantMetrics: pick.savantMetrics,
+    // New enriched fields
+    overProbability: pick.overProbability ?? pick.hrrConfidence,
+    pickQuality: pick.pickQuality ?? "lean",
+    lineSource: pick.lineSource ?? "model",
+    bookOdds: pick.bookOdds ?? null,
+    bookImpliedProb: pick.bookImpliedProb ?? null,
+    alternateLines: pick.alternateLines ?? [],
+    fairLine: pick.fairLine ?? pick.hrrLine,
   }));
 
   if (isLoading) {
     return (
       <div className="p-4 space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="animate-pulse rounded-2xl h-40" style={{ background: "oklch(0.14 0.022 255)" }} />
+          <div key={i} className="animate-pulse rounded-2xl h-48" style={{ background: "oklch(0.14 0.022 255)" }} />
         ))}
       </div>
     );
   }
+
+  const hasOddsData = (data as any)?.hasOddsData;
 
   return (
     <div className="p-4 space-y-4 pb-20">
@@ -336,11 +421,18 @@ export function HRRTab() {
             HRR Combined Props
           </h2>
           <p className="text-[oklch(0.50_0.015_255)] text-xs mt-0.5">
-            Hits + Runs + RBI combined over/under
+            Hits + Runs + RBI · Poisson probability model
           </p>
         </div>
-        <div className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "oklch(0.20 0.03 255)", color: "oklch(0.72 0.18 165)" }}>
-          {hrrPicks.length} picks
+        <div className="flex flex-col items-end gap-1">
+          <div className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "oklch(0.20 0.03 255)", color: "oklch(0.72 0.18 165)" }}>
+            {hrrPicks.length} picks
+          </div>
+          {hasOddsData && (
+            <span className="text-[9px] font-medium" style={{ color: "oklch(0.55 0.15 200)" }}>
+              Live odds data
+            </span>
+          )}
         </div>
       </div>
 
@@ -349,11 +441,12 @@ export function HRRTab() {
         <div className="flex items-start gap-2">
           <Activity size={14} className="mt-0.5 shrink-0" style={{ color: "oklch(0.72 0.18 165)" }} />
           <div>
-            <span className="text-xs font-semibold text-white">How HRR Works</span>
+            <span className="text-xs font-semibold text-white">How It Works</span>
             <p className="text-[10px] text-[oklch(0.55_0.015_255)] mt-0.5 leading-relaxed">
-              HRR combines a player's Hits + Runs + RBI into one prop. If the line is <strong className="text-white">OVER 3.5</strong>, 
-              you need the player to total 4+ across all three stats. We project each stat individually using per-game season averages, 
-              park factors, batting position, and Savant + Ballpark data.
+              We project each player's Hits + Runs + RBI using Statcast data, park factors, batting position, and pitcher matchup. 
+              A <strong className="text-white">Poisson model</strong> calculates the true probability of going OVER each line. 
+              When sportsbook odds are available, we compare to find <strong className="text-white">edges</strong> where our model disagrees with the market.
+              Alternate lines show your options at different risk levels.
             </p>
           </div>
         </div>
@@ -371,8 +464,9 @@ export function HRRTab() {
       {/* Disclaimer */}
       <div className="text-center py-3">
         <p className="text-[10px] text-[oklch(0.35_0.015_255)] leading-relaxed">
-          HRR projections based on season per-game averages + Savant + Ballpark.com analysis.
-          Always bet responsibly within your means.
+          Probabilities from Poisson model using Statcast + Ballpark.com data.
+          {hasOddsData ? " Live odds from major US sportsbooks." : " Sportsbook odds update when available."}
+          {" "}Always bet responsibly.
         </p>
       </div>
     </div>

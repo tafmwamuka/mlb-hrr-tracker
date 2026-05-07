@@ -338,3 +338,20 @@
 
 ## Safer Play Tip Note (May 7 - User Request)
 - [x] Add tip note on all tabs suggesting users play HRR combined at the same line value for a safer play
+
+## HRR Model Overhaul — Realistic Lines + Alternates + Real Odds (May 7)
+- [x] Research The Odds API for real batter prop lines (H+R+RBI combined) — batter_hits_runs_rbis market
+- [x] Recalibrate HRR per-game averages to realistic MLB levels (fixed RBI from 65-92 to 18-32)
+- [x] Integrate real sportsbook HRR lines from The Odds API as baseline — oddsApiService.ts
+- [x] Add alternate lines per player (O 1.5, O 2.5, O 3.5) with probability for each — Poisson model
+- [x] Apply per-stat park factors (hits park factor vs runs park factor vs RBI park factor)
+- [x] Weight recent form (last 7-15 games) higher than season average
+- [x] Factor in pitcher-specific splits (vs LHP/RHP, pitcher ERA/WHIP/K-rate)
+- [x] Use batting order position for AB/opportunity estimation
+- [x] Deepen Statcast reasoning (xwOBA, hard hit %, barrel rate) in pick explanations
+- [x] Deepen Ballpark.com reasoning (RC score, park dimensions, weather) in pick explanations
+- [x] Show probability of hitting each line (statistical %, not just confidence) — Poisson over prob
+- [x] Update frontend to display alternates, real odds, and detailed reasoning
+- [x] Implement Poisson probability model (poissonModel.ts, 28 tests)
+- [x] Show edge vs sportsbook and pick quality badges
+- [x] All 154 tests passing

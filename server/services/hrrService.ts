@@ -256,19 +256,39 @@ export function generateHRRProjections(
       // Step 11: Get Savant metrics if available
       const playerSavant = savantData?.get(matchup.playerName);
 
-      // Step 12: Build reasoning
+      // Step 12: Build detailed reasoning with Statcast + Ballpark data
       const parkType = parkFactor > 1.05 ? "hitter-friendly" : parkFactor < 0.95 ? "pitcher-friendly" : "neutral";
       const reasons: string[] = [];
-      if (expectedTotal > hrrLine + 0.5) reasons.push("Strong projected total above line");
-      if (rcScore > 75) reasons.push("High RC vs this pitcher");
-      if (parkFactor > 1.05) reasons.push("Hitter-friendly park");
-      if (matchup.battingPosition <= 5) reasons.push("Middle of lineup");
-      if (playerData.recentForm?.trend === 'hot') reasons.push("On a hot streak");
-      if (playerSavant && playerSavant.xwOBA > 0.370) reasons.push("Elite Savant metrics");
-      if (matchup.confidence > 80) reasons.push("Favorable matchup");
+      
+      // Statcast-based reasoning
+      if (playerSavant) {
+        if (playerSavant.xwOBA > 0.380) reasons.push(`Elite xwOBA (${playerSavant.xwOBA.toFixed(3)}) — top-tier contact quality`);
+        else if (playerSavant.xwOBA > 0.340) reasons.push(`Strong xwOBA (${playerSavant.xwOBA.toFixed(3)}) — above avg contact`);
+        if (playerSavant.hardHitPct > 45) reasons.push(`${playerSavant.hardHitPct.toFixed(0)}% hard hit rate — drives production`);
+        if (playerSavant.barrelPct > 12) reasons.push(`${playerSavant.barrelPct.toFixed(1)}% barrel rate — extra-base hit upside`);
+        if (playerSavant.exitVelocity > 92) reasons.push(`${playerSavant.exitVelocity.toFixed(1)} mph avg exit velo`);
+      }
+      
+      // Ballpark/matchup reasoning
+      if (rcScore > 80) reasons.push(`RC ${Math.round(matchup.rc)} — elite matchup vs ${matchup.pitcher.name}`);
+      else if (rcScore > 65) reasons.push(`RC ${Math.round(matchup.rc)} — favorable vs ${matchup.pitcher.name}`);
+      if (matchup.pitcher.era > 4.5) reasons.push(`Pitcher ERA ${matchup.pitcher.era.toFixed(2)} — gives up runs`);
+      if (parkFactor > 1.08) reasons.push(`Hitter-friendly park (${parkFactor.toFixed(2)}x factor)`);
+      else if (parkFactor > 1.03) reasons.push(`Slightly hitter-friendly park`);
+      
+      // Lineup/form reasoning
+      if (matchup.battingPosition <= 2) reasons.push(`Bats ${matchup.battingPosition}${matchup.battingPosition === 1 ? 'st' : 'nd'} — more plate appearances`);
+      else if (matchup.battingPosition <= 5) reasons.push(`Bats ${matchup.battingPosition}${matchup.battingPosition === 3 ? 'rd' : 'th'} — RBI opportunities`);
+      if (playerData.recentForm?.trend === 'hot') {
+        const last15Avg = playerData.recentForm.last15Games.avg;
+        reasons.push(`Hot streak — .${Math.round(last15Avg * 1000)} over last 15 games`);
+      }
+      
+      // Edge reasoning
+      if (expectedTotal > hrrLine + 0.5) reasons.push(`Model projects ${expectedTotal.toFixed(1)} total vs ${hrrLine} line`);
 
-      const reasoning = reasons.join(" • ") || "Solid projection based on season stats";
-      const ballparkReasoning = `Playing at ${parkType} park. RC ranking: ${Math.round(matchup.rc)}/100. Per-game avg: ${rawHitsPerGame.toFixed(1)}H + ${rawRunsPerGame.toFixed(1)}R + ${rawRBIPerGame.toFixed(1)}RBI = ${(rawHitsPerGame + rawRunsPerGame + rawRBIPerGame).toFixed(1)} raw.`;
+      const reasoning = reasons.slice(0, 4).join(" • ") || "Solid projection based on season stats";
+      const ballparkReasoning = `Per-game projection: ${rawHitsPerGame.toFixed(2)}H + ${rawRunsPerGame.toFixed(2)}R + ${rawRBIPerGame.toFixed(2)}RBI = ${(rawHitsPerGame + rawRunsPerGame + rawRBIPerGame).toFixed(2)} raw. Park: ${parkType} (${parkFactor.toFixed(2)}x). RC: ${Math.round(matchup.rc)}/100 vs ${matchup.pitcher.name} (${matchup.pitcher.era.toFixed(2)} ERA).`;
 
       return {
         playerId: matchup.playerId,
