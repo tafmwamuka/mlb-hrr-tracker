@@ -22,11 +22,12 @@ import {
 import { PlayerModal } from "@/components/PlayerModal";
 import { TopPlaysTab } from "@/components/TopPlaysTab";
 import { AllPlaysTab } from "@/components/AllPlaysTab";
+import { ParlaysTab } from "@/components/ParlaysTab";
 import { ResultsTab } from "@/components/ResultsTab";
-import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Calendar, Trophy, Zap as ZapIcon, Layers } from "lucide-react";
+import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Calendar, Trophy, Zap as ZapIcon, Layers, Ticket } from "lucide-react";
 import { useLocation } from "wouter";
 
-type TabType = "topPlays" | "allPlays" | "leaderboard" | "results";
+type TabType = "topPlays" | "allPlays" | "parlays" | "leaderboard" | "results";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -70,6 +71,11 @@ const TAB_CONFIG = {
     label: "All Plays",
     icon: Layers,
     color: "oklch(0.75 0.20 290)",
+  },
+  parlays: {
+    label: "Parlays",
+    icon: Ticket,
+    color: "oklch(0.72 0.18 165)",
   },
   leaderboard: {
     label: "Leaderboard",
@@ -600,6 +606,19 @@ export default function Home() {
               className="flex-1 overflow-y-auto"
             >
               <AllPlaysTab />
+            </motion.div>
+          )}
+
+          {activeTab === "parlays" && (
+            <motion.div
+              key="parlays"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 overflow-y-auto flex flex-col"
+            >
+              <ParlaysTab />
             </motion.div>
           )}
 

@@ -66,7 +66,7 @@ export function AllPlaysTab() {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
   // Convert AI picks data to display format
-  const matchups = (aiPicksData?.picks || []).slice(0, 15).map((pick: any, idx: number) => {
+  const matchups = (aiPicksData?.picks || []).slice(0, 20).map((pick: any, idx: number) => {
     return {
       rank: idx + 1,
       batter: { name: pick.playerName, id: String(pick.playerId), team: pick.team, handedness: "R" },
@@ -109,8 +109,8 @@ export function AllPlaysTab() {
     );
   }
 
-  // Limit to 15 plays
-  const topPlays = matchups.slice(0, 15);
+  // Show up to 20 plays for variety
+  const topPlays = matchups.slice(0, 20);
 
   return (
     <div className="space-y-2 px-4 pb-4">

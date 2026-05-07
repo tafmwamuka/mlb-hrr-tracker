@@ -298,7 +298,7 @@ export function rankAIPicks(
       ...pick,
       rank: index + 1,
     }))
-    .slice(0, 10); // Top 10 picks
+    .slice(0, 20); // Top 20 picks for All Plays variety
 
   return picks;
 }

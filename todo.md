@@ -263,3 +263,11 @@
 - [x] Include best possible reasoning for each pick based on ballpark.com data
 - [x] Add interactive expandable details with hover effects
 - [x] Make it visually striking and engaging
+
+## All Plays Expansion & Parlays Tab (May 7 - User Request)
+- [x] Expand All Plays to show 15-20 diverse players for more variety
+- [x] Add more players to AI picks data source (need 20 unique players)
+- [x] Create new Parlays tab with 2-leg parlay options (safe plays)
+- [x] Add 3-leg parlay options to Parlays tab
+- [x] Include responsible gambling messaging (bet within your means, bankroll management)
+- [x] Add Parlays tab to navigation
