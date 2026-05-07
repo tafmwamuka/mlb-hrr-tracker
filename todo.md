@@ -287,3 +287,10 @@
 - [x] Show Savant metrics and reasoning for each parlay leg
 - [x] Display combined confidence score for each parlay
 - [x] Update AI Predictions tab to show Savant metrics alongside RC data
+
+## Scheduled Data Refresh - 4x Daily (May 7 - User Request)
+- [ ] Create /api/scheduled/refresh-data endpoint to receive fresh MLB data
+- [ ] Set up scheduled task at 10 AM, 1 PM, 4 PM, 8 PM EST
+- [ ] Task pulls fresh data from Baseball Savant + ballpark.com + MLB API
+- [ ] Task POSTs updated picks to the deployed site
+- [ ] Deploy and verify scheduled task works
