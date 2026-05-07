@@ -289,8 +289,20 @@
 - [x] Update AI Predictions tab to show Savant metrics alongside RC data
 
 ## Scheduled Data Refresh - 4x Daily (May 7 - User Request)
-- [ ] Create /api/scheduled/refresh-data endpoint to receive fresh MLB data
-- [ ] Set up scheduled task at 10 AM, 1 PM, 4 PM, 8 PM EST
-- [ ] Task pulls fresh data from Baseball Savant + ballpark.com + MLB API
-- [ ] Task POSTs updated picks to the deployed site
-- [ ] Deploy and verify scheduled task works
+- [x] Create /api/trpc/scheduled.refreshData tRPC endpoint to receive fresh MLB data
+- [x] Set up scheduled task at 10 AM, 1 PM, 4 PM, 8 PM (user's timezone via Manus scheduler)
+- [x] Task prompt instructs agent to pull fresh data from Baseball Savant + ballpark.com + MLB API
+- [x] Task prompt instructs agent to POST updated picks to deployed site via tRPC batch format
+- [ ] User needs to publish site for scheduled task to work against live endpoint
+
+## HRR Combined Prop Tab (May 7 - User Request)
+- [x] Create HRR tab component showing combined H+R+RBI prop for each player
+- [x] Calculate combined HRR line (e.g., OVER 3.5 HRR) based on player stats
+- [x] Show breakdown of expected Hits, Runs, RBI contributing to total
+- [x] Rank players by likelihood of hitting the OVER on combined prop
+- [x] Add HRR tab to main navigation
+- [x] Fix HRR line calculation to use real per-game stat averages (not statConfidence heuristics)
+- [x] Add dedicated HRR-specific ranking logic (sorts by HRR over probability, not general AI pick order)
+- [x] Create dedicated getHRRPicks backend endpoint with real stat calculations
+- [x] Write Vitest tests for HRR calculation and ranking (35 tests passing)
+- [x] Verify HRR lines are realistic (1.5-6.5 range, 0.5 increments)

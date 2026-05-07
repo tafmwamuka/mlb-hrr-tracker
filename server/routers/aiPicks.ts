@@ -7,6 +7,7 @@ import { router, publicProcedure } from "../_core/trpc";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import type { AIPick } from "../services/aiRankingService";
 import { getMockSavantData, calculateCombinedScore, type SavantHitter, type SavantPitcher } from "../services/savantService";
+import { generateHRRProjections } from "../services/hrrService";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -697,6 +698,54 @@ export const aiPicksRouter = router({
         success: false,
         picks: [],
         error: "Failed to generate AI picks",
+        timestamp: new Date(),
+      };
+    }
+  }),
+
+  /**
+   * Get HRR Combined Props - dedicated endpoint with real stat-based calculations
+   * Uses per-game averages from season stats, park factors, batting position, and recent form
+   * Ranked by HRR-specific probability (not general AI pick order)
+   */
+  getHRRPicks: publicProcedure.query(async () => {
+    try {
+      // Get park factors
+      const parkFactors = getMockParkFactors();
+      
+      // Build Savant data map for enrichment
+      const savantGames = getMockSavantData();
+      const savantMap = new Map<string, { xwOBA: number; hardHitPct: number; exitVelocity: number; barrelPct: number }>();
+      for (const game of savantGames) {
+        for (const hitter of [...game.homeHitters, ...game.awayHitters]) {
+          savantMap.set(hitter.name, {
+            xwOBA: hitter.xwOBA,
+            hardHitPct: hitter.hardHitPct,
+            exitVelocity: hitter.exitVelocity,
+            barrelPct: hitter.barrelPct,
+          });
+        }
+      }
+      
+      // Generate HRR projections using real player stats
+      const projections = generateHRRProjections(
+        MOCK_MATCHUPS,
+        MOCK_PLAYERS,
+        parkFactors,
+        savantMap
+      );
+
+      return {
+        success: true,
+        picks: projections,
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      console.error("Error generating HRR picks:", error);
+      return {
+        success: false,
+        picks: [],
+        error: "Failed to generate HRR picks",
         timestamp: new Date(),
       };
     }
