@@ -39,13 +39,13 @@
 - [x] Fetch ERA data from MLB Stats API for pitchers
 - [x] Fetch ISO (Isolated Power) data from MLB Stats API for batters
 - [x] Integrate ERA + ISO into prop prediction model
-- [ ] Fetch pitcher/batter handedness from MLB Stats API
-- [ ] Fetch batter position and apply position-based adjustments
-- [ ] Calculate recent form (last 15 games stats)
-- [ ] Fetch pitcher workload (innings pitched recently)
+- [x] Fetch pitcher/batter handedness from MLB Stats API (advancedDataService created)
+- [x] Fetch batter position and apply position-based adjustments
+- [x] Calculate recent form (last 15 games stats) (calculateTrend function)
+- [x] Fetch pitcher workload (innings pitched recently) (calculateWorkloadImpact)
 - [ ] Get ballpark-specific player stats
-- [ ] Integrate platoon splits (vs RHP/LHP)
-- [ ] Add weather data (wind, temperature) integration
+- [x] Integrate platoon splits (vs RHP/LHP) (calculateHandednessAdvantage)
+- [x] Add weather data (wind, temperature) integration (calculateWeatherImpact)
 - [ ] Track rest days and fatigue
 - [ ] Fetch injury status from MLB API
 - [ ] Update daily job to include all data sources

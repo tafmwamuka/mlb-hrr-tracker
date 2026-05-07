@@ -15,6 +15,7 @@ const MOCK_PLAYERS = new Map([
     team: "NYY",
     position: "RF",
     battingPosition: 4,
+    handedness: 'R' as const,
     stats: {
       hits: 45,
       runs: 38,
@@ -24,6 +25,15 @@ const MOCK_PLAYERS = new Map([
       obp: 0.380,
       power: 0.185,
     },
+    recentForm: {
+      last15Games: {
+        hits: 18,
+        runs: 15,
+        rbi: 38,
+        avg: 0.310,
+      },
+      trend: 'hot' as const,
+    },
   }],
   [592450, {
     playerId: 592450,
@@ -31,6 +41,7 @@ const MOCK_PLAYERS = new Map([
     team: "NYM",
     position: "LF",
     battingPosition: 3,
+    handedness: 'L' as const,
     stats: {
       hits: 52,
       runs: 41,
@@ -40,6 +51,15 @@ const MOCK_PLAYERS = new Map([
       obp: 0.420,
       power: 0.195,
     },
+    recentForm: {
+      last15Games: {
+        hits: 20,
+        runs: 17,
+        rbi: 35,
+        avg: 0.325,
+      },
+      trend: 'hot' as const,
+    },
   }],
   [608070, {
     playerId: 608070,
@@ -47,6 +67,7 @@ const MOCK_PLAYERS = new Map([
     team: "MIN",
     position: "CF",
     battingPosition: 2,
+    handedness: 'R' as const,
     stats: {
       hits: 38,
       runs: 35,

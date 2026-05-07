@@ -10,6 +10,7 @@ interface PlayerData {
   team: string;
   position: string;
   battingPosition: number; // 1-9 in lineup
+  handedness: 'R' | 'L' | 'S'; // Right, Left, Switch
   stats: {
     hits: number;
     runs: number;
@@ -18,6 +19,15 @@ interface PlayerData {
     avg: number;
     obp: number;
     power: number; // ISO (Isolated Power)
+  };
+  recentForm?: {
+    last15Games: {
+      hits: number;
+      runs: number;
+      rbi: number;
+      avg: number;
+    };
+    trend: 'hot' | 'cold' | 'neutral'; // Based on last 15 vs season
   };
 }
 
@@ -30,9 +40,21 @@ interface MatchupData {
   pitcher: {
     name: string;
     team: string;
+    handedness: 'R' | 'L'; // RHP or LHP
+    era: number;
+    workload?: number; // Recent innings pitched
   };
   rc: number; // Runs Created from ballpark.com
   confidence: number; // 0-100
+  platoonSplit?: {
+    vsRHP: number; // Avg vs RHP
+    vsLHP: number; // Avg vs LHP
+  };
+  weather?: {
+    temperature: number; // Fahrenheit
+    windSpeed: number; // MPH
+    windDirection: string; // N, S, E, W, etc.
+  };
 }
 
 interface HRTargetData {
