@@ -1,194 +1,271 @@
-import { motion } from "framer-motion";
+/**
+ * Top Plays Tab
+ * Shows AI picks using comprehensive data: RC, player stats, park factors, HR Targets, pitcher matchup, batting position
+ * Displays reasoning and factor breakdown for each pick
+ */
+
 import { trpc } from "@/lib/trpc";
-import { Star, TrendingUp, Zap, Target } from "lucide-react";
+import { Star, TrendingUp, Zap, Target, AlertCircle, ChevronDown } from "lucide-react";
 import { useState } from "react";
-
-interface Prediction {
-  id: string;
-  playerName: string;
-  gameDate: string;
-  hitsPrediction?: { prediction: string; confidence: number; line: number };
-  runsPrediction?: { prediction: string; confidence: number; line: number };
-  rbiPrediction?: { prediction: string; confidence: number; line: number };
-  avgConfidence?: number;
-}
-
-const STAT_COLORS = {
-  hits: "oklch(0.82 0.17 85)",
-  runs: "oklch(0.68 0.22 25)",
-  rbi: "oklch(0.72 0.18 165)",
-};
-
-const STAT_ICONS = {
-  hits: TrendingUp,
-  runs: Zap,
-  rbi: Target,
-};
+import { motion, AnimatePresence } from "framer-motion";
 
 export function TopPlaysTab() {
-  const { data: predictions, isLoading } = trpc.props.getHighConfidenceProps.useQuery();
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const { data, isLoading, error } = trpc.aiPicks.getComprehensivePicks.useQuery();
+  const [expandedPick, setExpandedPick] = useState<number | null>(null);
+  const [favorites, setFavorites] = useState<Set<number>>(new Set());
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-pulse text-[oklch(0.50_0.015_255)]">Loading top plays...</div>
-      </div>
-    );
-  }
-
-  if (!predictions || predictions.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 px-4">
-        <TrendingUp size={48} className="text-[oklch(0.40_0.015_255)] mb-3" />
-        <p className="text-[oklch(0.50_0.015_255)] text-center">No high-confidence picks available</p>
-      </div>
-    );
-  }
-
-  // Get top 5 picks by average confidence
-  const topPicks = predictions
-    .slice(0, 5)
-    .map((p: any) => ({
-      id: p.id,
-      playerName: p.playerName,
-      gameDate: p.gameDate,
-      hitsPrediction: p.hitsPrediction,
-      runsPrediction: p.runsPrediction,
-      rbiPrediction: p.rbiPrediction,
-      avgConfidence: p.avgConfidence || 0,
-    }));
-
-  const toggleFavorite = (id: string) => {
+  const toggleFavorite = (playerId: number) => {
     const newFavorites = new Set(favorites);
-    if (newFavorites.has(id)) {
-      newFavorites.delete(id);
+    if (newFavorites.has(playerId)) {
+      newFavorites.delete(playerId);
     } else {
-      newFavorites.add(id);
+      newFavorites.add(playerId);
     }
     setFavorites(newFavorites);
   };
 
-  return (
-    <div className="space-y-3 px-4 pb-4">
-      {topPicks.map((pick, idx) => (
-        <motion.div
-          key={pick.id}
-          className="rounded-xl p-4 border border-[oklch(1_0_0/8%)]"
-          style={{ background: "oklch(0.14 0.022 255)" }}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: idx * 0.05 }}
-        >
-          {/* Header with player name and favorite */}
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="text-sm font-bold text-white">{pick.playerName}</h3>
-              <p className="text-[10px] text-[oklch(0.40_0.015_255)]">
-                {new Date(pick.gameDate).toLocaleDateString()}
-              </p>
-            </div>
-            <button
-              onClick={() => toggleFavorite(pick.id)}
-              className="transition-transform active:scale-90"
-            >
-              <Star
-                size={20}
-                className={favorites.has(pick.id) ? "fill-current" : ""}
-                style={{
-                  color: favorites.has(pick.id) ? "oklch(0.82 0.17 85)" : "oklch(0.40 0.015 255)",
-                }}
-              />
-            </button>
-          </div>
-
-          {/* Predictions */}
-          <div className="space-y-2">
-            {pick.hitsPrediction && (
-              <PredictionRow
-                stat="hits"
-                prediction={pick.hitsPrediction}
-                color={STAT_COLORS.hits}
-                icon={STAT_ICONS.hits}
-              />
-            )}
-            {pick.runsPrediction && (
-              <PredictionRow
-                stat="runs"
-                prediction={pick.runsPrediction}
-                color={STAT_COLORS.runs}
-                icon={STAT_ICONS.runs}
-              />
-            )}
-            {pick.rbiPrediction && (
-              <PredictionRow
-                stat="rbi"
-                prediction={pick.rbiPrediction}
-                color={STAT_COLORS.rbi}
-                icon={STAT_ICONS.rbi}
-              />
-            )}
-          </div>
-
-          {/* Overall confidence */}
-          <div className="mt-3 pt-3 border-t border-[oklch(1_0_0/8%)] flex items-center justify-between">
-            <span className="text-xs text-[oklch(0.50_0.015_255)]">Avg Confidence</span>
-            <div className="flex items-center gap-2">
-              <div className="w-20 h-2 rounded-full bg-[oklch(1_0_0/8%)] overflow-hidden">
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{ background: "oklch(0.82 0.17 85)" }}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${pick.avgConfidence}%` }}
-                  transition={{ delay: idx * 0.05 + 0.2, duration: 0.6 }}
-                />
-              </div>
-              <span className="text-sm font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
-                {Math.round(pick.avgConfidence)}%
-              </span>
-            </div>
-          </div>
-        </motion.div>
-      ))}
-    </div>
-  );
-}
-
-function PredictionRow({
-  stat,
-  prediction,
-  color,
-  icon: Icon,
-}: {
-  stat: string;
-  prediction: { prediction: string; confidence: number; line: number };
-  color: string;
-  icon: any;
-}) {
-  return (
-    <div className="flex items-center justify-between p-2 rounded-lg" style={{ background: `${color}15` }}>
-      <div className="flex items-center gap-2">
-        <Icon size={14} style={{ color }} />
-        <div>
-          <span className="text-xs font-semibold text-white capitalize">{stat}</span>
-          <span className="text-[10px] text-[oklch(0.50_0.015_255)] ml-1">
-            {prediction.prediction} {prediction.line}
-          </span>
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[oklch(0.68_0.22_25)] mx-auto mb-4"></div>
+          <p className="text-[oklch(0.50_0.015_255)] text-sm">Loading AI picks...</p>
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        <div className="w-12 h-1.5 rounded-full bg-[oklch(1_0_0/8%)] overflow-hidden">
-          <motion.div
-            className="h-full rounded-full"
-            style={{ background: color }}
-            initial={{ width: 0 }}
-            animate={{ width: `${prediction.confidence}%` }}
-            transition={{ delay: 0.1, duration: 0.5 }}
-          />
+    );
+  }
+
+  if (error || !data?.picks || data.picks.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center px-4">
+        <div className="text-center">
+          <AlertCircle size={32} className="text-[oklch(0.68_0.22_25)] mx-auto mb-3" />
+          <p className="text-white font-semibold mb-1">No AI picks available</p>
+          <p className="text-[oklch(0.50_0.015_255)] text-sm">Check back later for updated predictions</p>
         </div>
-        <span className="text-xs font-bold" style={{ color }}>
-          {Math.round(prediction.confidence)}%
-        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="space-y-3">
+        {data.picks.map((pick, index) => {
+          const isExpanded = expandedPick === pick.rank;
+          const isFavorited = favorites.has(pick.playerId);
+
+          // Rank badge colors
+          const rankColors: Record<number, string> = {
+            1: "bg-[oklch(0.82_0.17_85)] text-[oklch(0.11_0.025_255)]", // Gold
+            2: "bg-[oklch(0.75_0.20_290)] text-[oklch(0.11_0.025_255)]", // Purple
+            3: "bg-[oklch(0.68_0.22_25)] text-white", // Red
+          };
+
+          const rankColor =
+            pick.rank <= 3
+              ? rankColors[pick.rank]
+              : "bg-[oklch(0.25_0.03_255)] text-[oklch(0.65_0.015_255)]";
+
+          return (
+            <motion.div
+              key={pick.rank}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+              className="rounded-xl overflow-hidden border border-[oklch(1_0_0/8%)]"
+              style={{ background: "oklch(0.14 0.022 255)" }}
+            >
+              {/* Header */}
+              <button
+                onClick={() => setExpandedPick(isExpanded ? null : pick.rank)}
+                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[oklch(1_0_0/4%)] transition-colors active:scale-95"
+              >
+                {/* Rank Badge */}
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${rankColor}`}>
+                  #{pick.rank}
+                </div>
+
+                {/* Player Info */}
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-semibold truncate">{pick.playerName}</span>
+                    <span className="text-[oklch(0.50_0.015_255)] text-xs px-2 py-1 rounded bg-[oklch(1_0_0/4%)]">
+                      {pick.position}
+                    </span>
+                    <span className="text-[oklch(0.40_0.015_255)] text-xs">Batting #{pick.battingPosition}</span>
+                  </div>
+                  <div className="text-xs text-[oklch(0.50_0.015_255)] mt-0.5">
+                    vs {pick.pitcher} • {pick.team}
+                  </div>
+                </div>
+
+                {/* Confidence & Favorite */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="text-right">
+                    <div className="text-lg font-bold text-[oklch(0.82_0.17_85)]">{pick.confidence}%</div>
+                    <div className="text-[10px] text-[oklch(0.40_0.015_255)]">Confidence</div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(pick.playerId);
+                    }}
+                    className="p-2 hover:bg-[oklch(1_0_0/8%)] rounded-lg transition-colors active:scale-90"
+                  >
+                    <Star
+                      size={18}
+                      className={isFavorited ? "fill-[oklch(0.82_0.17_85)] text-[oklch(0.82_0.17_85)]" : "text-[oklch(0.40_0.015_255)]"}
+                    />
+                  </button>
+                </div>
+
+                {/* Expand Icon */}
+                <ChevronDown
+                  size={16}
+                  className={`text-[oklch(0.50_0.015_255)] transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {/* Expanded Details */}
+              <AnimatePresence>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="border-t border-[oklch(1_0_0/8%)] px-4 py-3 space-y-3"
+                  >
+                    {/* Reasoning */}
+                    <div>
+                      <div className="text-xs font-semibold text-[oklch(0.50_0.015_255)] uppercase mb-1">Why This Pick</div>
+                      <p className="text-sm text-white leading-relaxed">{pick.reasoning}</p>
+                    </div>
+
+                    {/* Factor Breakdown */}
+                    <div>
+                      <div className="text-xs font-semibold text-[oklch(0.50_0.015_255)] uppercase mb-2">Factor Breakdown</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* RC Score */}
+                        <div className="bg-[oklch(1_0_0/4%)] rounded-lg p-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <TrendingUp size={12} className="text-[oklch(0.82_0.17_85)]" />
+                            <span className="text-[10px] font-semibold text-[oklch(0.50_0.015_255)]">RC</span>
+                          </div>
+                          <div className="text-sm font-bold text-white">{pick.factorBreakdown.rc}%</div>
+                          <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-1 mt-1">
+                            <div
+                              className="bg-[oklch(0.82_0.17_85)] h-full rounded-full"
+                              style={{ width: `${pick.factorBreakdown.rc}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Player Stats */}
+                        <div className="bg-[oklch(1_0_0/4%)] rounded-lg p-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <Target size={12} className="text-[oklch(0.68_0.22_25)]" />
+                            <span className="text-[10px] font-semibold text-[oklch(0.50_0.015_255)]">Stats</span>
+                          </div>
+                          <div className="text-sm font-bold text-white">{pick.factorBreakdown.playerStats}%</div>
+                          <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-1 mt-1">
+                            <div
+                              className="bg-[oklch(0.68_0.22_25)] h-full rounded-full"
+                              style={{ width: `${pick.factorBreakdown.playerStats}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Park Factors */}
+                        <div className="bg-[oklch(1_0_0/4%)] rounded-lg p-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <Zap size={12} className="text-[oklch(0.72_0.18_165)]" />
+                            <span className="text-[10px] font-semibold text-[oklch(0.50_0.015_255)]">Park</span>
+                          </div>
+                          <div className="text-sm font-bold text-white">{pick.factorBreakdown.parkFactors}%</div>
+                          <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-1 mt-1">
+                            <div
+                              className="bg-[oklch(0.72_0.18_165)] h-full rounded-full"
+                              style={{ width: `${pick.factorBreakdown.parkFactors}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* HR Targets */}
+                        <div className="bg-[oklch(1_0_0/4%)] rounded-lg p-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <TrendingUp size={12} className="text-[oklch(0.75_0.20_290)]" />
+                            <span className="text-[10px] font-semibold text-[oklch(0.50_0.015_255)]">HR Targets</span>
+                          </div>
+                          <div className="text-sm font-bold text-white">{pick.factorBreakdown.hrTargets}%</div>
+                          <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-1 mt-1">
+                            <div
+                              className="bg-[oklch(0.75_0.20_290)] h-full rounded-full"
+                              style={{ width: `${pick.factorBreakdown.hrTargets}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Pitcher Matchup */}
+                        <div className="bg-[oklch(1_0_0/4%)] rounded-lg p-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <Zap size={12} className="text-[oklch(0.68_0.22_25)]" />
+                            <span className="text-[10px] font-semibold text-[oklch(0.50_0.015_255)]">Matchup</span>
+                          </div>
+                          <div className="text-sm font-bold text-white">{pick.factorBreakdown.pitcherMatchup}%</div>
+                          <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-1 mt-1">
+                            <div
+                              className="bg-[oklch(0.68_0.22_25)] h-full rounded-full"
+                              style={{ width: `${pick.factorBreakdown.pitcherMatchup}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Batting Position */}
+                        <div className="bg-[oklch(1_0_0/4%)] rounded-lg p-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <Target size={12} className="text-[oklch(0.82_0.17_85)]" />
+                            <span className="text-[10px] font-semibold text-[oklch(0.50_0.015_255)]">Position</span>
+                          </div>
+                          <div className="text-sm font-bold text-white">{pick.factorBreakdown.battingPosition}%</div>
+                          <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-1 mt-1">
+                            <div
+                              className="bg-[oklch(0.82_0.17_85)] h-full rounded-full"
+                              style={{ width: `${pick.factorBreakdown.battingPosition}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Overall Score */}
+                    <div className="bg-gradient-to-r from-[oklch(0.82_0.17_85/20%)] to-[oklch(0.75_0.20_290/20%)] rounded-lg p-3 border border-[oklch(0.82_0.17_85/30%)]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-white">Overall Score</span>
+                        <div className="text-2xl font-bold text-[oklch(0.82_0.17_85)]">{pick.overallScore}%</div>
+                      </div>
+                      <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-2 mt-2">
+                        <div
+                          className="bg-gradient-to-r from-[oklch(0.82_0.17_85)] to-[oklch(0.75_0.20_290)] h-full rounded-full"
+                          style={{ width: `${pick.overallScore}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Prediction */}
+                    <div className="bg-[oklch(1_0_0/4%)] rounded-lg p-3 border border-[oklch(0.82_0.17_85/30%)]">
+                      <div className="text-xs font-semibold text-[oklch(0.50_0.015_255)] uppercase mb-1">Prediction</div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-bold text-[oklch(0.82_0.17_85)]">{pick.prediction.toUpperCase()}</span>
+                        <span className="text-sm text-[oklch(0.50_0.015_255)]">Line: {pick.line}</span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );

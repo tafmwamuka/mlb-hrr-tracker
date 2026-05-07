@@ -108,3 +108,33 @@
 - [x] Write and pass 7 vitest tests for games router
 - [x] Write and pass 8 vitest tests for ballpark router
 - [x] Fix and pass all 27 vitest tests across all routers
+
+
+## Phase 9: Comprehensive AI Picks & Data Integration
+- [x] Integrate HR Targets (hrtargets.com) data source into ranking algorithm
+- [x] Create AI ranking service combining all data sources
+- [x] Rebuild AI ranking algorithm with all 6 factors:
+  - [x] RC (Runs Created) from ballpark.com (20% weight)
+  - [x] Player historical stats (batting avg, power, OBP) (20% weight)
+  - [x] Park factors (dimensions, weather) (15% weight)
+  - [x] HR Targets predictions (20% weight)
+  - [x] Pitcher matchup data (15% weight)
+  - [x] Batting position weighting (10% weight)
+- [x] Update AI picks to show OVER props only
+- [x] Add reasoning/explanation for each AI pick
+- [x] Display factor breakdown with 6 progress bars on AI picks
+- [x] Create aiPicks router with comprehensive picks procedures
+- [x] Update TopPlaysTab with expanded details and factor breakdown
+- [x] Write and pass 12 vitest tests for AI ranking service
+- [x] Test AI ranking with all data sources integrated
+
+## Phase 10: UI Improvements Complete
+- [x] Fix leaderboard tab toggle for Hits/Runs/RBIs/Slg % (working correctly)
+- [x] Remove Games tab from Home page navigation (now 4 tabs)
+- [x] Update TAB_CONFIG to remove games entry
+- [x] Verify navigation buttons update correctly
+- [x] Test remaining tabs (Top Plays, All Plays, Leaderboard, Results)
+- [x] Add batting position to player data model
+- [x] Weight AI picks by batting position (10% factor)
+- [x] Maximize recommendations based on position
+- [x] Test position-based weighting in AI algorithm

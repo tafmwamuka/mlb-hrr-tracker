@@ -20,12 +20,11 @@ import {
 import { PlayerModal } from "@/components/PlayerModal";
 import { TopPlaysTab } from "@/components/TopPlaysTab";
 import { AllPlaysTab } from "@/components/AllPlaysTab";
-import { GamesTab } from "@/components/GamesTab";
 import { ResultsTab } from "@/components/ResultsTab";
 import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Calendar, Trophy, Zap as ZapIcon, Layers } from "lucide-react";
 import { useLocation } from "wouter";
 
-type TabType = "topPlays" | "allPlays" | "leaderboard" | "games" | "results";
+type TabType = "topPlays" | "allPlays" | "leaderboard" | "results";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -75,11 +74,7 @@ const TAB_CONFIG = {
     icon: TrendingUp,
     color: "oklch(0.82 0.17 85)",
   },
-  games: {
-    label: "Games",
-    icon: Calendar,
-    color: "oklch(0.75 0.20 290)",
-  },
+
   results: {
     label: "Results",
     icon: Trophy,
@@ -617,18 +612,7 @@ export default function Home() {
             </motion.div>
           )}
 
-          {activeTab === "games" && (
-            <motion.div
-              key="games"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 overflow-y-auto"
-            >
-              <GamesTab />
-            </motion.div>
-          )}
+
 
           {activeTab === "results" && (
             <motion.div
