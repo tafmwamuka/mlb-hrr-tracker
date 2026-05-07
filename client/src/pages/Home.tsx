@@ -9,6 +9,8 @@
  */
 
 import { useState, useCallback, useRef } from "react";
+import { Link } from "wouter";
+import { SearchBar } from "@/components/SearchBar";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   useMLBStats,
@@ -346,6 +348,8 @@ function Skeleton() {
 
 // ─── Leaderboard Tab Component ─────────────────────────────────────────────────
 function LeaderboardTabContent() {
+    const [localSearch, setLocalSearch] = useState("");
+    const [localFilters, setLocalFilters] = useState({});
   const [activeStat, setActiveStat] = useState<StatCategory>("hits");
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerStat | null>(null);
   const { data, loading, error, lastUpdated, refresh } = useMLBStats(activeStat);

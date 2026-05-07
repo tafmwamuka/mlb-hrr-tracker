@@ -7,6 +7,7 @@ import { adminRouter } from "./routers/admin";
 import { favoritesRouter } from "./routers/favorites";
 import { gamesRouter } from "./routers/games";
 import { ballparkRouter } from "./routers/ballpark";
+import { notificationsRouter } from "./routers/notifications";
 import { settingsRouter } from "./routers/settings";
 import { searchRouter } from "./routers/search";
 import { aiPicksRouter } from "./routers/aiPicks";
@@ -30,6 +31,7 @@ export const appRouter = router({
   aiPicks: aiPicksRouter,
   search: searchRouter,
   settings: settingsRouter,
+  notifications: notificationsRouter,
   admin: adminRouter,
   favorites: favoritesRouter,
 });

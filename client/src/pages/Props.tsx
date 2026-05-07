@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SearchBar } from "@/components/SearchBar";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
