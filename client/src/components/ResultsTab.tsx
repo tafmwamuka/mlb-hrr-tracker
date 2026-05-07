@@ -224,48 +224,7 @@ export function ResultsTab() {
         })}
       </div>
 
-      {/* Games Results */}
-      {games && games.length > 0 && (
-        <div>
-          <h4 className="text-sm font-bold text-white px-2 mb-2">Games Results</h4>
-          <div className="space-y-2">
-            {games.slice(0, 5).map((game, idx) => {
-              const awayWon = (game.awayTeam.score || 0) > (game.homeTeam.score || 0);
-
-              return (
-                <motion.div
-                  key={game.id}
-                  className="rounded-lg p-3 border border-[oklch(1_0_0/8%)] bg-[oklch(0.14_0.022_255)]"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 + idx * 0.05 }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="text-xs text-[oklch(0.40_0.015_255)] mb-1">{game.date}</div>
-                      <div className="flex items-center gap-2">
-                        <div className={`flex-1 ${awayWon ? "font-bold text-white" : "text-[oklch(0.50_0.015_255)]"}`}>
-                          {game.awayTeam.name}
-                        </div>
-                        <div className="font-bold text-white w-8 text-right">{game.awayTeam.score}</div>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className={`flex-1 ${!awayWon ? "font-bold text-white" : "text-[oklch(0.50_0.015_255)]"}`}>
-                          {game.homeTeam.name}
-                        </div>
-                        <div className="font-bold text-white w-8 text-right">{game.homeTeam.score}</div>
-                      </div>
-                    </div>
-                    <div className="ml-3">
-                      <Trophy size={18} className="text-[oklch(0.82_0.17_85)]" />
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Games Results - Removed as per requirements */}
     </div>
   );
 }
