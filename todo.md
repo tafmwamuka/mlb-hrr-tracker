@@ -91,3 +91,20 @@
 - [x] Verify AI picks display with confidence scores and matchup data
 - [x] Test navigation between tabs
 - [x] Write and pass 7 vitest tests for games router
+
+
+## Phase 8: Games Tab Fix & All Plays Tab Implementation
+- [x] Debug Games tab - verify MLB API response structure and data parsing
+- [x] Fix games router to correctly parse MLB API response (direct array of games)
+- [x] Test Games tab with real MLB API data
+- [x] Create ballpark.com router for batter vs pitcher matchup data with RC ranking
+- [x] Implement RC-based ranking algorithm (top play to ranking 10)
+- [x] Build All Plays tab component with matchup cards and stats display
+- [x] Display park-adjusted stats (RC, HR, XB, 1B, BB, K) on All Plays
+- [x] Add All Plays tab to Home page navigation (between Top Plays and Leaderboard)
+- [x] Create All Plays component with color-coded ranks (1-10)
+- [x] Test All Plays data fetching and display
+- [x] Verify ranking algorithm works correctly (1-10 with color coding)
+- [x] Write and pass 7 vitest tests for games router
+- [x] Write and pass 8 vitest tests for ballpark router
+- [x] Fix and pass all 27 vitest tests across all routers

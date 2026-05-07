@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
 
 /**
@@ -35,34 +36,26 @@ async function fetchGames(date: string): Promise<Game[]> {
     }
 
     const json = await response.json();
-    // MLB schedule API returns an array of date objects, each with a games array
-    const dateObjects = Array.isArray(json) ? json : [];
-    const games: Game[] = [];
+    // MLB schedule API returns an array of games directly
+    const games = Array.isArray(json) ? json : [];
 
-    dateObjects.forEach((dateObj: any) => {
-      const dateGames = dateObj.games || [];
-      dateGames.forEach((g: any) => {
-        games.push({
-          id: g.gamePk?.toString() || "",
-          date: g.gameDateTime || "",
-          status: g.status?.abstractGameState || "Scheduled",
-          awayTeam: {
-            name: g.teams?.away?.team?.name || "Unknown",
-            teamId: g.teams?.away?.team?.id || 0,
-            score: g.teams?.away?.score,
-          },
-          homeTeam: {
-            name: g.teams?.home?.team?.name || "Unknown",
-            teamId: g.teams?.home?.team?.id || 0,
-            score: g.teams?.home?.score,
-          },
-          venue: g.venue?.name || "Unknown",
-          gameTime: g.gameDateTime ? new Date(g.gameDateTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-        });
-      });
-    });
-
-    return games;
+    return games.map((g: any) => ({
+      id: g.gamePk?.toString() || "",
+      date: g.gameDate || "",
+      status: g.status?.abstractGameState || "Scheduled",
+      awayTeam: {
+        name: g.teams?.away?.team?.name || "Unknown",
+        teamId: g.teams?.away?.team?.id || 0,
+        score: g.teams?.away?.score,
+      },
+      homeTeam: {
+        name: g.teams?.home?.team?.name || "Unknown",
+        teamId: g.teams?.home?.team?.id || 0,
+        score: g.teams?.home?.score,
+      },
+      venue: g.venue?.name || "Unknown",
+      gameTime: g.gameDate ? new Date(g.gameDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+    }));
   } catch (error) {
     console.error("Error fetching games:", error);
     return [];

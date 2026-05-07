@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { gamesRouter } from "./games";
 
 describe("Games Router", () => {
@@ -19,25 +19,20 @@ describe("Games Router", () => {
         ok: true,
         json: async () => [
           {
-            date: "2026-05-07",
-            games: [
-              {
-                gamePk: 123456,
-                gameDateTime: "2026-05-07T19:05:00Z",
-                status: { abstractGameState: "Live" },
-                teams: {
-                  away: {
-                    team: { id: 108, name: "Los Angeles Angels" },
-                    score: 3,
-                  },
-                  home: {
-                    team: { id: 145, name: "Chicago White Sox" },
-                    score: 2,
-                  },
-                },
-                venue: { name: "Guaranteed Rate Field" },
+            gamePk: 123456,
+            gameDateTime: "2026-05-07T19:05:00Z",
+            status: { abstractGameState: "Live" },
+            teams: {
+              away: {
+                team: { id: 108, name: "Los Angeles Angels" },
+                score: 3,
               },
-            ],
+              home: {
+                team: { id: 145, name: "Chicago White Sox" },
+                score: 2,
+              },
+            },
+            venue: { name: "Guaranteed Rate Field" },
           },
         ],
       };
@@ -68,7 +63,6 @@ describe("Games Router", () => {
     it("should handle API errors gracefully", async () => {
       const mockResponse = {
         ok: false,
-        status: 500,
       };
 
       (global.fetch as any).mockResolvedValueOnce(mockResponse);
@@ -95,19 +89,14 @@ describe("Games Router", () => {
         ok: true,
         json: async () => [
           {
-            date: "2026-05-06",
-            games: [
-              {
-                gamePk: 789012,
-                gameDateTime: "2026-05-06T19:05:00Z",
-                status: { abstractGameState: "Final" },
-                teams: {
-                  away: { team: { id: 108, name: "Los Angeles Angels" }, score: 5 },
-                  home: { team: { id: 145, name: "Chicago White Sox" }, score: 4 },
-                },
-                venue: { name: "Guaranteed Rate Field" },
-              },
-            ],
+            gamePk: 789012,
+            gameDateTime: "2026-05-06T19:05:00Z",
+            status: { abstractGameState: "Final" },
+            teams: {
+              away: { team: { id: 108, name: "Los Angeles Angels" }, score: 5 },
+              home: { team: { id: 145, name: "Chicago White Sox" }, score: 4 },
+            },
+            venue: { name: "Guaranteed Rate Field" },
           },
         ],
       };
@@ -134,19 +123,14 @@ describe("Games Router", () => {
         ok: true,
         json: async () => [
           {
-            date: "2026-05-05",
-            games: [
-              {
-                gamePk: 345678,
-                gameDateTime: "2026-05-05T19:05:00Z",
-                status: { abstractGameState: "Final" },
-                teams: {
-                  away: { team: { id: 108, name: "Los Angeles Angels" }, score: 2 },
-                  home: { team: { id: 145, name: "Chicago White Sox" }, score: 3 },
-                },
-                venue: { name: "Guaranteed Rate Field" },
-              },
-            ],
+            gamePk: 345678,
+            gameDateTime: "2026-05-05T19:05:00Z",
+            status: { abstractGameState: "Final" },
+            teams: {
+              away: { team: { id: 108, name: "Los Angeles Angels" }, score: 2 },
+              home: { team: { id: 145, name: "Chicago White Sox" }, score: 3 },
+            },
+            venue: { name: "Guaranteed Rate Field" },
           },
         ],
       };
@@ -166,19 +150,14 @@ describe("Games Router", () => {
         ok: true,
         json: async () => [
           {
-            date: "2026-05-01",
-            games: [
-              {
-                gamePk: 111111,
-                gameDateTime: "2026-05-01T19:05:00Z",
-                status: { abstractGameState: "Final" },
-                teams: {
-                  away: { team: { id: 108, name: "Los Angeles Angels" }, score: 1 },
-                  home: { team: { id: 145, name: "Chicago White Sox" }, score: 2 },
-                },
-                venue: { name: "Guaranteed Rate Field" },
-              },
-            ],
+            gamePk: 111111,
+            gameDateTime: "2026-05-01T19:05:00Z",
+            status: { abstractGameState: "Final" },
+            teams: {
+              away: { team: { id: 108, name: "Los Angeles Angels" }, score: 1 },
+              home: { team: { id: 145, name: "Chicago White Sox" }, score: 2 },
+            },
+            venue: { name: "Guaranteed Rate Field" },
           },
         ],
       };
