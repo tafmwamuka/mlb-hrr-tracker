@@ -28,7 +28,7 @@ import { ResultsTab } from "@/components/ResultsTab";
 import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Calendar, Trophy, Zap as ZapIcon, Layers, Ticket, Activity } from "lucide-react";
 import { useLocation } from "wouter";
 
-type TabType = "topPlays" | "allPlays" | "hrr" | "parlays" | "leaderboard" | "results";
+type TabType = "topPlays" | "allPlays" | "hrr" | "parlays" | "results";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -83,12 +83,6 @@ const TAB_CONFIG = {
     icon: Ticket,
     color: "oklch(0.72 0.18 165)",
   },
-  leaderboard: {
-    label: "Leaderboard",
-    icon: TrendingUp,
-    color: "oklch(0.82 0.17 85)",
-  },
-
   results: {
     label: "Results",
     icon: Trophy,
@@ -640,20 +634,6 @@ export default function Home() {
               <ParlaysTab />
             </motion.div>
           )}
-
-          {activeTab === "leaderboard" && (
-            <motion.div
-              key="leaderboard"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 overflow-hidden flex flex-col"
-            >
-              <LeaderboardTabContent />
-            </motion.div>
-          )}
-
 
 
           {activeTab === "results" && (

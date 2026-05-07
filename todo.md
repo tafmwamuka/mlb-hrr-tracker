@@ -306,3 +306,18 @@
 - [x] Create dedicated getHRRPicks backend endpoint with real stat calculations
 - [x] Write Vitest tests for HRR calculation and ranking (35 tests passing)
 - [x] Verify HRR lines are realistic (1.5-6.5 range, 0.5 increments)
+
+## Remove Leaderboard & Rebuild Results Tab (May 7 - User Request)
+- [x] Remove Leaderboard tab from navigation
+- [x] Clean up Leaderboard-related code/components
+- [x] Create database table to persist daily AI picks (date, player, stat, line, confidence) — already exists in propPredictions
+- [x] Create database table for actual results (date, player, actual H/R/RBI) — uses hitsActual/runsActual/rbiActual columns
+- [x] Build API endpoint to store today's AI picks in database — scheduled.refreshData already does this
+- [x] Build API endpoint to fetch yesterday's actual results from MLB Stats API — results.backfillResults
+- [x] Build API endpoint to compare predictions vs actuals (hit/miss) — results.getYesterdayResults
+- [x] Rebuild Results tab UI showing yesterday's predictions with outcomes
+- [x] Show hit rate (% of predictions that hit)
+- [x] Show individual pick results (predicted line vs actual stat)
+- [x] Update scheduled task to: store daily picks + fetch previous day results — added /api/scheduled/backfill-results endpoint
+- [x] Write Vitest tests for results comparison logic (27 tests passing)
+- [x] Verify automatic daily updates work end-to-end — Results tab shows 108 real predictions from DB, pending backfill
