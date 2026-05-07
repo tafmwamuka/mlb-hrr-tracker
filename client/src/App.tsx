@@ -4,6 +4,9 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { NotificationProvider } from "./contexts/NotificationContext";
+import { NotificationCenter } from "./components/NotificationCenter";
+import { useNotifications } from "./contexts/NotificationContext";
 import Home from "./pages/Home";
 import Props from "./pages/Props";
 import Favorites from "./pages/Favorites";
@@ -30,17 +33,25 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
+      <NotificationProvider>
+    <ThemeProvider
         defaultTheme="dark"
         // switchable
       >
         <TooltipProvider>
           <Toaster />
           <Router />
+            <NotificationCenterWrapper />
         </TooltipProvider>
       </ThemeProvider>
+    </NotificationProvider>
     </ErrorBoundary>
   );
 }
 
 export default App;
+
+function NotificationCenterWrapper() {
+  const { notifications, removeNotification } = useNotifications();
+  return <NotificationCenter notifications={notifications} onDismiss={removeNotification} />;
+}

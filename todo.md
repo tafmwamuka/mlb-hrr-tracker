@@ -198,3 +198,15 @@
 - [x] Test with live Bet365 data integration
 - [x] Replace mock props with real data from Odds API
 - [x] Add fallback to mock data if API unavailable
+
+## Phase 7: Notification System (In Progress)
+- [x] Create NotificationCenter component for in-app notifications
+- [x] Build notification store/context for managing notification state
+- [x] Implement push notification service worker
+- [x] Request browser push notification permissions
+- [x] Create notification triggers for: new top plays, favorite player games, odds changes, daily updates
+- [ ] Add notification history/log
+- [ ] Add notification settings (enable/disable by type)
+- [ ] Test in-app notifications
+- [ ] Test push notifications
+- [x] Add notification icons and styling
