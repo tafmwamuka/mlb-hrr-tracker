@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, Zap, Target, Loader2, Star } from "lucide-react";
+import { TrendingUp, Zap, Target, Activity, Loader2, Star } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function Props() {
@@ -26,7 +26,7 @@ export default function Props() {
     return "bg-gray-500/20 text-gray-700";
   };
 
-  const getStatIcon = (stat: "hits" | "runs" | "rbi") => {
+  const getStatIcon = (stat: "hits" | "runs" | "rbi" | "slg") => {
     switch (stat) {
       case "hits":
         return <TrendingUp className="w-4 h-4" />;
@@ -34,6 +34,8 @@ export default function Props() {
         return <Zap className="w-4 h-4" />;
       case "rbi":
         return <Target className="w-4 h-4" />;
+      case "slg":
+        return <Activity className="w-4 h-4" />;
     }
   };
 
@@ -44,7 +46,7 @@ export default function Props() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-white mb-2">MLB Prop Predictions</h1>
-            <p className="text-slate-400">AI-powered H/R/RBI prop lines with park adjustments</p>
+            <p className="text-slate-400">AI-powered H/R/RBI/Slg % prop lines with park adjustments</p>
           </div>
           <button
             onClick={() => navigate("/favorites")}
@@ -74,6 +76,10 @@ export default function Props() {
               <div>
                 <p className="text-sm text-slate-400">RBI Accuracy</p>
                 <p className="text-2xl font-bold text-emerald-400">{performance.rbiHitRate}%</p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-400">Slg % Accuracy</p>
+                <p className="text-2xl font-bold text-purple-400">{performance.slgHitRate || "N/A"}%</p>
               </div>
             </div>
           </Card>

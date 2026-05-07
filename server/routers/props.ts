@@ -153,6 +153,7 @@ export const propsRouter = router({
     let hitsCorrect = 0;
     let runsCorrect = 0;
     let rbiCorrect = 0;
+    let slgCorrect = 0;
     let totalPredictions = 0;
 
     predictions.forEach((p) => {
@@ -165,6 +166,9 @@ export const propsRouter = router({
       }
       if (p.rbiCorrect !== null) {
         rbiCorrect += p.rbiCorrect;
+      }
+      if (p.slgCorrect !== null) {
+        slgCorrect += p.slgCorrect;
       }
     });
 
@@ -180,8 +184,12 @@ export const propsRouter = router({
       totalPredictions > 0
         ? Math.round((rbiCorrect / totalPredictions) * 100)
         : 0;
+    const slgHitRate =
+      totalPredictions > 0
+        ? Math.round((slgCorrect / totalPredictions) * 100)
+        : 0;
     const overallHitRate = Math.round(
-      ((hitsCorrect + runsCorrect + rbiCorrect) / (totalPredictions * 3)) * 100
+      ((hitsCorrect + runsCorrect + rbiCorrect + slgCorrect) / (totalPredictions * 4)) * 100
     );
 
     return {
@@ -190,6 +198,7 @@ export const propsRouter = router({
       hitsHitRate,
       runsHitRate,
       rbiHitRate,
+      slgHitRate,
       overallHitRate,
     };
   }),

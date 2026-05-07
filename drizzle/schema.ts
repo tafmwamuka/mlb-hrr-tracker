@@ -45,7 +45,7 @@ export type MLBGame = typeof mlbGames.$inferSelect;
 export type InsertMLBGame = typeof mlbGames.$inferInsert;
 
 /**
- * Player Props table — stores H/R/RBI prop lines for each player in each game
+ * Player Props table — stores H/R/RBI/Slg % prop lines for each player in each game
  */
 export const playerProps = mysqlTable("player_props", {
   id: int("id").autoincrement().primaryKey(),
@@ -56,9 +56,11 @@ export const playerProps = mysqlTable("player_props", {
   hitsLine: text("hitsLine"),
   runsLine: text("runsLine"),
   rbiLine: text("rbiLine"),
+  slgLine: text("slgLine"),
   hitsConfidence: int("hitsConfidence"),
   runsConfidence: int("runsConfidence"),
   rbiConfidence: int("rbiConfidence"),
+  slgConfidence: int("slgConfidence"),
   parkFactor: text("parkFactor"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -78,15 +80,19 @@ export const propPredictions = mysqlTable("prop_predictions", {
   hitsPrediction: text("hitsPrediction"),
   runsPrediction: text("runsPrediction"),
   rbiPrediction: text("rbiPrediction"),
+  slgPrediction: text("slgPrediction"),
   hitsReasoning: text("hitsReasoning"),
   runsReasoning: text("runsReasoning"),
   rbiReasoning: text("rbiReasoning"),
+  slgReasoning: text("slgReasoning"),
   hitsActual: int("hitsActual"),
   runsActual: int("runsActual"),
   rbiActual: int("rbiActual"),
+  slgActual: int("slgActual"),
   hitsCorrect: int("hitsCorrect"),
   runsCorrect: int("runsCorrect"),
   rbiCorrect: int("rbiCorrect"),
+  slgCorrect: int("slgCorrect"),
   predictionDate: timestamp("predictionDate").notNull(),
   gameDate: timestamp("gameDate").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -106,6 +112,7 @@ export const modelPerformance = mysqlTable("model_performance", {
   hitsCorrect: int("hitsCorrect").default(0),
   runsCorrect: int("runsCorrect").default(0),
   rbiCorrect: int("rbiCorrect").default(0),
+  slgCorrect: int("slgCorrect").default(0),
   overallHitRate: int("overallHitRate"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -113,6 +120,7 @@ export const modelPerformance = mysqlTable("model_performance", {
 
 export type ModelPerformance = typeof modelPerformance.$inferSelect;
 export type InsertModelPerformance = typeof modelPerformance.$inferInsert;
+
 /**
  * User Favorites table — stores user's favorite prop predictions
  * Tracks which plays the user has marked as favorites and their outcomes
@@ -124,8 +132,8 @@ export const userFavorites = mysqlTable("user_favorites", {
   playerId: int("playerId").notNull(),
   playerName: varchar("playerName", { length: 128 }).notNull(),
   playerTeam: varchar("playerTeam", { length: 64 }).notNull(),
-  statType: mysqlEnum("statType", ["hits", "runs", "rbi"]).notNull(),
-  prediction: varchar("prediction", { length: 32 }).notNull(), // "over" or "under"
+  statType: mysqlEnum("statType", ["hits", "runs", "rbi", "slg"]).notNull(),
+  prediction: varchar("prediction", { length: 32 }).notNull(),
   line: int("line"),
   confidence: int("confidence"),
   reasoning: text("reasoning"),
@@ -139,3 +147,57 @@ export const userFavorites = mysqlTable("user_favorites", {
 
 export type UserFavorite = typeof userFavorites.$inferSelect;
 export type InsertUserFavorite = typeof userFavorites.$inferInsert;
+
+/**
+ * User Watchlist table — stores user's "My Players" watchlist
+ */
+export const userWatchlist = mysqlTable("user_watchlist", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  playerId: int("playerId").notNull(),
+  playerName: varchar("playerName", { length: 128 }).notNull(),
+  playerTeam: varchar("playerTeam", { length: 64 }).notNull(),
+  playerPosition: varchar("playerPosition", { length: 32 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserWatchlist = typeof userWatchlist.$inferSelect;
+export type InsertUserWatchlist = typeof userWatchlist.$inferInsert;
+
+/**
+ * User Settings table — stores user preferences for prop model and notifications
+ */
+export const userSettings = mysqlTable("user_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  minConfidenceThreshold: int("minConfidenceThreshold").default(75),
+  enableNotifications: int("enableNotifications").default(1),
+  notifyHighConfidence: int("notifyHighConfidence").default(1),
+  notifyNewGames: int("notifyNewGames").default(0),
+  preferredStats: varchar("preferredStats", { length: 64 }).default("hits,runs,rbi,slg"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserSettings = typeof userSettings.$inferSelect;
+export type InsertUserSettings = typeof userSettings.$inferInsert;
+
+/**
+ * Notifications table — stores user notifications for high-confidence props
+ */
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  playerId: int("playerId").notNull(),
+  playerName: varchar("playerName", { length: 128 }).notNull(),
+  statType: mysqlEnum("statType", ["hits", "runs", "rbi", "slg"]).notNull(),
+  confidence: int("confidence"),
+  message: text("message"),
+  read: int("read").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;

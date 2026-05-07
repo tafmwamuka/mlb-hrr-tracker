@@ -18,9 +18,10 @@
 - [x] Add confidence scores and hit rate tracking to prop predictions
 - [x] Store historical prop data in database for model training
 
-## Phase 3: UI & Features
+## Phase 3: UI & Features (In Progress)
 - [x] Create props page layout (matchup cards, player props, odds display)
-- [ ] Add game schedule section showing today's MLB games
+- [x] Add Slg % to Props page performance metrics
+- [ ] Add Slg % prop cards to Props page display
 - [ ] Implement player search/filter across leaderboard and props
 - [ ] Add "My Players" watchlist feature with star bookmarking
 - [ ] Build settings page for prop model preferences
