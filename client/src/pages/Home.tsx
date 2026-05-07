@@ -23,12 +23,12 @@ import { PlayerModal } from "@/components/PlayerModal";
 import { TopPlaysTab } from "@/components/TopPlaysTab";
 import { AllPlaysTab } from "@/components/AllPlaysTab";
 import { ParlaysTab } from "@/components/ParlaysTab";
-import { HRRTab } from "@/components/HRRTab";
+import { MoneyPicksTab } from "@/components/MoneyPicksTab";
 import { ResultsTab } from "@/components/ResultsTab";
 import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Calendar, Trophy, Zap as ZapIcon, Layers, Ticket, Activity } from "lucide-react";
 import { useLocation } from "wouter";
 
-type TabType = "topPlays" | "allPlays" | "hrr" | "parlays" | "results";
+type TabType = "topPlays" | "allPlays" | "ai" | "parlays" | "results";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -73,9 +73,9 @@ const TAB_CONFIG = {
     icon: Layers,
     color: "oklch(0.75 0.20 290)",
   },
-  hrr: {
-    label: "HRR",
-    icon: Activity,
+  ai: {
+    label: "AI Props",
+    icon: Sparkles,
     color: "oklch(0.68 0.22 25)",
   },
   parlays: {
@@ -592,7 +592,7 @@ export default function Home() {
               transition={{ duration: 0.2 }}
               className="flex-1 overflow-y-auto flex flex-col"
             >
-              <HRRTab />
+              <MoneyPicksTab />
             </motion.div>
           )}
 
@@ -609,16 +609,27 @@ export default function Home() {
             </motion.div>
           )}
 
-          {activeTab === "hrr" && (
+          {activeTab === "ai" && (
             <motion.div
-              key="hrr"
+              key="ai"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="flex-1 overflow-y-auto"
+              className="flex-1 overflow-y-auto flex flex-col items-center justify-center"
             >
-              <HRRTab />
+              <div className="text-center p-8">
+                <Sparkles size={48} className="mx-auto mb-4" style={{ color: "oklch(0.68 0.22 25)" }} />
+                <h3 className="text-white font-bold text-lg mb-2">AI Prop Predictions</h3>
+                <p className="text-[oklch(0.50_0.015_255)] text-sm mb-6">Full analysis with individual H/R/RBI props, detailed matchup breakdowns, and Statcast metrics</p>
+                <button
+                  onClick={() => navigate("/props")}
+                  className="px-6 py-3 rounded-xl font-semibold text-sm text-white transition-all active:scale-95"
+                  style={{ background: "linear-gradient(135deg, oklch(0.68 0.22 25), oklch(0.68 0.22 25 / 0.7))" }}
+                >
+                  View AI Prop Predictions →
+                </button>
+              </div>
             </motion.div>
           )}
 

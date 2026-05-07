@@ -1,12 +1,16 @@
-import { Trophy, TrendingUp, Zap, Target, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from "lucide-react";
+/**
+ * Results Tab - Shows only 75%+ probability plays we suggested
+ * More attractive design with visual stats, animated progress, and clear outcomes
+ */
+
+import { Trophy, TrendingUp, Zap, Target, CheckCircle2, XCircle, Clock, Flame, DollarSign, BarChart3 } from "lucide-react";
 import { motion } from "framer-motion";
 import { trpc } from "@/lib/trpc";
-import { SaferPlayTip } from "@/components/SaferPlayTip";
 
 const STAT_CONFIG = {
-  hits: { label: "Hits", icon: TrendingUp, color: "oklch(0.82_0.17_85)" },
-  runs: { label: "Runs", icon: Zap, color: "oklch(0.68_0.22_25)" },
-  rbi: { label: "RBI", icon: Target, color: "oklch(0.72_0.18_165)" },
+  hits: { label: "Hits", abbr: "H", icon: TrendingUp, color: "oklch(0.82_0.17_85)" },
+  runs: { label: "Runs", abbr: "R", icon: Zap, color: "oklch(0.68_0.22_25)" },
+  rbi: { label: "RBI", abbr: "RBI", icon: Target, color: "oklch(0.72_0.18_165)" },
 };
 
 export function ResultsTab() {
@@ -15,275 +19,303 @@ export function ResultsTab() {
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center">
           <motion.div
-            className="w-12 h-12 rounded-full border-2 border-transparent border-t-[oklch(0.68_0.22_25)] mx-auto mb-4"
+            className="w-16 h-16 rounded-full border-3 border-transparent mx-auto mb-4"
+            style={{ borderTopColor: "oklch(0.72 0.18 165)", borderRightColor: "oklch(0.82 0.17 85)" }}
             animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
           />
-          <div className="animate-pulse text-[oklch(0.50_0.015_255)]">Loading yesterday's results...</div>
+          <div className="text-[oklch(0.50_0.015_255)] text-sm">Loading results...</div>
         </div>
       </div>
     );
   }
 
-  const results = resultsData?.results || [];
+  const allResults = resultsData?.results || [];
   const hasActuals = resultsData?.hasActuals || false;
-  const hitRate = resultsData?.hitRate || 0;
   const dateStr = resultsData?.date || "";
 
-  // Format date for display
+  // FILTER: Only show plays that were 75%+ confidence (our "Money Picks")
+  const results = allResults.filter((r: any) => r.confidence >= 75);
+
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "Yesterday";
     const d = new Date(dateStr + "T12:00:00");
-    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+    return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   };
 
   if (!resultsData?.success || results.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 px-4">
-        <Trophy size={48} className="text-[oklch(0.40_0.015_255)] mb-3" />
-        <p className="text-[oklch(0.50_0.015_255)] text-center text-sm mb-2">
-          No predictions found for yesterday
-        </p>
-        <p className="text-[oklch(0.35_0.015_255)] text-center text-xs max-w-[280px]">
-          AI picks are stored daily by the scheduled task. Results will appear here the next morning after games are played.
+      <div className="flex-1 flex flex-col items-center justify-center py-16 px-6">
+        <div className="w-20 h-20 rounded-full flex items-center justify-center mb-4" style={{ background: "oklch(0.18 0.03 165)" }}>
+          <Trophy size={36} style={{ color: "oklch(0.72 0.18 165)" }} />
+        </div>
+        <h3 className="text-white font-bold text-lg mb-2">No Results Yet</h3>
+        <p className="text-[oklch(0.50_0.015_255)] text-center text-sm max-w-[300px]">
+          Results for 75%+ Money Picks will appear here after games are completed. Updates happen after the last game each night.
         </p>
       </div>
     );
   }
 
-  // Sort results by stat priority: Hits > Runs > RBI (RBI is riskiest)
-  const STAT_PRIORITY: Record<string, number> = { hits: 3, runs: 2, rbi: 1 };
-  const sortedResults = [...results].sort((a: any, b: any) => {
-    return (STAT_PRIORITY[b.statType] || 0) - (STAT_PRIORITY[a.statType] || 0);
-  });
-
-  // Separate results into resolved (have actuals) and pending
-  const resolvedResults = sortedResults.filter((r: any) => r.actualValue !== null);
-  const pendingResults = sortedResults.filter((r: any) => r.actualValue === null);
-  const hitCount = resolvedResults.filter((r: any) => r.hit === true).length;
+  // Separate into resolved and pending
+  const resolved = results.filter((r: any) => r.actualValue !== null);
+  const pending = results.filter((r: any) => r.actualValue === null);
+  const hits = resolved.filter((r: any) => r.hit === true);
+  const misses = resolved.filter((r: any) => r.hit === false);
+  const hitRate = resolved.length > 0 ? Math.round((hits.length / resolved.length) * 100) : 0;
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 pb-6">
-      <SaferPlayTip />
-
-      {/* Summary Card */}
-      <motion.div
-        className="mb-5 rounded-xl p-4 border"
-        style={{
-          background: "linear-gradient(135deg, oklch(0.82_0.17_85/10%), oklch(0.72_0.18_165/10%))",
-          borderColor: "oklch(0.82_0.17_85/30%)",
-        }}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
+    <div className="flex-1 overflow-y-auto pb-20">
+      {/* Hero Stats Banner */}
+      <div
+        className="px-4 pt-5 pb-6"
+        style={{ background: "linear-gradient(180deg, oklch(0.16 0.03 165 / 40%) 0%, transparent 100%)" }}
       >
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h3 className="text-lg font-bold text-white mb-1">Yesterday's Picks</h3>
-            <p className="text-sm text-[oklch(0.50_0.015_255)]">{formatDate(dateStr)}</p>
+        <div className="flex items-center gap-2 mb-4">
+          <BarChart3 size={18} style={{ color: "oklch(0.72 0.18 165)" }} />
+          <h2 className="text-white font-bold text-lg">Results</h2>
+          <span className="text-[oklch(0.50_0.015_255)] text-xs ml-auto">{formatDate(dateStr)}</span>
+        </div>
+
+        {/* Big hit rate display */}
+        <div className="rounded-2xl p-5 border border-[oklch(1_0_0/8%)]" style={{ background: "oklch(0.13 0.022 255)" }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-[oklch(0.45_0.015_255)] text-xs font-semibold uppercase tracking-wider mb-1">
+                Money Picks Hit Rate
+              </div>
+              {hasActuals && resolved.length > 0 ? (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-bold" style={{ color: hitRate >= 70 ? "oklch(0.72 0.18 165)" : hitRate >= 50 ? "oklch(0.82 0.17 85)" : "oklch(0.68 0.22 25)" }}>
+                    {hitRate}%
+                  </span>
+                  <span className="text-sm text-[oklch(0.50_0.015_255)]">
+                    ({hits.length}/{resolved.length})
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Clock size={18} className="text-[oklch(0.60_0.10_85)]" />
+                  <span className="text-lg font-bold text-[oklch(0.60_0.10_85)]">Awaiting Results</span>
+                </div>
+              )}
+            </div>
+
+            {/* Circular progress */}
+            {hasActuals && resolved.length > 0 && (
+              <div className="relative w-16 h-16">
+                <svg className="w-16 h-16 -rotate-90" viewBox="0 0 36 36">
+                  <path
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke="oklch(0.20 0.02 255)"
+                    strokeWidth="3"
+                  />
+                  <motion.path
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke={hitRate >= 70 ? "oklch(0.72 0.18 165)" : hitRate >= 50 ? "oklch(0.82 0.17 85)" : "oklch(0.68 0.22 25)"}
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    initial={{ strokeDasharray: "0, 100" }}
+                    animate={{ strokeDasharray: `${hitRate}, 100` }}
+                    transition={{ delay: 0.3, duration: 1, ease: "easeOut" }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-xs font-bold text-white">{hits.length}✓</span>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="text-right">
-            {hasActuals ? (
-              <>
-                <div className="text-3xl font-bold text-[oklch(0.82_0.17_85)]">{hitRate}%</div>
-                <div className="text-xs text-[oklch(0.50_0.015_255)]">Hit Rate</div>
-              </>
-            ) : (
-              <>
-                <div className="text-2xl font-bold text-[oklch(0.60_0.10_85)]">--</div>
-                <div className="text-xs text-[oklch(0.50_0.015_255)]">Pending</div>
-              </>
+
+          {/* Progress bar */}
+          {hasActuals && resolved.length > 0 && (
+            <div className="flex gap-1 h-2 rounded-full overflow-hidden">
+              <motion.div
+                className="h-full rounded-full"
+                style={{ background: "oklch(0.72 0.18 165)" }}
+                initial={{ flex: 0 }}
+                animate={{ flex: hits.length }}
+                transition={{ delay: 0.2, duration: 0.6 }}
+              />
+              <motion.div
+                className="h-full rounded-full"
+                style={{ background: "oklch(0.68 0.22 25)" }}
+                initial={{ flex: 0 }}
+                animate={{ flex: misses.length }}
+                transition={{ delay: 0.4, duration: 0.6 }}
+              />
+              {pending.length > 0 && (
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: "oklch(0.35 0.02 255)" }}
+                  initial={{ flex: 0 }}
+                  animate={{ flex: pending.length }}
+                  transition={{ delay: 0.6, duration: 0.6 }}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Legend */}
+          <div className="flex items-center gap-4 mt-3 text-[10px]">
+            {hits.length > 0 && (
+              <div className="flex items-center gap-1">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ background: "oklch(0.72 0.18 165)" }} />
+                <span className="text-[oklch(0.55_0.015_255)]">{hits.length} Hit</span>
+              </div>
+            )}
+            {misses.length > 0 && (
+              <div className="flex items-center gap-1">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ background: "oklch(0.68 0.22 25)" }} />
+                <span className="text-[oklch(0.55_0.015_255)]">{misses.length} Miss</span>
+              </div>
+            )}
+            {pending.length > 0 && (
+              <div className="flex items-center gap-1">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ background: "oklch(0.35 0.02 255)" }} />
+                <span className="text-[oklch(0.55_0.015_255)]">{pending.length} Pending</span>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Hit rate bar */}
-        {hasActuals && (
-          <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-3 overflow-hidden mb-3">
-            <motion.div
-              className="h-full rounded-full bg-gradient-to-r from-[oklch(0.82_0.17_85)] to-[oklch(0.72_0.18_165)]"
-              initial={{ width: 0 }}
-              animate={{ width: `${hitRate}%` }}
-              transition={{ delay: 0.2, duration: 0.8 }}
-            />
+        {/* All-time stats */}
+        {statsData?.success && statsData.stats.totalPredictions > 0 && (
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            <div className="rounded-xl p-3 text-center border border-[oklch(1_0_0/6%)]" style={{ background: "oklch(0.13 0.022 255)" }}>
+              <div className="text-lg font-bold text-white">{statsData.stats.overallHitRate}%</div>
+              <div className="text-[9px] text-[oklch(0.40_0.015_255)] uppercase font-semibold">All-Time</div>
+            </div>
+            <div className="rounded-xl p-3 text-center border border-[oklch(1_0_0/6%)]" style={{ background: "oklch(0.13 0.022 255)" }}>
+              <div className="text-lg font-bold text-white">{statsData.stats.totalPredictions}</div>
+              <div className="text-[9px] text-[oklch(0.40_0.015_255)] uppercase font-semibold">Total Picks</div>
+            </div>
+            <div className="rounded-xl p-3 text-center border border-[oklch(1_0_0/6%)]" style={{ background: "oklch(0.13 0.022 255)" }}>
+              <div className="text-lg font-bold text-white">{statsData.stats.last7Days}%</div>
+              <div className="text-[9px] text-[oklch(0.40_0.015_255)] uppercase font-semibold">7-Day</div>
+            </div>
           </div>
         )}
+      </div>
 
-        <div className="flex items-center justify-between text-xs text-[oklch(0.50_0.015_255)]">
-          <span>
-            {hasActuals
-              ? `${hitCount} of ${resolvedResults.length} plays hit`
-              : `${results.length} predictions made • awaiting game results`}
+      {/* Results List */}
+      <div className="px-4 space-y-2">
+        {/* Section header */}
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <DollarSign size={14} style={{ color: "oklch(0.72 0.18 165)" }} />
+            75%+ Money Picks
+          </h3>
+          <span className="text-[10px] text-[oklch(0.45_0.015_255)]">
+            Only showing plays ≥75% confidence
           </span>
-          {pendingResults.length > 0 && hasActuals && (
-            <span className="text-[oklch(0.60_0.10_85)]">
-              {pendingResults.length} pending
-            </span>
-          )}
         </div>
-      </motion.div>
 
-      {/* Overall Stats Card (if we have historical data) */}
-      {statsData?.success && statsData.stats.totalPredictions > 0 && (
-        <motion.div
-          className="mb-5 rounded-xl p-3 border border-[oklch(1_0_0/10%)] bg-[oklch(0.14_0.022_255)]"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <h4 className="text-xs font-bold text-[oklch(0.50_0.015_255)] uppercase tracking-wider mb-2">
-            All-Time Stats
-          </h4>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="text-center">
-              <div className="text-lg font-bold text-white">{statsData.stats.overallHitRate}%</div>
-              <div className="text-[10px] text-[oklch(0.40_0.015_255)]">Overall</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-white">{statsData.stats.totalPredictions}</div>
-              <div className="text-[10px] text-[oklch(0.40_0.015_255)]">Total Picks</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-white">{statsData.stats.last7Days}%</div>
-              <div className="text-[10px] text-[oklch(0.40_0.015_255)]">Last 7 Days</div>
-            </div>
-          </div>
-          {/* Per-stat breakdown */}
-          <div className="flex gap-3 mt-2 pt-2 border-t border-[oklch(1_0_0/6%)]">
-            {(["hits", "runs", "rbi"] as const).map((stat) => {
-              const cfg = STAT_CONFIG[stat];
-              const rate = statsData.stats.byStatType[stat];
-              return (
-                <div key={stat} className="flex items-center gap-1 text-xs">
-                  <div className="w-2 h-2 rounded-full" style={{ background: cfg.color }} />
-                  <span className="text-[oklch(0.50_0.015_255)]">{cfg.label}:</span>
-                  <span className="font-bold text-white">{rate}%</span>
-                </div>
-              );
-            })}
-          </div>
-        </motion.div>
-      )}
+        {/* Result cards */}
+        {results.map((play: any, idx: number) => {
+          const statConfig = STAT_CONFIG[play.stat as keyof typeof STAT_CONFIG] || STAT_CONFIG.hits;
+          const Icon = statConfig.icon;
+          const isPending = play.actualValue === null;
+          const isHit = play.hit === true;
 
-      {/* Resolved Results */}
-      {resolvedResults.length > 0 && (
-        <div className="space-y-2 mb-5">
-          <h4 className="text-sm font-bold text-white px-1 mb-2 flex items-center gap-2">
-            <CheckCircle size={14} className="text-[oklch(0.72_0.18_165)]" />
-            Completed ({resolvedResults.length})
-          </h4>
-          {resolvedResults.map((play: any, idx: number) => {
-            const statConfig = STAT_CONFIG[play.stat as keyof typeof STAT_CONFIG];
-            const Icon = statConfig.icon;
-
-            return (
-              <motion.div
-                key={`${play.id}-${play.stat}`}
-                className="rounded-lg p-3 border"
+          return (
+            <motion.div
+              key={`${play.id}-${play.stat}-${idx}`}
+              className="rounded-xl p-3.5 border overflow-hidden relative"
+              style={{
+                background: isPending
+                  ? "oklch(0.14 0.022 255)"
+                  : isHit
+                  ? "oklch(0.14 0.025 165)"
+                  : "oklch(0.14 0.020 25)",
+                borderColor: isPending
+                  ? "oklch(1 0 0 / 8%)"
+                  : isHit
+                  ? "oklch(0.72 0.18 165 / 25%)"
+                  : "oklch(0.68 0.22 25 / 25%)",
+              }}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.04, duration: 0.3 }}
+            >
+              {/* Left accent */}
+              <div
+                className="absolute left-0 top-0 bottom-0 w-[3px]"
                 style={{
-                  background: play.hit ? "oklch(0.72_0.18_165/8%)" : "oklch(0.68_0.22_25/8%)",
-                  borderColor: play.hit ? "oklch(0.72_0.18_165/25%)" : "oklch(0.68_0.22_25/25%)",
+                  background: isPending
+                    ? "oklch(0.50 0.10 85)"
+                    : isHit
+                    ? "oklch(0.72 0.18 165)"
+                    : "oklch(0.68 0.22 25)",
                 }}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.04 }}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Icon size={14} style={{ color: statConfig.color }} />
-                      <span className="font-bold text-white text-sm">{play.playerName}</span>
-                    </div>
-                    <div className="text-xs text-[oklch(0.50_0.015_255)]">
-                      {play.stat.toUpperCase()} OVER {play.line}
-                    </div>
+              />
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 pl-2">
+                  {/* Stat icon */}
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center"
+                    style={{ background: `${statConfig.color.replace(")", " / 15%)")}` }}
+                  >
+                    <Icon size={16} style={{ color: statConfig.color }} />
                   </div>
-                  <div className="flex items-center gap-2">
-                    {play.hit ? (
-                      <div className="flex items-center gap-1 bg-[oklch(0.72_0.18_165/15%)] rounded-full px-2 py-0.5">
-                        <CheckCircle size={14} className="text-[oklch(0.72_0.18_165)]" />
-                        <span className="text-xs font-bold text-[oklch(0.72_0.18_165)]">HIT</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 bg-[oklch(0.68_0.22_25/15%)] rounded-full px-2 py-0.5">
-                        <XCircle size={14} className="text-[oklch(0.68_0.22_25)]" />
-                        <span className="text-xs font-bold text-[oklch(0.68_0.22_25)]">MISS</span>
-                      </div>
-                    )}
+
+                  {/* Player + prop info */}
+                  <div>
+                    <div className="text-white font-bold text-sm">{play.playerName}</div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[11px] font-semibold" style={{ color: statConfig.color }}>
+                        {play.stat.toUpperCase()} O {play.line}
+                      </span>
+                      <span className="text-[10px] text-[oklch(0.45_0.015_255)]">
+                        {play.confidence}% conf
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Result details */}
-                <div className="flex items-center gap-2 text-xs">
-                  <div className="bg-[oklch(1_0_0/5%)] rounded px-2 py-1">
-                    <span className="text-[oklch(0.45_0.015_255)]">Line:</span>
-                    <span className="font-bold text-white ml-1">{play.line}</span>
-                  </div>
-                  <div className="bg-[oklch(1_0_0/5%)] rounded px-2 py-1">
-                    <span className="text-[oklch(0.45_0.015_255)]">Actual:</span>
-                    <span
-                      className="font-bold ml-1"
-                      style={{ color: play.hit ? "oklch(0.72_0.18_165)" : "oklch(0.68_0.22_25)" }}
-                    >
-                      {play.actualValue}
+                {/* Result badge */}
+                <div className="flex flex-col items-end gap-1">
+                  {isPending ? (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: "oklch(0.50 0.10 85 / 12%)" }}>
+                      <Clock size={12} className="text-[oklch(0.60_0.10_85)]" />
+                      <span className="text-[11px] font-bold text-[oklch(0.60_0.10_85)]">PENDING</span>
+                    </div>
+                  ) : isHit ? (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: "oklch(0.72 0.18 165 / 15%)" }}>
+                      <CheckCircle2 size={12} className="text-[oklch(0.72_0.18_165)]" />
+                      <span className="text-[11px] font-bold text-[oklch(0.72_0.18_165)]">HIT</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: "oklch(0.68 0.22 25 / 15%)" }}>
+                      <XCircle size={12} className="text-[oklch(0.68_0.22_25)]" />
+                      <span className="text-[11px] font-bold text-[oklch(0.68_0.22_25)]">MISS</span>
+                    </div>
+                  )}
+
+                  {/* Actual value */}
+                  {!isPending && (
+                    <span className="text-[10px] text-[oklch(0.50_0.015_255)]">
+                      Actual: <strong className="text-white">{play.actualValue}</strong>
                     </span>
-                  </div>
-                  <div className="bg-[oklch(1_0_0/5%)] rounded px-2 py-1">
-                    <span className="text-[oklch(0.45_0.015_255)]">Conf:</span>
-                    <span className="font-bold text-white ml-1">{play.confidence}%</span>
-                  </div>
+                  )}
                 </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      )}
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
 
-      {/* Pending Results */}
-      {pendingResults.length > 0 && (
-        <div className="space-y-2 mb-5">
-          <h4 className="text-sm font-bold text-white px-1 mb-2 flex items-center gap-2">
-            <Clock size={14} className="text-[oklch(0.60_0.10_85)]" />
-            Awaiting Results ({pendingResults.length})
-          </h4>
-          {pendingResults.map((play: any, idx: number) => {
-            const statConfig = STAT_CONFIG[play.stat as keyof typeof STAT_CONFIG];
-            const Icon = statConfig.icon;
-
-            return (
-              <motion.div
-                key={`${play.id}-${play.stat}-pending`}
-                className="rounded-lg p-3 border border-[oklch(1_0_0/10%)] bg-[oklch(0.14_0.022_255)]"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.04 }}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Icon size={14} style={{ color: statConfig.color }} />
-                      <span className="font-bold text-white text-sm">{play.playerName}</span>
-                    </div>
-                    <div className="text-xs text-[oklch(0.50_0.015_255)]">
-                      {play.stat.toUpperCase()} OVER {play.line} • {play.confidence}% confidence
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 bg-[oklch(0.60_0.10_85/15%)] rounded-full px-2 py-0.5">
-                    <AlertCircle size={12} className="text-[oklch(0.60_0.10_85)]" />
-                    <span className="text-[10px] font-bold text-[oklch(0.60_0.10_85)]">PENDING</span>
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Footer note */}
-      <div className="text-center text-[oklch(0.32_0.015_255)] text-[10px] pb-4 px-4">
-        Results update automatically each morning via scheduled task
+      {/* Footer */}
+      <div className="text-center py-6 px-4">
+        <p className="text-[10px] text-[oklch(0.32_0.015_255)] leading-relaxed">
+          Results update after the last game each night. Only 75%+ confidence picks are tracked here.
+        </p>
       </div>
     </div>
   );

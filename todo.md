@@ -355,3 +355,11 @@
 - [x] Implement Poisson probability model (poissonModel.ts, 28 tests)
 - [x] Show edge vs sportsbook and pick quality badges
 - [x] All 154 tests passing
+
+## Tab Consolidation & 75%+ Picks Focus (May 7 - User Request)
+- [x] Money Picks: show only 75%+ alternate line suggestions (high-probability plays)
+- [x] Remove HRR tab from navigation
+- [x] Replace HRR tab position with AI Prop Predictions link
+- [x] Results page: only show plays we suggested that were 75%+ probability
+- [x] Results page: make design more attractive/visually appealing (circular progress, animated bars, color-coded cards)
+- [x] Results updates: backfill after the last game of the day
