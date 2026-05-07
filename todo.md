@@ -152,3 +152,31 @@
 - [x] Test stat type display on all picks
 - [x] Verify correct stat selection based on player data
 - [x] Write and pass 14 vitest tests for stat type logic
+
+
+## Phase 12: Daily Scheduled Updates (2 times per day)
+- [ ] Create 6 AM scheduled task for fresh AI picks generation
+- [ ] Create pre-game scheduled task (2 hours before first game) for leaderboard refresh
+- [ ] Integrate MLB Stats API into 6 AM job
+- [ ] Integrate ballpark.com data into 6 AM job
+- [ ] Integrate HR Targets data into 6 AM job
+- [ ] Integrate Odds API into 6 AM job
+- [ ] Update database with fresh predictions each day
+- [ ] Test 6 AM scheduled task
+- [ ] Test pre-game scheduled task
+- [ ] Verify daily updates persist across app restarts
+- [ ] Monitor scheduled task execution logs
+
+
+## Phase 13: UI Enhancements & Data Accuracy
+- [x] Update All Plays tab to show 15 plays (instead of 10)
+- [x] Add "Best Prop" indicator to All Plays showing recommended stat (H/O, R/O, RBI/O)
+- [x] Highlight top 3 recommendations with crown icon and enhanced styling
+- [x] Redesign AI Projections with more intriguing visuals (🔥⚡✨)
+- [x] Add animated elements to Top Plays cards with smooth transitions
+- [x] Improve visual hierarchy and color contrast with gradients
+- [x] Add compelling reasoning with icons/emojis and factor breakdown
+- [x] Update Results tab with yesterday's plays and hit rate (75%)
+- [x] Add last update timestamp to Results tab ("Just now", "5m ago", etc.)
+- [x] Show individual play results with actual vs predicted values
+- [x] Test all visual improvements - all components compiling without errors

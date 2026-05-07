@@ -1,6 +1,7 @@
-import { motion } from "framer-motion";
 import { trpc } from "@/lib/trpc";
-import { Calendar, Trophy, TrendingUp, Zap, Target, CheckCircle, XCircle } from "lucide-react";
+import { Calendar, Trophy, TrendingUp, Zap, Target, CheckCircle, XCircle, Clock } from "lucide-react";
+import { motion } from "framer-motion";
+import { useState, useEffect } from "react";
 
 interface Game {
   id: string;
@@ -28,6 +29,7 @@ const STAT_CONFIG = {
 
 export function ResultsTab() {
   const { data: games, isLoading } = trpc.games.getRecentGames.useQuery();
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
   // Mock yesterday's suggested plays with results
   const yesterdayPlays = [
@@ -80,147 +82,173 @@ export function ResultsTab() {
   const hitCount = yesterdayPlays.filter((p) => p.hit).length;
   const hitRate = Math.round((hitCount / yesterdayPlays.length) * 100);
 
+  // Format last updated time
+  const formatLastUpdated = (date: Date) => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return date.toLocaleDateString();
+  };
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-pulse text-[oklch(0.50_0.015_255)]">Loading results...</div>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <motion.div
+            className="w-12 h-12 rounded-full border-2 border-transparent border-t-[oklch(0.68_0.22_25)] mx-auto mb-4"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+          />
+          <p className="text-[oklch(0.50_0.015_255)] text-sm">Loading results...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 px-4 pb-4">
-      {/* Hit Rate Summary */}
+    <div className="flex-1 overflow-y-auto px-4 py-3 pb-6">
+      {/* Yesterday's Plays Summary */}
       <motion.div
-        className="rounded-xl p-4 border border-[oklch(1_0_0/8%)]"
-        style={{ background: "oklch(0.14 0.022 255)" }}
+        className="mb-6 rounded-xl p-4 border"
+        style={{
+          background: "linear-gradient(135deg, oklch(0.82_0.17_85/10%), oklch(0.72_0.18_165/10%))",
+          borderColor: "oklch(0.82_0.17_85/30%)",
+        }}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between mb-3">
           <div>
-            <p className="text-xs text-[oklch(0.50_0.015_255)] mb-1">Yesterday's Hit Rate</p>
-            <p className="text-3xl font-bold text-white">{hitRate}%</p>
-            <p className="text-xs text-[oklch(0.40_0.015_255)] mt-1">
-              {hitCount} of {yesterdayPlays.length} plays hit
-            </p>
+            <h3 className="text-lg font-bold text-white mb-1">Yesterday's Picks</h3>
+            <p className="text-sm text-[oklch(0.50_0.015_255)]">May 5, 2026 Results</p>
           </div>
-          <Trophy size={40} className="text-[oklch(0.82_0.17_85)]" />
+          <div className="text-right">
+            <div className="text-3xl font-bold text-[oklch(0.82_0.17_85)]">{hitRate}%</div>
+            <div className="text-xs text-[oklch(0.50_0.015_255)]">Hit Rate</div>
+          </div>
+        </div>
+
+        {/* Hit rate bar */}
+        <div className="w-full bg-[oklch(1_0_0/8%)] rounded-full h-3 overflow-hidden mb-3">
+          <motion.div
+            className="h-full rounded-full bg-gradient-to-r from-[oklch(0.82_0.17_85)] to-[oklch(0.72_0.18_165)]"
+            initial={{ width: 0 }}
+            animate={{ width: `${hitRate}%` }}
+            transition={{ delay: 0.2, duration: 0.8 }}
+          />
+        </div>
+
+        <div className="text-xs text-[oklch(0.50_0.015_255)]">
+          {hitCount} of {yesterdayPlays.length} plays hit
+        </div>
+
+        {/* Last updated */}
+        <div className="flex items-center gap-1 mt-3 pt-3 border-t border-[oklch(1_0_0/8%)] text-xs text-[oklch(0.40_0.015_255)]">
+          <Clock size={12} />
+          Last updated: {formatLastUpdated(lastUpdated)}
         </div>
       </motion.div>
 
-      {/* Yesterday's Plays */}
-      <div>
-        <h3 className="text-sm font-semibold text-white px-2 mb-3">Suggested Plays Results</h3>
-        <div className="space-y-3">
-          {yesterdayPlays.map((play, idx) => {
-            const config = STAT_CONFIG[play.stat];
-            const Icon = config.icon;
-            const hitStatus = play.hit ? "HIT ✓" : "MISS ✗";
-            const hitColor = play.hit ? "text-emerald-400" : "text-red-400";
+      {/* Individual Plays Results */}
+      <div className="space-y-2 mb-6">
+        <h4 className="text-sm font-bold text-white px-2 mb-2">Play Results</h4>
+        {yesterdayPlays.map((play, idx) => {
+          const statConfig = STAT_CONFIG[play.stat];
+          const Icon = statConfig.icon;
 
-            return (
-              <motion.div
-                key={play.id}
-                className="rounded-xl p-3 border border-[oklch(1_0_0/8%)]"
-                style={{ background: "oklch(0.14 0.022 255)" }}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-white font-semibold text-sm">{play.playerName}</span>
-                      <span className="text-xs px-2 py-1 rounded flex items-center gap-1" style={{ background: config.color + "20", color: config.color }}>
-                        <Icon size={12} />
-                        {config.label}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-400 mb-2">
-                      {play.game} • Confidence: {play.confidence}%
-                    </div>
-                    <div className="flex items-center gap-4 text-xs">
-                      <div>
-                        <p className="text-slate-500">Prediction</p>
-                        <p className="text-white font-semibold">{play.stat.toUpperCase()} {play.prediction.toUpperCase()} {play.line}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Actual</p>
-                        <p className="text-white font-semibold">{play.actualValue}</p>
-                      </div>
-                    </div>
+          return (
+            <motion.div
+              key={play.id}
+              className={`rounded-lg p-3 border`}
+              style={{
+                background: play.hit ? "oklch(0.72_0.18_165/10%)" : "oklch(0.68_0.22_25/10%)",
+                borderColor: play.hit ? "oklch(0.72_0.18_165/30%)" : "oklch(0.68_0.22_25/30%)",
+              }}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: idx * 0.05 }}
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon size={14} style={{ color: statConfig.color }} />
+                    <span className="font-bold text-white">{play.playerName}</span>
+                    <span className="text-xs text-[oklch(0.50_0.015_255)]">{play.game}</span>
                   </div>
-                  <div className={`text-right ${hitColor}`}>
-                    {play.hit ? (
-                      <CheckCircle size={20} className="mb-2" />
-                    ) : (
-                      <XCircle size={20} className="mb-2" />
-                    )}
-                    <p className="text-xs font-bold">{hitStatus}</p>
+                  <div className="text-xs text-[oklch(0.50_0.015_255)]">
+                    Predicted {play.stat.toUpperCase()} OVER {play.line}
                   </div>
                 </div>
-              </motion.div>
-            );
-          })}
-        </div>
+                <div className="flex items-center gap-2">
+                  {play.hit ? (
+                    <CheckCircle size={18} className="text-[oklch(0.72_0.18_165)]" />
+                  ) : (
+                    <XCircle size={18} className="text-[oklch(0.68_0.22_25)]" />
+                  )}
+                </div>
+              </div>
+
+              {/* Result details */}
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex gap-3">
+                  <div className="bg-[oklch(1_0_0/4%)] rounded px-2 py-1">
+                    <span className="text-[oklch(0.50_0.015_255)]">Line:</span>
+                    <span className="font-bold text-white ml-1">{play.line}</span>
+                  </div>
+                  <div className="bg-[oklch(1_0_0/4%)] rounded px-2 py-1">
+                    <span className="text-[oklch(0.50_0.015_255)]">Actual:</span>
+                    <span className="font-bold text-white ml-1">{play.actualValue}</span>
+                  </div>
+                  <div className="bg-[oklch(1_0_0/4%)] rounded px-2 py-1">
+                    <span className="text-[oklch(0.50_0.015_255)]">Confidence:</span>
+                    <span className="font-bold text-white ml-1">{play.confidence}%</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* Games Results */}
       {games && games.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-white px-2 mb-3">Yesterday's Games</h3>
-          <div className="space-y-3">
-            {(games as any).slice(0, 5).map((game: Game, idx: number) => {
+          <h4 className="text-sm font-bold text-white px-2 mb-2">Games Results</h4>
+          <div className="space-y-2">
+            {games.slice(0, 5).map((game, idx) => {
               const awayWon = (game.awayTeam.score || 0) > (game.homeTeam.score || 0);
-              
+
               return (
                 <motion.div
                   key={game.id}
-                  className="rounded-xl p-4 border border-[oklch(1_0_0/8%)]"
-                  style={{ background: "oklch(0.14 0.022 255)" }}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.05 }}
+                  className="rounded-lg p-3 border border-[oklch(1_0_0/8%)] bg-[oklch(0.14_0.022_255)]"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 + idx * 0.05 }}
                 >
-                  {/* Date */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <Calendar size={14} className="text-[oklch(0.50_0.015_255)]" />
-                    <span className="text-xs font-semibold text-[oklch(0.60_0.015_255)]">
-                      {new Date(game.date).toLocaleDateString([], { month: "short", day: "numeric" })}
-                    </span>
-                  </div>
-
-                  {/* Teams matchup with winner highlight */}
-                  <div className="space-y-2">
-                    {/* Away team */}
-                    <div className={`flex items-center justify-between p-2 rounded-lg transition-colors ${
-                      awayWon ? "bg-[oklch(0.82_0.17_85/0.15)]" : ""
-                    }`}>
-                      <span className={`text-sm font-semibold ${awayWon ? "text-white" : "text-[oklch(0.70_0.015_255)]"}`}>
-                        {game.awayTeam.name}
-                      </span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="text-xs text-[oklch(0.40_0.015_255)] mb-1">{game.date}</div>
                       <div className="flex items-center gap-2">
-                        {awayWon && <Trophy size={14} style={{ color: "oklch(0.82 0.17 85)" }} />}
-                        <span className={`text-lg font-bold ${awayWon ? "text-white" : "text-[oklch(0.50_0.015_255)]"}`}>
-                          {game.awayTeam.score}
-                        </span>
+                        <div className={`flex-1 ${awayWon ? "font-bold text-white" : "text-[oklch(0.50_0.015_255)]"}`}>
+                          {game.awayTeam.name}
+                        </div>
+                        <div className="font-bold text-white w-8 text-right">{game.awayTeam.score}</div>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className={`flex-1 ${!awayWon ? "font-bold text-white" : "text-[oklch(0.50_0.015_255)]"}`}>
+                          {game.homeTeam.name}
+                        </div>
+                        <div className="font-bold text-white w-8 text-right">{game.homeTeam.score}</div>
                       </div>
                     </div>
-
-                    {/* Home team */}
-                    <div className={`flex items-center justify-between p-2 rounded-lg transition-colors ${
-                      !awayWon ? "bg-[oklch(0.82_0.17_85/0.15)]" : ""
-                    }`}>
-                      <span className={`text-sm font-semibold ${!awayWon ? "text-white" : "text-[oklch(0.70_0.015_255)]"}`}>
-                        {game.homeTeam.name}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {!awayWon && <Trophy size={14} style={{ color: "oklch(0.82 0.17 85)" }} />}
-                        <span className={`text-lg font-bold ${!awayWon ? "text-white" : "text-[oklch(0.50_0.015_255)]"}`}>
-                          {game.homeTeam.score}
-                        </span>
-                      </div>
+                    <div className="ml-3">
+                      <Trophy size={18} className="text-[oklch(0.82_0.17_85)]" />
                     </div>
                   </div>
                 </motion.div>
