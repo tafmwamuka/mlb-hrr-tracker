@@ -1,12 +1,11 @@
 /**
- * MLB Hit · Run · RBI Tracker — Home Page
- * Design: Sports Analytics Dashboard
- * - Deep navy background, stat-category accent colors (Gold/Coral/Emerald)
- * - Podium top-3 section with player headshots
- * - Scrollable ranked leaderboard with relative stat bars
- * - Bottom tab navigation for H / R / RBI
- * - Tap player row → full stats modal
- * - Pull-to-refresh, staggered entrance animations
+ * MLB Hit · Run · RBI Tracker — Home Page (Redesigned)
+ * Design: Sports Analytics Dashboard with 5 tabs
+ * - Top Plays: AI picks based on comprehensive matchup data
+ * - Leaderboard: H/R/RBI/Slg % stats with podium + ranked list
+ * - Games: Today's MLB games schedule
+ * - Results: Past games and final stats
+ * - AI Props: Link to full prop predictions page
  */
 
 import { useState, useCallback, useRef } from "react";
@@ -19,8 +18,13 @@ import {
   type PlayerStat,
 } from "@/hooks/useMLBStats";
 import { PlayerModal } from "@/components/PlayerModal";
-import { RefreshCw, TrendingUp, Zap, Target, Sparkles } from "lucide-react";
+import { TopPlaysTab } from "@/components/TopPlaysTab";
+import { GamesTab } from "@/components/GamesTab";
+import { ResultsTab } from "@/components/ResultsTab";
+import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Calendar, Trophy, Zap as ZapIcon } from "lucide-react";
 import { useLocation } from "wouter";
+
+type TabType = "topPlays" | "leaderboard" | "games" | "results";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -45,7 +49,37 @@ const STAT_CONFIG = {
     icon: Target,
     description: "Season RBI Leaders",
   },
+  slg: {
+    label: "Slugging %",
+    abbr: "SLG",
+    color: "oklch(0.75 0.20 290)",
+    icon: Sparkles,
+    description: "Season Slugging % Leaders",
+  },
 } as const;
+
+const TAB_CONFIG = {
+  topPlays: {
+    label: "Top Plays",
+    icon: Flame,
+    color: "oklch(0.68 0.22 25)",
+  },
+  leaderboard: {
+    label: "Leaderboard",
+    icon: TrendingUp,
+    color: "oklch(0.82 0.17 85)",
+  },
+  games: {
+    label: "Games",
+    icon: Calendar,
+    color: "oklch(0.75 0.20 290)",
+  },
+  results: {
+    label: "Results",
+    icon: Trophy,
+    color: "oklch(0.72 0.18 165)",
+  },
+};
 
 // ─── Headshot component with fallback ────────────────────────────────────────
 function Headshot({ playerId, name, size }: { playerId: number; name: string; size: number }) {
@@ -92,7 +126,7 @@ function PodiumCard({
   onClick: () => void;
 }) {
   const cfg = STAT_CONFIG[stat];
-  const value = player[stat];
+  const value = typeof player[stat] === 'string' ? parseFloat(player[stat]) : player[stat];
   const pct = Math.round((value / maxVal) * 100);
 
   const rankStyles = {
@@ -182,7 +216,7 @@ function PlayerRow({
   onClick: () => void;
 }) {
   const cfg = STAT_CONFIG[stat];
-  const value = player[stat];
+  const value = typeof player[stat] === 'string' ? parseFloat(player[stat]) : player[stat];
   const pct = (value / maxVal) * 100;
 
   return (
@@ -256,6 +290,12 @@ function PlayerRow({
             {player.rbi}
           </span>
         )}
+        {stat !== "slg" && (
+          <span className="text-[oklch(0.55_0.015_255)] text-xs">
+            <span className="text-[oklch(0.38_0.015_255)]">SLG </span>
+            {player.slg}
+          </span>
+        )}
         <span className="text-[oklch(0.40_0.015_255)] text-[10px]">
           {player.avg}
         </span>
@@ -303,13 +343,12 @@ function Skeleton() {
   );
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
-export default function Home() {
+// ─── Leaderboard Tab Component ─────────────────────────────────────────────────
+function LeaderboardTabContent() {
   const [activeStat, setActiveStat] = useState<StatCategory>("hits");
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerStat | null>(null);
   const { data, loading, error, lastUpdated, refresh } = useMLBStats(activeStat);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [, navigate] = useLocation();
 
   const maxVal = getStatMax(data, activeStat);
   const top3 = data.slice(0, 3);
@@ -324,271 +363,286 @@ export default function Home() {
 
   return (
     <>
-      <div
-        className="flex flex-col h-screen max-w-[480px] mx-auto overflow-hidden"
-        style={{ background: "linear-gradient(180deg, oklch(0.11 0.025 255) 0%, oklch(0.09 0.020 255) 100%)" }}
-      >
-        {/* ── Header ─────────────────────────────────────────────────────────── */}
-        <header className="shrink-0 px-4 pt-12 pb-3">
-          {/* Hero banner image */}
-          <div
-            className="relative rounded-2xl overflow-hidden mb-3"
-            style={{ height: 110 }}
-          >
-            <img
-              src="https://d2xsxph8kpxj0f.cloudfront.net/310519663634525008/2uhrbvmfhdghycRn5Bc5P3/mlb-app-banner-Dzt6MUojWrB3VEcU6NyViP.webp"
-              alt="MLB Baseball"
-              className="w-full h-full object-cover"
-            />
-            <div
-              className="absolute inset-0"
-              style={{
-                background: "linear-gradient(90deg, oklch(0.11 0.025 255 / 0.90) 0%, oklch(0.11 0.025 255 / 0.35) 55%, transparent 100%)",
-              }}
-            />
-            <div className="absolute inset-0 flex flex-col justify-center px-4">
-              <span className="text-[10px] font-semibold tracking-widest text-[oklch(0.55_0.015_255)] uppercase mb-1">
-                2025 Season
-              </span>
-              <h1 className="font-stat text-3xl font-extrabold text-white leading-none tracking-tight">
-                MLB LEADERS
-              </h1>
-              <p className="text-sm font-medium mt-1" style={{ color: cfg.color }}>
-                {cfg.description}
-              </p>
-            </div>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide">
+        {/* Refresh bar */}
+        <div className="flex items-center justify-between px-4 py-2">
+          <div className="flex items-center gap-1.5">
+            <Icon size={13} style={{ color: cfg.color }} />
+            <span className="text-xs font-semibold" style={{ color: cfg.color }}>
+              {cfg.label} Leaderboard
+            </span>
           </div>
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="flex items-center gap-1 text-[oklch(0.50_0.015_255)] text-xs py-1 px-2 rounded-lg transition-colors hover:text-white active:scale-95"
+            style={{ background: "oklch(0.18 0.02 255)" }}
+          >
+            <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
+            {lastUpdated
+              ? lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "Refresh"}
+          </button>
+        </div>
 
-          {/* Stat summary strip */}
-          {!loading && data.length > 0 && (
-            <motion.div
-              key={`strip-${activeStat}`}
-              className="flex gap-2"
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.25 }}
-            >
-              {(["hits", "runs", "rbi"] as StatCategory[]).map((s) => {
-                const sc = STAT_CONFIG[s];
-                const topVal = data[0]?.[s] ?? 0;
-                const isActive = s === activeStat;
-                return (
-                  <button
-                    key={s}
-                    onClick={() => handleTabChange(s)}
-                    className="flex-1 rounded-xl py-2 px-1 text-center transition-all duration-200 active:scale-95"
-                    style={{
-                      background: isActive ? `${sc.color}20` : "oklch(0.18 0.02 255)",
-                      border: `1px solid ${isActive ? sc.color + "55" : "oklch(1 0 0 / 8%)"}`,
-                    }}
-                  >
-                    <div className="font-stat text-xl font-bold" style={{ color: isActive ? sc.color : "oklch(0.50 0.015 255)" }}>
-                      {topVal}
-                    </div>
-                    <div className="text-[10px] font-semibold tracking-wide uppercase" style={{ color: isActive ? sc.color : "oklch(0.40 0.015 255)" }}>
-                      {sc.abbr}
-                    </div>
-                  </button>
-                );
-              })}
-            </motion.div>
-          )}
-        </header>
-
-        {/* ── Scrollable Content ─────────────────────────────────────────────── */}
-        <main ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide">
-          {/* Refresh bar */}
-          <div className="flex items-center justify-between px-4 py-2">
-            <div className="flex items-center gap-1.5">
-              <Icon size={13} style={{ color: cfg.color }} />
-              <span className="text-xs font-semibold" style={{ color: cfg.color }}>
-                {cfg.label} Leaderboard
-              </span>
-            </div>
-            <button
-              onClick={refresh}
-              disabled={loading}
-              className="flex items-center gap-1 text-[oklch(0.50_0.015_255)] text-xs py-1 px-2 rounded-lg transition-colors hover:text-white active:scale-95"
-              style={{ background: "oklch(0.18 0.02 255)" }}
-            >
-              <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
-              {lastUpdated
-                ? lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                : "Refresh"}
+        {/* Error state */}
+        {error && (
+          <div className="mx-4 my-2 p-3 rounded-xl bg-[oklch(0.68_0.22_25/15%)] border border-[oklch(0.68_0.22_25/30%)] text-sm text-[oklch(0.85_0.05_25)]">
+            {error}.{" "}
+            <button onClick={refresh} className="underline">
+              Retry
             </button>
           </div>
+        )}
 
-          {/* Error state */}
-          {error && (
-            <div className="mx-4 my-2 p-3 rounded-xl bg-[oklch(0.68_0.22_25/15%)] border border-[oklch(0.68_0.22_25/30%)] text-sm text-[oklch(0.85_0.05_25)]">
-              {error}.{" "}
-              <button onClick={refresh} className="underline">
-                Retry
-              </button>
-            </div>
-          )}
+        {/* Loading */}
+        {loading && <Skeleton />}
 
-          {/* Loading */}
-          {loading && <Skeleton />}
-
-          {/* Content */}
-          {!loading && data.length > 0 && (
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeStat}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.18 }}
+        {/* Content */}
+        {!loading && data.length > 0 && (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeStat}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+            >
+              {/* Podium — Top 3 */}
+              <div
+                className="mx-4 mb-4 rounded-2xl overflow-hidden"
+                style={{
+                  background: "linear-gradient(135deg, oklch(0.15 0.025 255), oklch(0.13 0.020 255))",
+                  border: `1px solid ${cfg.color}20`,
+                }}
               >
-                {/* Podium — Top 3 */}
-                <div
-                  className="mx-4 mb-4 rounded-2xl overflow-hidden"
-                  style={{
-                    background: "linear-gradient(135deg, oklch(0.15 0.025 255), oklch(0.13 0.020 255))",
-                    border: `1px solid ${cfg.color}20`,
-                  }}
-                >
-                  <div className="px-4 pt-4 pb-0">
-                    <div className="text-[10px] font-semibold tracking-widest uppercase text-[oklch(0.40_0.015_255)] mb-3">
-                      Top Performers · Tap for full stats
-                    </div>
-                    <div className="flex items-end justify-center gap-2 pb-0">
-                      {top3.map((player, i) => (
-                        <PodiumCard
-                          key={player.playerId}
-                          player={player}
-                          stat={activeStat}
-                          rank={(i + 1) as 1 | 2 | 3}
-                          maxVal={maxVal}
-                          delay={i * 0.1}
-                          onClick={() => setSelectedPlayer(player)}
-                        />
-                      ))}
+                <div className="px-4 pt-4 pb-0">
+                  <div className="text-[10px] font-semibold tracking-widest uppercase text-[oklch(0.40_0.015_255)] mb-3">
+                    Top Performers · Tap for full stats
+                  </div>
+                  <div className="flex items-end justify-center gap-2 pb-0">
+                    {top3.map((player, i) => (
+                      <PodiumCard
+                        key={player.playerId}
+                        player={player}
+                        stat={activeStat}
+                        rank={(i + 1) as 1 | 2 | 3}
+                        maxVal={maxVal}
+                        delay={i * 0.1}
+                        onClick={() => setSelectedPlayer(player)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Leaderboard rows */}
+              <div
+                className="mx-4 rounded-2xl overflow-hidden mb-4"
+                style={{
+                  background: "oklch(0.14 0.022 255)",
+                  border: "1px solid oklch(1 0 0 / 8%)",
+                }}
+              >
+                {/* Column header */}
+                <div className="px-4 py-2.5 border-b border-[oklch(1_0_0/6%)]">
+                  <div className="flex items-center text-[10px] font-semibold tracking-widest uppercase text-[oklch(0.38_0.015_255)]">
+                    <span className="w-7 mr-3 text-right shrink-0">#</span>
+                    <span className="w-11 mr-3 shrink-0" />
+                    <span className="flex-1">Player</span>
+                    <div className="flex gap-4 pr-1">
+                      {(["H", "R", "RBI", "SLG"] as const).map((s) => {
+                        const statKey = s === "H" ? "hits" : s === "R" ? "runs" : s === "RBI" ? "rbi" : "slg";
+                        const isActive = statKey === activeStat;
+                        const sc = STAT_CONFIG[statKey];
+                        return (
+                          <span
+                            key={s}
+                            className="transition-colors w-8 text-right"
+                            style={{ color: isActive ? sc.color : undefined }}
+                          >
+                            {s}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
 
-                {/* Leaderboard rows */}
-                <div
-                  className="mx-4 rounded-2xl overflow-hidden mb-4"
-                  style={{
-                    background: "oklch(0.14 0.022 255)",
-                    border: "1px solid oklch(1 0 0 / 8%)",
-                  }}
-                >
-                  {/* Column header */}
-                  <div className="px-4 py-2.5 border-b border-[oklch(1_0_0/6%)]">
-                    <div className="flex items-center text-[10px] font-semibold tracking-widest uppercase text-[oklch(0.38_0.015_255)]">
-                      <span className="w-7 mr-3 text-right shrink-0">#</span>
-                      <span className="w-11 mr-3 shrink-0" />
-                      <span className="flex-1">Player</span>
-                      <div className="flex gap-4 pr-1">
-                        {(["H", "R", "RBI"] as const).map((s) => {
-                          const statKey = s === "H" ? "hits" : s === "R" ? "runs" : "rbi";
-                          const isActive = statKey === activeStat;
-                          return (
-                            <span
-                              key={s}
-                              className="transition-colors w-8 text-right"
-                              style={{ color: isActive ? cfg.color : undefined }}
-                            >
-                              {s}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Rows */}
-                  {rest.map((player, i) => (
-                    <PlayerRow
-                      key={player.playerId}
-                      player={player}
-                      stat={activeStat}
-                      maxVal={maxVal}
-                      index={i}
-                      onClick={() => setSelectedPlayer(player)}
-                    />
-                  ))}
-                </div>
-
-                {/* Props CTA */}
-                <motion.button
-                  onClick={() => navigate("/props")}
-                  className="mx-4 mb-4 p-3 rounded-2xl flex items-center gap-2 font-semibold text-white transition-all active:scale-95"
-                  style={{
-                    background: `linear-gradient(135deg, ${cfg.color}40, ${cfg.color}20)`,
-                    border: `1px solid ${cfg.color}60`,
-                  }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <Sparkles size={16} style={{ color: cfg.color }} />
-                  <span>View AI Prop Predictions</span>
-                  <span className="ml-auto text-xs opacity-75">→</span>
-                </motion.button>
-
-                {/* Footer note */}
-                <div className="text-center text-[oklch(0.32_0.015_255)] text-[10px] pb-4 px-4">
-                  Data via MLB Stats API · 2025 Regular Season · Tap any player for full stats
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          )}
-        </main>
-
-        {/* ── Bottom Tab Bar ─────────────────────────────────────────────────── */}
-        <nav
-          className="shrink-0 flex items-stretch border-t border-[oklch(1_0_0/8%)]"
-          style={{
-            background: "oklch(0.10 0.022 255)",
-            paddingBottom: "env(safe-area-inset-bottom, 0px)",
-          }}
-        >
-          {(Object.entries(STAT_CONFIG) as [StatCategory, typeof STAT_CONFIG[StatCategory]][]).map(
-            ([key, sc]) => {
-              const TabIcon = sc.icon;
-              const isActive = key === activeStat;
-              return (
-                <button
-                  key={key}
-                  onClick={() => handleTabChange(key)}
-                  className="flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-all duration-200 relative active:scale-95"
-                >
-                  {isActive && (
-                    <motion.div
-                      layoutId="tab-indicator"
-                      className="absolute top-0 left-4 right-4 h-0.5 rounded-full"
-                      style={{ backgroundColor: sc.color }}
-                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                    />
-                  )}
-                  <TabIcon
-                    size={20}
-                    style={{ color: isActive ? sc.color : "oklch(0.42 0.015 255)" }}
-                    strokeWidth={isActive ? 2.5 : 1.5}
+                {/* Rows */}
+                {rest.map((player, i) => (
+                  <PlayerRow
+                    key={player.playerId}
+                    player={player}
+                    stat={activeStat}
+                    maxVal={maxVal}
+                    index={i}
+                    onClick={() => setSelectedPlayer(player)}
                   />
-                  <span
-                    className="font-stat text-xs font-bold tracking-wide"
-                    style={{ color: isActive ? sc.color : "oklch(0.42 0.015 255)" }}
-                  >
-                    {sc.abbr}
-                  </span>
-                </button>
-              );
-            }
-          )}
-        </nav>
+                ))}
+              </div>
+
+              {/* Footer note */}
+              <div className="text-center text-[oklch(0.32_0.015_255)] text-[10px] pb-4 px-4">
+                Data via MLB Stats API · 2026 Regular Season · Tap any player for full stats
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        )}
       </div>
 
-      {/* ── Player Detail Modal ────────────────────────────────────────────── */}
+      {/* Stat tabs */}
+      <div className="shrink-0 flex gap-2 px-4 pb-4 overflow-x-auto">
+        {(Object.entries(STAT_CONFIG) as [StatCategory, typeof STAT_CONFIG[StatCategory]][]).map(
+          ([key, sc]) => {
+            const isActive = key === activeStat;
+            return (
+              <button
+                key={key}
+                onClick={() => handleTabChange(key)}
+                className="flex-shrink-0 rounded-xl py-2 px-3 text-center transition-all duration-200 active:scale-95"
+                style={{
+                  background: isActive ? `${sc.color}20` : "oklch(0.18 0.02 255)",
+                  border: `1px solid ${isActive ? sc.color + "55" : "oklch(1 0 0 / 8%)"}`,
+                }}
+              >
+                <div className="font-stat text-lg font-bold" style={{ color: isActive ? sc.color : "oklch(0.50 0.015 255)" }}>
+                  {sc.abbr}
+                </div>
+              </button>
+            );
+          }
+        )}
+      </div>
+
+      {/* Player modal */}
       <PlayerModal
         player={selectedPlayer}
         activeStat={activeStat}
         onClose={() => setSelectedPlayer(null)}
       />
     </>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+export default function Home() {
+  const [activeTab, setActiveTab] = useState<TabType>("topPlays");
+  const [, navigate] = useLocation();
+
+  return (
+    <div
+      className="flex flex-col h-screen max-w-[480px] mx-auto overflow-hidden"
+      style={{ background: "linear-gradient(180deg, oklch(0.11 0.025 255) 0%, oklch(0.09 0.020 255) 100%)" }}
+    >
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <header className="shrink-0 px-4 pt-4 pb-3">
+        <h1 className="text-2xl font-bold text-white mb-3">MLB HRR Tracker</h1>
+        
+        {/* Tab Navigation */}
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          {(Object.entries(TAB_CONFIG) as [TabType, typeof TAB_CONFIG[TabType]][]).map(
+            ([key, config]) => {
+              const TabIcon = config.icon;
+              const isActive = key === activeTab;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className="flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 active:scale-95"
+                  style={{
+                    background: isActive ? `${config.color}20` : "oklch(0.18 0.02 255)",
+                    border: `1px solid ${isActive ? config.color + "55" : "oklch(1 0 0 / 8%)"}`,
+                  }}
+                >
+                  <TabIcon size={16} style={{ color: isActive ? config.color : "oklch(0.50 0.015 255)" }} />
+                  <span
+                    className="text-xs font-semibold whitespace-nowrap"
+                    style={{ color: isActive ? config.color : "oklch(0.50 0.015 255)" }}
+                  >
+                    {config.label}
+                  </span>
+                </button>
+              );
+            }
+          )}
+        </div>
+      </header>
+
+      {/* ── Content Area ─────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-hidden flex flex-col">
+        <AnimatePresence mode="wait">
+          {activeTab === "topPlays" && (
+            <motion.div
+              key="topPlays"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 overflow-y-auto flex flex-col"
+            >
+              <TopPlaysTab />
+            </motion.div>
+          )}
+
+          {activeTab === "leaderboard" && (
+            <motion.div
+              key="leaderboard"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 overflow-hidden flex flex-col"
+            >
+              <LeaderboardTabContent />
+            </motion.div>
+          )}
+
+          {activeTab === "games" && (
+            <motion.div
+              key="games"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 overflow-y-auto"
+            >
+              <GamesTab />
+            </motion.div>
+          )}
+
+          {activeTab === "results" && (
+            <motion.div
+              key="results"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 overflow-y-auto"
+            >
+              <ResultsTab />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* ── AI Props CTA Button ────────────────────────────────────────────── */}
+      <div className="shrink-0 px-4 py-3 border-t border-[oklch(1_0_0/8%)]" style={{ background: "oklch(0.10 0.022 255)" }}>
+        <motion.button
+          onClick={() => navigate("/props")}
+          className="w-full flex items-center justify-center gap-2 rounded-xl py-3 px-4 font-semibold text-sm transition-all duration-200 active:scale-95"
+          style={{
+            background: "linear-gradient(135deg, oklch(0.68_0.22_25), oklch(0.68_0.22_25_/0.7))",
+            border: "1px solid oklch(0.68 0.22 25 / 0.6)",
+          }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
+          <Sparkles size={18} style={{ color: "white" }} />
+          <span>View AI Prop Predictions</span>
+          <span className="ml-auto text-xs opacity-75">→</span>
+        </motion.button>
+      </div>
+    </div>
   );
 }

@@ -5,6 +5,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { propsRouter } from "./routers/props";
 import { adminRouter } from "./routers/admin";
 import { favoritesRouter } from "./routers/favorites";
+import { gamesRouter } from "./routers/games";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -20,6 +21,7 @@ export const appRouter = router({
     }),
   }),
   props: propsRouter,
+  games: gamesRouter,
   admin: adminRouter,
   favorites: favoritesRouter,
 });

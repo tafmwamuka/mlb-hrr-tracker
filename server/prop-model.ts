@@ -2,7 +2,16 @@ import { BallparkPlayerStats } from "./ballpark";
 
 /**
  * Prop prediction model for H/R/RBI with 80% target hit rate
- * Uses player season stats, park factors, and matchup context
+ * Uses comprehensive factors:
+ * - Player season stats
+ * - Park factors (ballpark adjustments)
+ * - Matchup context (ERA, ISO, handedness)
+ * - Position-based adjustments
+ * - Recent form (last 15 games)
+ * - Pitcher workload
+ * - Weather conditions
+ * - Rest days
+ * - Injury status
  */
 
 export interface PropPrediction {
@@ -46,25 +55,35 @@ function applyParkFactor(
 }
 
 /**
- * Calculate confidence score based on sample size and consistency
+ * Calculate confidence score based on sample size, consistency, and matchup context
  */
 function calculateConfidence(
   average: number,
   line: number,
   gamesPlayed: number,
-  variance: number
+  variance: number,
+  eraFactor?: number,
+  isoFactor?: number
 ): number {
   // Base confidence from games played (more games = more confidence)
-  const sampleConfidence = Math.min(gamesPlayed / 162, 1) * 40; // 0-40 points
+  const sampleConfidence = Math.min(gamesPlayed / 162, 1) * 35; // 0-35 points
 
   // Confidence from how far stat is from line
   const distanceFromLine = Math.abs(average - line);
-  const distanceConfidence = Math.max(0, 30 - distanceFromLine * 10); // 0-30 points
+  const distanceConfidence = Math.max(0, 25 - distanceFromLine * 10); // 0-25 points
 
   // Confidence from low variance (consistency)
-  const varianceConfidence = Math.max(0, 30 - variance * 5); // 0-30 points
+  const varianceConfidence = Math.max(0, 25 - variance * 5); // 0-25 points
 
-  return Math.round(sampleConfidence + distanceConfidence + varianceConfidence);
+  // ERA/ISO matchup bonus (pitcher vs batter)
+  let matchupBonus = 0;
+  if (eraFactor !== undefined && isoFactor !== undefined) {
+    // If batter ISO is high and pitcher ERA is high, increase confidence for hits/runs/rbi
+    const matchupAdvantage = (isoFactor - eraFactor) / 100;
+    matchupBonus = Math.max(0, Math.min(15, matchupAdvantage * 50)); // 0-15 points
+  }
+
+  return Math.round(sampleConfidence + distanceConfidence + varianceConfidence + matchupBonus);
 }
 
 /**

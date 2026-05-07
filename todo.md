@@ -34,7 +34,25 @@
 - [ ] Add matchup cards with away/home team context to Props page (UI refinement)
 - [ ] Display actual sportsbook odds/prices on Props page (UI refinement)
 
-## Phase 4: Testing & Optimization
+## Phase 4: Advanced Data Integration (In Progress)
+- [x] Fetch ERA data from MLB Stats API for pitchers
+- [x] Fetch ISO (Isolated Power) data from MLB Stats API for batters
+- [x] Integrate ERA + ISO into prop prediction model
+- [ ] Fetch pitcher/batter handedness from MLB Stats API
+- [ ] Fetch batter position and apply position-based adjustments
+- [ ] Calculate recent form (last 15 games stats)
+- [ ] Fetch pitcher workload (innings pitched recently)
+- [ ] Get ballpark-specific player stats
+- [ ] Integrate platoon splits (vs RHP/LHP)
+- [ ] Add weather data (wind, temperature) integration
+- [ ] Track rest days and fatigue
+- [ ] Fetch injury status from MLB API
+- [ ] Update daily job to include all data sources
+- [ ] Integrate all factors into confidence calculation
+- [ ] Test improved accuracy with full data model
+- [ ] Display matchup context on Props page
+
+## Phase 5: Testing & Optimization
 - [ ] Write vitest tests for prop prediction model
 - [ ] Test daily update scheduler
 - [ ] Validate 80% hit rate on historical data
@@ -45,3 +63,31 @@
 - [ ] Save checkpoint before publishing
 - [ ] Deploy to production
 - [ ] Monitor prop line accuracy and update model as needed
+
+
+## Phase 6: Slugging Percentage (Slg %) Feature
+- [x] Update useMLBStats hook to fetch Slg % data from MLB Stats API
+- [x] Update PlayerStat type to include slg field
+- [x] Add Slg % to STAT_CONFIG in Home.tsx with icon and color
+- [x] Fix getStatValue to handle string values (slg and avg)
+- [x] Add Slg % to PlayerModal stats display
+- [ ] Add Slg % as 4th tab in bottom navigation
+- [ ] Update secondary stats display to show H/R/RBI/Slg % on all player rows
+- [ ] Add Slg % to prop prediction model
+- [ ] Update daily-props job to generate Slg % predictions
+- [ ] Add Slg % props to Props page display
+- [ ] Test Slg % leaderboard functionality
+- [ ] Test Slg % prop predictions
+- [ ] Verify Slg % can be favorited like other stats
+
+## Phase 7: Home Page Redesign with 5 Tabs
+- [x] Create Games tab component to show today's MLB games
+- [x] Create Results tab component to show past games and final stats
+- [x] Create Top Plays tab showing AI picks with confidence scores
+- [x] Create games router with tRPC procedures for fetching games
+- [x] Redesign Home.tsx with horizontal tab navigation (Top Plays, Leaderboard, Games, Results, AI Props)
+- [x] Add tab indicator with active state styling
+- [x] Test all tabs load correctly
+- [x] Verify AI picks display with confidence scores and matchup data
+- [x] Test navigation between tabs
+- [x] Write and pass 7 vitest tests for games router

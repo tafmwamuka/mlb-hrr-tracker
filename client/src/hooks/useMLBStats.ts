@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-export type StatCategory = "hits" | "runs" | "rbi";
+export type StatCategory = "hits" | "runs" | "rbi" | "slg";
 
 export interface PlayerStat {
   rank: number;
@@ -21,6 +21,7 @@ export interface PlayerStat {
   hits: number;
   runs: number;
   rbi: number;
+  slg: string;
   avg: string;
   gamesPlayed: number;
   homeRuns: number;
@@ -42,6 +43,7 @@ const SORT_STAT_MAP: Record<StatCategory, string> = {
   hits: "hits",
   runs: "runs",
   rbi: "rbi",
+  slg: "slugging",
 };
 
 // Cache to avoid redundant fetches
@@ -79,6 +81,7 @@ async function fetchLeaderboard(sortStat: StatCategory): Promise<PlayerStat[]> {
     hits: s.stat?.hits ?? 0,
     runs: s.stat?.runs ?? 0,
     rbi: s.stat?.rbi ?? 0,
+    slg: s.stat?.slg ?? ".000",
     avg: s.stat?.avg ?? ".000",
     gamesPlayed: s.stat?.gamesPlayed ?? 0,
     homeRuns: s.stat?.homeRuns ?? 0,
@@ -129,7 +132,11 @@ export function getHeadshotUrl(playerId: number): string {
 }
 
 export function getStatValue(player: PlayerStat, stat: StatCategory): number {
-  return player[stat];
+  const value = player[stat];
+  if (typeof value === 'string') {
+    return parseFloat(value);
+  }
+  return value;
 }
 
 export function getStatMax(players: PlayerStat[], stat: StatCategory): number {

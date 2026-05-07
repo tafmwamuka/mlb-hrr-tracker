@@ -11,6 +11,7 @@ const STAT_CONFIG = {
   hits: { label: "Hits", abbr: "H", color: "oklch(0.82 0.17 85)" },
   runs: { label: "Runs", abbr: "R", color: "oklch(0.68 0.22 25)" },
   rbi:  { label: "RBI",  abbr: "RBI", color: "oklch(0.72 0.18 165)" },
+  slg:  { label: "Slugging %", abbr: "SLG", color: "oklch(0.75 0.20 290)" },
 } as const;
 
 interface Props {
@@ -28,6 +29,7 @@ export function PlayerModal({ player, activeStat, onClose }: Props) {
     { key: "hits" as StatCategory,  label: "Hits",         value: player.hits,        abbr: "H" },
     { key: "runs" as StatCategory,  label: "Runs Scored",  value: player.runs,        abbr: "R" },
     { key: "rbi" as StatCategory,   label: "RBI",          value: player.rbi,         abbr: "RBI" },
+    { key: "slg" as StatCategory,   label: "Slugging %",   value: player.slg,         abbr: "SLG" },
     { key: null,                    label: "Home Runs",    value: player.homeRuns,    abbr: "HR" },
     { key: null,                    label: "Batting Avg",  value: player.avg,         abbr: "AVG" },
     { key: null,                    label: "At Bats",      value: player.atBats,      abbr: "AB" },
