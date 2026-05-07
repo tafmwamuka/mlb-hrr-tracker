@@ -5,9 +5,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, Zap, Target, Activity, Loader2, Star, Brain, Zap as Lightning, BarChart3, Lightbulb } from "lucide-react";
 import { useLocation } from "wouter";
+import { SearchBar, type FilterOptions } from "@/components/SearchBar";
 
 export default function Props() {
   const [activeTab, setActiveTab] = useState<"all" | "high-confidence">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState<FilterOptions>({});
   const [, navigate] = useLocation();
 
   const { data: allProps, isLoading: allLoading } = trpc.props.getTodayProps.useQuery();
@@ -17,6 +20,26 @@ export default function Props() {
 
   const displayProps = activeTab === "high-confidence" ? highConfidence : allProps;
   const isLoading = activeTab === "high-confidence" ? hcLoading : allLoading;
+
+  // Filter props based on search query and filters
+  const filteredProps = displayProps?.filter((prop) => {
+    // Search by player name
+    if (searchQuery && !prop.playerName.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return false;
+    }
+    // Filter by confidence minimum
+    if (filters.confidenceMin !== undefined) {
+      const maxConfidence = Math.max(
+        prop.hitsPrediction?.confidence || 0,
+        prop.runsPrediction?.confidence || 0,
+        prop.rbiPrediction?.confidence || 0
+      );
+      if (maxConfidence < filters.confidenceMin) {
+        return false;
+      }
+    }
+    return true;
+  }) || [];
 
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 85) return "bg-emerald-500/30 text-emerald-300 border border-emerald-500/50";
@@ -150,6 +173,13 @@ export default function Props() {
             Today's Predictions
           </h2>
           
+          {/* Search and Filter */}
+          <SearchBar 
+            onSearch={setSearchQuery}
+            onFilter={setFilters}
+            placeholder="Search players by name..."
+          />
+          
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "all" | "high-confidence")} className="">
             <TabsList className="bg-slate-800/50 border border-slate-700 mb-8 backdrop-blur">
               <TabsTrigger value="all" className="data-[state=active]:bg-slate-700">All Predictions</TabsTrigger>
@@ -161,8 +191,8 @@ export default function Props() {
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
                 </div>
-              ) : displayProps && displayProps.length > 0 ? (
-                displayProps.map((pred) => (
+              ) : filteredProps && filteredProps.length > 0 ? (
+                filteredProps.map((pred) => (
                   <Card key={pred.id} className="bg-gradient-to-br from-slate-800 to-slate-700/50 border-slate-600 overflow-hidden hover:border-slate-500 transition-all hover:shadow-lg">
                     <div className="p-6">
                       {/* Player Header */}
@@ -315,7 +345,7 @@ export default function Props() {
                 ))
               ) : (
                 <Card className="bg-slate-800 border-slate-700 p-8 text-center">
-                  <p className="text-slate-400">No predictions available for today</p>
+                  <p className="text-slate-400">{searchQuery || filters.confidenceMin ? "No predictions match your filters" : "No predictions available for today"}</p>
                 </Card>
               )}
             </TabsContent>
@@ -325,8 +355,8 @@ export default function Props() {
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
                 </div>
-              ) : displayProps && displayProps.length > 0 ? (
-                displayProps.map((pred) => (
+              ) : filteredProps && filteredProps.length > 0 ? (
+                filteredProps.map((pred) => (
                   <Card key={pred.id} className="bg-gradient-to-br from-slate-800 to-slate-700/50 border-slate-600 overflow-hidden hover:border-slate-500 transition-all hover:shadow-lg">
                     <div className="p-6">
                       {/* Player Header */}
