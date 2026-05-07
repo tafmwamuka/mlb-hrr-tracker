@@ -32,7 +32,13 @@ async function fetchBet365Props() {
     const props: any[] = [];
 
     // Fetch player props for each game
-    for (const game of games.events.slice(0, 5)) {
+    const gamesList = games?.events || games || [];
+    if (!Array.isArray(gamesList)) {
+      console.warn("Invalid games response structure, using mock data");
+      return getMockBet365Props();
+    }
+
+    for (const game of gamesList.slice(0, 5)) {
       const propsUrl = `https://api.the-odds-api.com/v4/sports/baseball_mlb/events/${game.id}/odds?apiKey=${oddsApiKey}&markets=player_hits_over_under,player_runs_over_under,player_rbis_over_under&oddsFormat=american`;
       
       try {
