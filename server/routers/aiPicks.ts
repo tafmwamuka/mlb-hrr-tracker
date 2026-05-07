@@ -6,6 +6,7 @@
 import { router, publicProcedure } from "../_core/trpc";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import type { AIPick } from "../services/aiRankingService";
+import { getMockSavantData, calculateCombinedScore, type SavantHitter, type SavantPitcher } from "../services/savantService";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -573,10 +574,105 @@ const MOCK_MATCHUPS = [
   },
 ];
 
+// Map player names to Savant data for enrichment
+function findSavantHitter(playerName: string, savantGames: ReturnType<typeof getMockSavantData>): { hitter: SavantHitter; pitcher: SavantPitcher | null } | null {
+  for (const game of savantGames) {
+    // Check home hitters (facing away pitcher)
+    const homeHitter = game.homeHitters.find(h => 
+      h.name.toLowerCase().includes(playerName.toLowerCase().split(' ').pop() || '') ||
+      playerName.toLowerCase().includes(h.name.toLowerCase().split(' ').pop() || '')
+    );
+    if (homeHitter) return { hitter: homeHitter, pitcher: game.awayPitcher };
+    
+    // Check away hitters (facing home pitcher)
+    const awayHitter = game.awayHitters.find(h => 
+      h.name.toLowerCase().includes(playerName.toLowerCase().split(' ').pop() || '') ||
+      playerName.toLowerCase().includes(h.name.toLowerCase().split(' ').pop() || '')
+    );
+    if (awayHitter) return { hitter: awayHitter, pitcher: game.homePitcher };
+  }
+  return null;
+}
+
+// Enrich picks with Savant data
+function enrichPicksWithSavant(picks: AIPick[]): AIPick[] {
+  const savantGames = getMockSavantData();
+  
+  return picks.map(pick => {
+    const savantMatch = findSavantHitter(pick.playerName, savantGames);
+    if (!savantMatch) return pick;
+    
+    const { hitter, pitcher } = savantMatch;
+    const { score: savantScore, factors: savantFactors } = calculateCombinedScore(
+      hitter, pitcher, pick.statType === 'slg' ? 'rbi' : pick.statType
+    );
+    
+    // Combined score: 50% ballpark RC + 50% Savant
+    const combinedScore = Math.round((pick.overallScore * 0.5) + (savantScore * 0.5));
+    
+    return {
+      ...pick,
+      confidence: Math.min(98, Math.max(pick.confidence, combinedScore)),
+      savantMetrics: {
+        xwOBA: hitter.xwOBA,
+        hardHitPct: hitter.hardHitPct,
+        exitVelocity: hitter.exitVelocity,
+        barrelPct: hitter.barrelPct,
+        kPct: hitter.kPct,
+        bbPct: hitter.bbPct,
+        xBA: hitter.xBA,
+        xSLG: hitter.xSLG,
+        sprintSpeed: hitter.sprintSpeed,
+        savantScore,
+        savantFactors,
+      },
+      combinedScore,
+    };
+  });
+}
+
 export const aiPicksRouter = router({
   /**
-   * Get comprehensive AI picks for today
-   * Uses all data sources: RC, player stats, park factors, HR Targets, pitcher matchup, batting position
+   * Get TOP 5 picks - independently scored using combined Savant + Ballpark data
+   * These may differ from All Plays since they use different scoring weights
+   */
+  getTopPicks: publicProcedure.query(async () => {
+    try {
+      const allPicks = rankAIPicks(
+        MOCK_MATCHUPS,
+        MOCK_PLAYERS,
+        getMockHRTargets(),
+        getMockParkFactors()
+      );
+      
+      // Enrich with Savant data
+      const enrichedPicks = enrichPicksWithSavant(allPicks);
+      
+      // Re-sort by combinedScore (Savant + Ballpark) for top picks
+      const topPicks = [...enrichedPicks]
+        .sort((a, b) => (b.combinedScore || b.overallScore) - (a.combinedScore || a.overallScore))
+        .slice(0, 5)
+        .map((pick, idx) => ({ ...pick, rank: idx + 1 }));
+      
+      return {
+        success: true,
+        picks: topPicks,
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      console.error("Error generating top picks:", error);
+      return {
+        success: false,
+        picks: [],
+        error: "Failed to generate top picks",
+        timestamp: new Date(),
+      };
+    }
+  }),
+
+  /**
+   * Get comprehensive AI picks for today (All Plays - 15-20 picks)
+   * Uses all data sources: RC, player stats, park factors, HR Targets, pitcher matchup, batting position + Savant
    */
   getComprehensivePicks: publicProcedure.query(async () => {
     try {
@@ -586,10 +682,13 @@ export const aiPicksRouter = router({
         getMockHRTargets(),
         getMockParkFactors()
       );
+      
+      // Enrich all picks with Savant data
+      const enrichedPicks = enrichPicksWithSavant(picks);
 
       return {
         success: true,
-        picks,
+        picks: enrichedPicks,
         timestamp: new Date(),
       };
     } catch (error) {

@@ -254,10 +254,55 @@ function HeroPickCard({ pick, index }: { pick: any; index: number }) {
                     </div>
                   </div>
 
+                  {/* Savant Statcast Metrics */}
+                  {pick.savantMetrics && (
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <Flame size={12} className="text-orange-400" />
+                        Statcast Metrics (Baseball Savant)
+                      </h4>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { label: "xwOBA", value: pick.savantMetrics.xwOBA.toFixed(3), good: pick.savantMetrics.xwOBA >= 0.350 },
+                          { label: "Hard Hit%", value: `${pick.savantMetrics.hardHitPct.toFixed(1)}%`, good: pick.savantMetrics.hardHitPct >= 44 },
+                          { label: "Exit Velo", value: `${pick.savantMetrics.exitVelocity.toFixed(1)}`, good: pick.savantMetrics.exitVelocity >= 90 },
+                          { label: "Barrel%", value: `${pick.savantMetrics.barrelPct.toFixed(1)}%`, good: pick.savantMetrics.barrelPct >= 10 },
+                          { label: "xBA", value: pick.savantMetrics.xBA.toFixed(3), good: pick.savantMetrics.xBA >= 0.270 },
+                          { label: "xSLG", value: pick.savantMetrics.xSLG.toFixed(3), good: pick.savantMetrics.xSLG >= 0.450 },
+                          { label: "K%", value: `${pick.savantMetrics.kPct.toFixed(1)}%`, good: pick.savantMetrics.kPct <= 20 },
+                          { label: "BB%", value: `${pick.savantMetrics.bbPct.toFixed(1)}%`, good: pick.savantMetrics.bbPct >= 10 },
+                        ].map((metric, i) => (
+                          <div key={i} className="rounded-lg p-2 text-center border border-[oklch(1_0_0/6%)]" style={{ background: metric.good ? 'oklch(0.72 0.18 165 / 8%)' : 'oklch(1 0 0 / 3%)' }}>
+                            <div className="text-[9px] text-[oklch(0.50_0.015_255)] mb-0.5">{metric.label}</div>
+                            <div className={`font-stat text-xs font-bold ${metric.good ? 'text-emerald-400' : 'text-white'}`}>{metric.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Savant reasoning factors */}
+                      {pick.savantMetrics.savantFactors && pick.savantMetrics.savantFactors.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {pick.savantMetrics.savantFactors.slice(0, 4).map((factor: string, i: number) => (
+                            <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-300 border border-orange-500/20">
+                              {factor}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Combined Score */}
+                  {pick.combinedScore && (
+                    <div className="text-center p-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-red-500/10 border border-amber-500/20">
+                      <div className="text-[10px] text-[oklch(0.55_0.015_255)] mb-1">COMBINED CONFIDENCE (RC + Statcast)</div>
+                      <div className="font-stat text-2xl font-bold text-amber-400">{pick.combinedScore}%</div>
+                    </div>
+                  )}
+
                   {/* Data source note */}
                   <div className="text-center pt-2">
                     <p className="text-[10px] text-[oklch(0.40_0.015_255)]">
-                      Analysis powered by ballpark.com RC data, MLB stats, park factors & HR targets
+                      Analysis powered by Ballpark.com RC + Baseball Savant Statcast
                     </p>
                   </div>
                 </div>
@@ -353,7 +398,7 @@ function StandardPickCard({ pick, index }: { pick: any; index: number }) {
 }
 
 export function TopPlaysTab() {
-  const { data, isLoading, error } = trpc.aiPicks.getComprehensivePicks.useQuery();
+  const { data, isLoading, error } = trpc.aiPicks.getTopPicks.useQuery();
 
   if (isLoading) {
     return (
@@ -385,7 +430,7 @@ export function TopPlaysTab() {
   }
 
   const heroPicks = data.picks.slice(0, 3);
-  const remainingPicks = data.picks.slice(3);
+  const remainingPicks = data.picks.slice(3, 5);
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -415,7 +460,7 @@ export function TopPlaysTab() {
       {/* Footer */}
       <div className="text-center py-4">
         <p className="text-[10px] text-[oklch(0.35_0.015_255)]">
-          All picks are OVER props • Data from ballpark.com, MLB Stats, HR Targets
+          All picks are OVER props • Combined: Ballpark.com RC + Baseball Savant Statcast
         </p>
       </div>
     </div>

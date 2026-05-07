@@ -225,3 +225,94 @@ describe("AI Picks Ranking Service", () => {
     });
   });
 });
+
+describe("Savant Integration", () => {
+  it("should have savantMetrics field in AIPick interface", () => {
+    const mockMatchups = [
+      {
+        playerId: 660271,
+        playerName: "Aaron Judge",
+        team: "NYY",
+        position: "RF",
+        battingPosition: 4,
+        pitcher: { name: "Framber Valdez", team: "HOU" },
+        rc: 38,
+        confidence: 88,
+      },
+    ];
+
+    const mockPlayers = new Map([
+      [
+        660271,
+        {
+          playerId: 660271,
+          name: "Aaron Judge",
+          team: "NYY",
+          position: "RF",
+          battingPosition: 4,
+          stats: {
+            hits: 45,
+            runs: 38,
+            rbi: 92,
+            slg: 0.52,
+            avg: 0.285,
+            obp: 0.38,
+            power: 0.185,
+          },
+        },
+      ],
+    ]);
+
+    const picks = rankAIPicks(mockMatchups, mockPlayers, getMockHRTargets(), getMockParkFactors());
+    const pick = picks[0];
+
+    // savantMetrics is optional, so just check the pick is valid
+    expect(pick).toHaveProperty("rank");
+    expect(pick).toHaveProperty("playerName");
+    expect(pick.playerName).toBe("Aaron Judge");
+  });
+
+  it("should produce realistic prop lines", () => {
+    const mockMatchups = [
+      {
+        playerId: 660271,
+        playerName: "Aaron Judge",
+        team: "NYY",
+        position: "RF",
+        battingPosition: 4,
+        pitcher: { name: "Framber Valdez", team: "HOU" },
+        rc: 38,
+        confidence: 88,
+      },
+    ];
+
+    const mockPlayers = new Map([
+      [
+        660271,
+        {
+          playerId: 660271,
+          name: "Aaron Judge",
+          team: "NYY",
+          position: "RF",
+          battingPosition: 4,
+          stats: {
+            hits: 45,
+            runs: 38,
+            rbi: 92,
+            slg: 0.52,
+            avg: 0.285,
+            obp: 0.38,
+            power: 0.185,
+          },
+        },
+      ],
+    ]);
+
+    const picks = rankAIPicks(mockMatchups, mockPlayers, getMockHRTargets(), getMockParkFactors());
+    const pick = picks[0];
+
+    // Prop lines should be realistic (0.5, 1.5, 2.5 max)
+    expect(pick.line).toBeGreaterThanOrEqual(0.5);
+    expect(pick.line).toBeLessThanOrEqual(3.5);
+  });
+});

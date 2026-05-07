@@ -271,3 +271,11 @@
 - [x] Add 3-leg parlay options to Parlays tab
 - [x] Include responsible gambling messaging (bet within your means, bankroll management)
 - [x] Add Parlays tab to navigation
+
+## Baseball Savant Integration (May 7 - User Request)
+- [x] Build Baseball Savant data fetcher service (xwOBA, Hard Hit%, Barrel%, K%, EV)
+- [x] Update AI ranking service to combine Savant + Ballpark.com data for scoring
+- [x] Limit Top Plays to 5 picks (independent selection from All Plays)
+- [x] Update All Plays to show detailed combined-source analysis (Savant + Ballpark)
+- [x] Show Savant metrics in pick cards (xwOBA, Hard Hit%, EV, Barrel%)
+- [x] Ensure Top Plays and All Plays can have different selections

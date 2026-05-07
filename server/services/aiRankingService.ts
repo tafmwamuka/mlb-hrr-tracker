@@ -87,6 +87,21 @@ export interface AIPick {
     battingPosition: number; // Position weighting (0-100)
   };
   overallScore: number; // Weighted average (0-100)
+  // Savant metrics (combined source)
+  savantMetrics?: {
+    xwOBA: number;
+    hardHitPct: number;
+    exitVelocity: number;
+    barrelPct: number;
+    kPct: number;
+    bbPct: number;
+    xBA: number;
+    xSLG: number;
+    sprintSpeed: number;
+    savantScore: number; // Combined Savant score (0-100)
+    savantFactors: string[]; // Reasoning factors from Savant data
+  };
+  combinedScore?: number; // Ballpark RC + Savant combined score
 }
 
 /**
