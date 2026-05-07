@@ -210,3 +210,17 @@
 - [ ] Test in-app notifications
 - [ ] Test push notifications
 - [x] Add notification icons and styling
+
+
+## Phase 8: Results Tracking (In Progress)
+- [x] Create results router with getYesterdayResults procedure
+- [x] Implement getHitRateStats procedure for model accuracy tracking
+- [x] Update ResultsTab component to fetch real data from API
+- [x] Display yesterday's predictions vs actual results
+- [x] Calculate and display hit rate percentage
+- [ ] Fetch real yesterday's game data from MLB Stats API
+- [ ] Compare predictions to actual player stats from yesterday's games
+- [ ] Store results in database for historical tracking
+- [ ] Add date range filtering for results history
+- [ ] Display results by stat type (H/R/RBI breakdown)
+- [ ] Add results export functionality

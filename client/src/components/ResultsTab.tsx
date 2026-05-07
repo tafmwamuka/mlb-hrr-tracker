@@ -1,7 +1,7 @@
-import { trpc } from "@/lib/trpc";
 import { Calendar, Trophy, TrendingUp, Zap, Target, CheckCircle, XCircle, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
+import { trpc } from "@/lib/trpc";
 
 interface Game {
   id: string;
@@ -28,11 +28,11 @@ const STAT_CONFIG = {
 };
 
 export function ResultsTab() {
-  const { data: games, isLoading } = trpc.games.getRecentGames.useQuery();
+  const { data: resultsData, isLoading } = trpc.results.getYesterdayResults.useQuery();
+  const { data: statsData } = trpc.results.getHitRateStats.useQuery();
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // Mock yesterday's suggested plays with results
-  const yesterdayPlays = [
+  const yesterdayPlays = resultsData?.results || [
     {
       id: 1,
       playerName: "Aaron Judge",
@@ -79,8 +79,8 @@ export function ResultsTab() {
     },
   ];
 
-  const hitCount = yesterdayPlays.filter((p) => p.hit).length;
-  const hitRate = Math.round((hitCount / yesterdayPlays.length) * 100);
+  const hitCount = resultsData?.results?.filter((p) => p.hit).length || 0;
+  const hitRate = resultsData?.hitRate || 0;
 
   // Format last updated time
   const formatLastUpdated = (date: Date) => {
@@ -104,8 +104,17 @@ export function ResultsTab() {
             animate={{ rotate: 360 }}
             transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
           />
-          <p className="text-[oklch(0.50_0.015_255)] text-sm">Loading results...</p>
+          <div className="animate-pulse text-[oklch(0.50_0.015_255)]">Loading yesterday's results...</div>
         </div>
+      </div>
+    );
+  }
+
+  if (!resultsData?.success || !yesterdayPlays || yesterdayPlays.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 px-4">
+        <Trophy size={48} className="text-[oklch(0.40_0.015_255)] mb-3" />
+        <p className="text-[oklch(0.50_0.015_255)] text-center">No results available yet</p>
       </div>
     );
   }
