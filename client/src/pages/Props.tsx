@@ -108,7 +108,7 @@ export default function Props() {
                   </div>
 
                   {/* Props Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Hits */}
                     {pred.hitsPrediction && (
                       <div className="bg-slate-700/50 rounded-lg p-3 relative">
@@ -251,7 +251,7 @@ export default function Props() {
                   </div>
 
                   {/* Props Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Hits */}
                     {pred.hitsPrediction && (
                       <div className="bg-slate-700/50 rounded-lg p-3">

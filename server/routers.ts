@@ -7,6 +7,8 @@ import { adminRouter } from "./routers/admin";
 import { favoritesRouter } from "./routers/favorites";
 import { gamesRouter } from "./routers/games";
 import { ballparkRouter } from "./routers/ballpark";
+import { settingsRouter } from "./routers/settings";
+import { searchRouter } from "./routers/search";
 import { aiPicksRouter } from "./routers/aiPicks";
 
 export const appRouter = router({
@@ -26,6 +28,8 @@ export const appRouter = router({
   games: gamesRouter,
   ballpark: ballparkRouter,
   aiPicks: aiPicksRouter,
+  search: searchRouter,
+  settings: settingsRouter,
   admin: adminRouter,
   favorites: favoritesRouter,
 });
