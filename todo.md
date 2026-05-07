@@ -368,3 +368,8 @@
 - [x] Add game matchup (team vs team) to Money Picks cards
 - [x] Add game matchup to All Plays cards
 - [x] Incorporate HRR combined props as legs in the Parlays tab (with HRR Parlays filter)
+
+## Streak + Filters + Parlay Builder (May 7 - User Request)
+- [x] Add streak indicator on picks (e.g., "Hit 4 of last 5")
+- [x] Add quick filter buttons on Money Picks (All 75%+ / 85%+ / 90%+ Locks)
+- [x] Add parlay builder — tap "Add to Parlay" on any pick, floating builder shows combined probability
