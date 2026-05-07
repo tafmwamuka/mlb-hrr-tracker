@@ -154,18 +154,22 @@
 - [x] Write and pass 14 vitest tests for stat type logic
 
 
-## Phase 12: Daily Scheduled Updates (2 times per day)
-- [ ] Create 6 AM scheduled task for fresh AI picks generation
-- [ ] Create pre-game scheduled task (2 hours before first game) for leaderboard refresh
-- [ ] Integrate MLB Stats API into 6 AM job
-- [ ] Integrate ballpark.com data into 6 AM job
-- [ ] Integrate HR Targets data into 6 AM job
-- [ ] Integrate Odds API into 6 AM job
-- [ ] Update database with fresh predictions each day
-- [ ] Test 6 AM scheduled task
-- [ ] Test pre-game scheduled task
-- [ ] Verify daily updates persist across app restarts
-- [ ] Monitor scheduled task execution logs
+## Phase 12: Daily Scheduled Updates (2 times per day) - COMPLETED ✅
+- [x] Create 6 AM scheduled task for fresh AI picks generation
+- [x] Create pre-game scheduled task (2 hours before first game) for leaderboard refresh
+- [x] Integrate MLB Stats API into 6 AM job
+- [x] Integrate ballpark.com data into 6 AM job
+- [x] Integrate HR Targets data into 6 AM job
+- [x] Integrate Odds API into 6 AM job
+- [x] Update database with fresh predictions each day
+- [x] Test 6 AM scheduled task (12 new tests added)
+- [x] Test pre-game scheduled task (12 new tests added)
+- [x] Verify daily updates persist across app restarts
+- [x] Monitor scheduled task execution logs (comprehensive logging added)
+- [x] Implement real data fetching from all APIs
+- [x] Handle database availability gracefully
+- [x] Track data fetch status and counts
+- [x] Return detailed status responses
 
 
 ## Phase 13: UI Enhancements & Data Accuracy
