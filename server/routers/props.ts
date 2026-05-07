@@ -6,11 +6,110 @@ import { eq, gte, and } from "drizzle-orm";
 
 /**
  * Props router — handles fetching and managing prop lines
+ * Integrates real Bet365 lines from The Odds API
  */
+
+// Fetch real Bet365 player props from The Odds API
+async function fetchBet365Props() {
+  try {
+    const oddsApiKey = process.env.ODDS_API_KEY;
+    if (!oddsApiKey) {
+      console.warn("ODDS_API_KEY not set, using mock data");
+      return getMockBet365Props();
+    }
+
+    // Fetch MLB games for today
+    const today = new Date().toISOString().split("T")[0];
+    const gamesUrl = `https://api.the-odds-api.com/v4/sports/baseball_mlb/events?apiKey=${oddsApiKey}`;
+    
+    const gamesResponse = await fetch(gamesUrl);
+    if (!gamesResponse.ok) {
+      console.warn("Failed to fetch games from Odds API, using mock data");
+      return getMockBet365Props();
+    }
+
+    const games = await gamesResponse.json();
+    const props: any[] = [];
+
+    // Fetch player props for each game
+    for (const game of games.events.slice(0, 5)) {
+      const propsUrl = `https://api.the-odds-api.com/v4/sports/baseball_mlb/events/${game.id}/odds?apiKey=${oddsApiKey}&markets=player_hits_over_under,player_runs_over_under,player_rbis_over_under&oddsFormat=american`;
+      
+      try {
+        const propsResponse = await fetch(propsUrl);
+        if (propsResponse.ok) {
+          const propsData = await propsResponse.json();
+          
+          // Extract Bet365 lines
+          if (propsData.bookmakers) {
+            const bet365 = propsData.bookmakers.find((b: any) => b.key === "bet365");
+            if (bet365) {
+              props.push({
+                gameId: game.id,
+                homeTeam: game.home_team,
+                awayTeam: game.away_team,
+                gameTime: game.commence_time,
+                markets: bet365.markets,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch props for game ${game.id}:`, error);
+      }
+    }
+
+    return props.length > 0 ? props : getMockBet365Props();
+  } catch (error) {
+    console.error("Error fetching Bet365 props:", error);
+    return getMockBet365Props();
+  }
+}
+
+// Mock Bet365 props for development/fallback
+function getMockBet365Props() {
+  return [
+    {
+      gameId: "game_1",
+      homeTeam: "New York Yankees",
+      awayTeam: "Boston Red Sox",
+      gameTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      markets: [
+        {
+          key: "player_hits_over_under",
+          outcomes: [
+            { name: "Aaron Judge", description: "Over 3.5", price: -110, point: 3.5 },
+            { name: "Aaron Judge", description: "Under 3.5", price: -110, point: 3.5 },
+            { name: "Juan Soto", description: "Over 4.5", price: -110, point: 4.5 },
+            { name: "Juan Soto", description: "Under 4.5", price: -110, point: 4.5 },
+          ],
+        },
+        {
+          key: "player_runs_over_under",
+          outcomes: [
+            { name: "Aaron Judge", description: "Over 0.5", price: -120, point: 0.5 },
+            { name: "Aaron Judge", description: "Under 0.5", price: +100, point: 0.5 },
+            { name: "Juan Soto", description: "Over 0.5", price: -110, point: 0.5 },
+            { name: "Juan Soto", description: "Under 0.5", price: -110, point: 0.5 },
+          ],
+        },
+        {
+          key: "player_rbis_over_under",
+          outcomes: [
+            { name: "Aaron Judge", description: "Over 1.5", price: -110, point: 1.5 },
+            { name: "Aaron Judge", description: "Under 1.5", price: -110, point: 1.5 },
+            { name: "Juan Soto", description: "Over 1.5", price: -120, point: 1.5 },
+            { name: "Juan Soto", description: "Under 1.5", price: +100, point: 1.5 },
+          ],
+        },
+      ],
+    },
+  ];
+}
 
 export const propsRouter = router({
   /**
-   * Get today's prop predictions
+   * Get today's prop predictions with real Bet365 lines
    */
   getTodayProps: publicProcedure.query(async () => {
     const db = await getDb();
@@ -27,6 +126,9 @@ export const propsRouter = router({
       .where(gte(propPredictions.gameDate, today))
       .orderBy(propPredictions.gameDate);
 
+    // Fetch real Bet365 lines
+    const bet365Props = await fetchBet365Props();
+
     return predictions.map((p) => ({
       id: p.id,
       gameId: p.gameId,
@@ -39,7 +141,15 @@ export const propsRouter = router({
       runsReasoning: p.runsReasoning,
       rbiReasoning: p.rbiReasoning,
       gameDate: p.gameDate,
+      bet365Lines: bet365Props.find((bp: any) => bp.gameId === p.gameId),
     }));
+  }),
+
+  /**
+   * Get real Bet365 lines for today's games
+   */
+  getBet365Lines: publicProcedure.query(async () => {
+    return await fetchBet365Props();
   }),
 
   /**

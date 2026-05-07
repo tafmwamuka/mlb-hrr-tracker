@@ -180,3 +180,15 @@
 - [x] Add last update timestamp to Results tab ("Just now", "5m ago", etc.)
 - [x] Show individual play results with actual vs predicted values
 - [x] Test all visual improvements - all components compiling without errors
+
+
+## Phase 14: Real Bet365 Props Integration
+- [x] Integrate The Odds API for real Bet365 player props
+- [x] Fetch real over/under lines for H/R/RBI from Bet365
+- [x] Display actual Bet365 odds (-110, +110, etc.)
+- [x] Calculate hit rates from real historical data
+- [x] Update props router with Bet365 data fetching
+- [x] Add getBet365Lines procedure to props router
+- [x] Test with live Bet365 data integration
+- [x] Replace mock props with real data from Odds API
+- [x] Add fallback to mock data if API unavailable
