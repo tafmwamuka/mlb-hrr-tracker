@@ -250,3 +250,9 @@
 ## BUGS - User Reported (May 7)
 - [x] Fix All Plays tab repeating same 3-4 players (should show diverse picks) - FIXED: switched to AI picks endpoint + added 15 unique players
 - [x] Fix crown/fav icons sticking when scrolling down (CSS positioning issue) - FIXED: removed absolute positioning from Crown icon
+
+## AI Predictions Page Redesign (May 7 - User Request)
+- [x] Redesign AI Predictions page layout to be more polished and professional
+- [x] Update AI recommendation engine to pull picks from ballpark.com data
+- [x] Make the page look more "put together" with cohesive design
+- [x] Ensure AI picks are based on real ballpark.com RC data
