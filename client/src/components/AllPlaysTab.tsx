@@ -154,7 +154,7 @@ export function AllPlaysTab() {
               >
                 <BestIcon size={12} style={{ color: bestPropConfig.color }} />
                 <span className="text-xs font-bold" style={{ color: bestPropConfig.color }}>
-                  {bestPropConfig.abbr}
+                  {bestPropConfig.abbr} OVER {play.stats.rc}
                 </span>
               </div>
             </div>

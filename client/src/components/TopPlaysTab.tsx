@@ -116,7 +116,7 @@ export function TopPlaysTab() {
                   >
                     {statConfig.icon && <statConfig.icon size={14} style={{ color: statConfig.color }} />}
                     <span className="text-xs font-bold" style={{ color: statConfig.color }}>
-                      {statConfig.label} OVER
+                      {statConfig.label} OVER {pick.line}
                     </span>
                   </motion.div>
                 </div>
