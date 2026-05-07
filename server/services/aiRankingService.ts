@@ -231,7 +231,7 @@ export function rankAIPicks(
           slg: Math.round(Math.min(100, (stats.slg / 0.500) * 100 * (overallScore / 100))),
         },
         prediction: "over" as const,
-        line: 0.5,
+        line: bestStat === 'hits' ? Math.round(stats.hits / 10) + 0.5 : bestStat === 'runs' ? Math.round(stats.runs / 10) + 0.5 : Math.round(stats.rbi / 15) + 0.5,
         confidence: Math.round(overallScore),
         reasoning,
         factorBreakdown: {
