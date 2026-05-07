@@ -62,8 +62,18 @@ function determineBestProp(rc: number, stats: any): keyof typeof STAT_CONFIG {
 }
 
 export function AllPlaysTab() {
-  const { data: matchups, isLoading } = trpc.ballpark.getTodayMatchups.useQuery();
+  const { data: propsData, isLoading } = trpc.props.getTodayProps.useQuery();
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
+  // Convert props data to display format
+  const matchups = propsData?.slice(0, 15).map((prop: any, idx: number) => ({
+    rank: idx + 1,
+    batter: { name: prop.playerName, id: String(prop.playerId), team: 'TBD', handedness: 'R' },
+    pitcher: { name: 'TBD', id: 'TBD', team: 'TBD' },
+    matchup: { vs: 'TBD' },
+    stats: { rc: 30, hr: 0, xb: 0, oneB: 0, bb: 0, k: 0 },
+    confidence: 85,
+  })) || [];
 
   const toggleFavorite = (batterId: string, pitcherId: string) => {
     const key = `${batterId}-${pitcherId}`;

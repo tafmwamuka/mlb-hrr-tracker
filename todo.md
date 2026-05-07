@@ -227,9 +227,9 @@
 
 
 ## CRITICAL BUGS - HIGH PRIORITY (User Reported)
-- [ ] Fix Top Plays showing 0.5 prop lines instead of real lines (1.5, 2.5, 3.5, etc)
+- [x] Fix Top Plays showing 0.5 prop lines instead of real lines (1.5, 2.5, 3.5, etc) - FIXED
 - [ ] Fix All Plays to fetch real sportsbook props from ballpark.com instead of RC values  
 - [ ] Fix Results page error - integrate real database results
 - [ ] Redesign AI page with better visual hierarchy and professional layout
-- [ ] Verify prop line data source - should come from sportsbooks not RC conversion
-- [ ] Add actual sportsbook line numbers to all prop displays
+- [x] Verify prop line data source - should come from sportsbooks not RC conversion - DONE
+- [x] Add actual sportsbook line numbers to all prop displays - DONE
