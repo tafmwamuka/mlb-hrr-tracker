@@ -381,3 +381,13 @@
 - [x] Only generate picks for players in today's lineup (with mock fallback)
 - [x] Add game cards UI showing today's matchups with lineups (GameCards.tsx)
 - [x] Replace mock player data with real lineup-based player pool (lineupAdapter.ts)
+
+## Results Page Redesign + Full UI Polish (May 7 - User Request)
+- [x] Results page: only show 80%+ confidence picks (not 75%)
+- [x] Results page: premium visual redesign — animated stats, gradient cards, win/loss streaks
+- [x] Full UI polish: premium card designs with glass morphism and subtle gradients
+- [x] Full UI polish: consistent spacing, typography hierarchy, micro-interactions
+- [x] Full UI polish: header/navigation refinement — brand logo, LIVE indicator, animated tabs
+- [x] Full UI polish: color palette cohesion — consistent oklch palette throughout
+- [x] Full UI polish: loading states, transitions, empty states all polished
+- [x] Full UI polish: make it feel like a 10-star premium sports betting app

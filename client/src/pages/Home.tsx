@@ -547,38 +547,89 @@ export default function Home() {
       className="flex flex-col h-screen max-w-[480px] mx-auto overflow-hidden"
       style={{ background: "linear-gradient(180deg, oklch(0.11 0.025 255) 0%, oklch(0.09 0.020 255) 100%)" }}
     >
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="shrink-0 px-4 pt-4 pb-3">
-        <h1 className="text-2xl font-bold text-white mb-3">MLB HRR Tracker</h1>
+      {/* ── Premium Header ─────────────────────────────────────────────────── */}
+      <header className="shrink-0 relative">
+        {/* Subtle top gradient glow */}
+        <div
+          className="absolute inset-0 opacity-40 pointer-events-none"
+          style={{ background: "radial-gradient(ellipse at 50% -20%, oklch(0.82 0.17 85 / 20%), transparent 70%)" }}
+        />
         
-        {/* Tab Navigation */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {(Object.entries(TAB_CONFIG) as [TabType, typeof TAB_CONFIG[TabType]][]).map(
-            ([key, config]) => {
-              const TabIcon = config.icon;
-              const isActive = key === activeTab;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setActiveTab(key)}
-                  className="flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 active:scale-95"
-                  style={{
-                    background: isActive ? `${config.color}20` : "oklch(0.18 0.02 255)",
-                    border: `1px solid ${isActive ? config.color + "55" : "oklch(1 0 0 / 8%)"}`,
-                  }}
-                >
-                  <TabIcon size={16} style={{ color: isActive ? config.color : "oklch(0.50 0.015 255)" }} />
-                  <span
-                    className="text-xs font-semibold whitespace-nowrap"
-                    style={{ color: isActive ? config.color : "oklch(0.50 0.015 255)" }}
+        <div className="relative px-4 pt-5 pb-3">
+          {/* Brand header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{
+                  background: "linear-gradient(135deg, oklch(0.82 0.17 85 / 20%), oklch(0.72 0.18 165 / 15%))",
+                  border: "1px solid oklch(0.82 0.17 85 / 25%)",
+                  boxShadow: "0 0 20px oklch(0.82 0.17 85 / 15%)",
+                }}
+              >
+                <Flame size={18} style={{ color: "oklch(0.82 0.17 85)" }} />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white leading-tight tracking-tight">MLB HRR</h1>
+                <p className="text-[10px] text-[oklch(0.50_0.015_255)] font-medium tracking-wider uppercase">Prop Tracker</p>
+              </div>
+            </div>
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+              style={{ background: "oklch(0.72 0.18 165 / 10%)", border: "1px solid oklch(0.72 0.18 165 / 20%)" }}
+            >
+              <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "oklch(0.72 0.18 165)" }} />
+              <span className="text-[10px] font-bold text-[oklch(0.72_0.18_165)]">LIVE</span>
+            </div>
+          </div>
+          
+          {/* Tab Navigation — pill style with animated indicator */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+            {(Object.entries(TAB_CONFIG) as [TabType, typeof TAB_CONFIG[TabType]][]).map(
+              ([key, config]) => {
+                const TabIcon = config.icon;
+                const isActive = key === activeTab;
+                return (
+                  <motion.button
+                    key={key}
+                    onClick={() => setActiveTab(key)}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition-all duration-300 active:scale-95 relative"
+                    style={{
+                      background: isActive
+                        ? `linear-gradient(135deg, ${config.color.replace(")", " / 18%)")}, ${config.color.replace(")", " / 8%)")}`
+                        : "oklch(0.15 0.02 255)",
+                      border: `1px solid ${isActive ? config.color.replace(")", " / 40%)") : "oklch(1 0 0 / 6%)"}`,
+                      boxShadow: isActive ? `0 4px 16px ${config.color.replace(")", " / 15%)")}` : "none",
+                    }}
+                    whileTap={{ scale: 0.95 }}
                   >
-                    {config.label}
-                  </span>
-                </button>
-              );
-            }
-          )}
+                    <TabIcon
+                      size={14}
+                      style={{ color: isActive ? config.color : "oklch(0.45 0.015 255)" }}
+                    />
+                    <span
+                      className="text-[11px] font-bold whitespace-nowrap tracking-wide"
+                      style={{ color: isActive ? config.color : "oklch(0.45 0.015 255)" }}
+                    >
+                      {config.label}
+                    </span>
+                    {isActive && (
+                      <motion.div
+                        className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full"
+                        style={{ background: config.color }}
+                        layoutId="tabIndicator"
+                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                  </motion.button>
+                );
+              }
+            )}
+          </div>
         </div>
+        
+        {/* Bottom border with subtle gradient */}
+        <div className="h-px" style={{ background: "linear-gradient(90deg, transparent, oklch(1 0 0 / 10%), transparent)" }} />
       </header>
 
       {/* ── Content Area ─────────────────────────────────────────────────── */}
@@ -664,21 +715,24 @@ export default function Home() {
         </AnimatePresence>
       </main>
 
-      {/* ── AI Props CTA Button ────────────────────────────────────────────── */}
-      <div className="shrink-0 px-4 py-3 border-t border-[oklch(1_0_0/8%)]" style={{ background: "oklch(0.10 0.022 255)" }}>
+      {/* ── Bottom Bar ────────────────────────────────────────────────────── */}
+      <div className="shrink-0 px-4 py-3 relative" style={{ background: "oklch(0.10 0.022 255)" }}>
+        {/* Top gradient border */}
+        <div className="absolute top-0 left-0 right-0 h-px" style={{ background: "linear-gradient(90deg, transparent, oklch(0.68 0.22 25 / 30%), transparent)" }} />
         <motion.button
           onClick={() => navigate("/props")}
-          className="w-full flex items-center justify-center gap-2 rounded-xl py-3 px-4 font-semibold text-sm transition-all duration-200 active:scale-95"
+          className="w-full flex items-center justify-center gap-2.5 rounded-xl py-3 px-4 font-semibold text-sm transition-all duration-300 active:scale-95 relative overflow-hidden"
           style={{
-            background: "linear-gradient(135deg, oklch(0.68_0.22_25), oklch(0.68_0.22_25_/0.7))",
-            border: "1px solid oklch(0.68 0.22 25 / 0.6)",
+            background: "linear-gradient(135deg, oklch(0.68_0.22_25 / 90%), oklch(0.55_0.20_25 / 80%))",
+            border: "1px solid oklch(0.68 0.22 25 / 40%)",
+            boxShadow: "0 4px 20px oklch(0.68 0.22 25 / 20%), inset 0 1px 0 oklch(1 0 0 / 10%)",
           }}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.97 }}
         >
-          <Sparkles size={18} style={{ color: "white" }} />
-          <span>View AI Prop Predictions</span>
-          <span className="ml-auto text-xs opacity-75">→</span>
+          <Sparkles size={16} className="text-white" />
+          <span className="text-white">Full AI Prop Analysis</span>
+          <span className="ml-auto text-xs text-white/60">→</span>
         </motion.button>
       </div>
     </div>

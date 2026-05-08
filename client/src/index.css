@@ -191,6 +191,22 @@
     transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
+  /* Glass morphism utility */
+  .glass {
+    background: oklch(0.14 0.025 255 / 80%);
+    backdrop-filter: blur(12px);
+    border: 1px solid oklch(1 0 0 / 8%);
+  }
+
+  /* Premium card hover */
+  .card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px oklch(0 0 0 / 30%);
+  }
+
   /* Card entrance animation */
   @keyframes slideUp {
     from {
