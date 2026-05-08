@@ -433,3 +433,10 @@
 - [x] Group results by source (Money Picks vs All Plays) with source badges
 - [x] Show separate hit rates: Money Picks 80%, All Plays 70%, Overall 74%
 - [x] Add 💰 MONEY badge on Money Picks results cards
+
+## Auto-Refresh & Day Transition Fix
+- [x] Add refetchInterval (5 min) to MoneyPicksTab, AllPlaysTab, GameCards for auto-refresh
+- [x] Add staleTime (2 min) to prevent unnecessary re-fetches on tab switch
+- [x] Cache invalidates at midnight ET so new day always gets fresh data
+- [x] Results tab polls every 2 min for live game updates (already implemented)
+- [x] All 156 tests passing

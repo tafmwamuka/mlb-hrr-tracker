@@ -328,7 +328,10 @@ function MetricBox({ label, value, good }: { label: string; value: string; good:
 }
 
 export function MoneyPicksTab() {
-  const { data, isLoading } = trpc.aiPicks.getHRRPicks.useQuery();
+  const { data, isLoading } = trpc.aiPicks.getHRRPicks.useQuery(undefined, {
+    refetchInterval: 5 * 60 * 1000, // Auto-refresh every 5 minutes for new lineups
+    staleTime: 2 * 60 * 1000, // Consider data fresh for 2 minutes
+  });
   const [activeFilter, setActiveFilter] = useState<FilterTier>("all");
   const [selectedPicks, setSelectedPicks] = useState<Set<number>>(new Set());
   const [showParlayBuilder, setShowParlayBuilder] = useState(false);

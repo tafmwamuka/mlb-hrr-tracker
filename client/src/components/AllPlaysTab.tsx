@@ -217,7 +217,10 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
 }
 
 export function AllPlaysTab() {
-  const { data: aiPicksData, isLoading } = trpc.aiPicks.getComprehensivePicks.useQuery();
+  const { data: aiPicksData, isLoading } = trpc.aiPicks.getComprehensivePicks.useQuery(undefined, {
+    refetchInterval: 5 * 60 * 1000, // Auto-refresh every 5 minutes for new lineups
+    staleTime: 2 * 60 * 1000, // Consider data fresh for 2 minutes
+  });
 
   const todayDate = (() => {
     const dateStr = aiPicksData?.dataDate;

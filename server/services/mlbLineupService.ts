@@ -107,6 +107,17 @@ const statsCache = new Map<number, CacheEntry<PlayerSeasonStats>>();
 const GAME_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const STATS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
+/**
+ * Check if the cached data is from a previous day (ET timezone).
+ * If so, invalidate the cache so we fetch fresh data for today.
+ */
+function isCacheStaleForNewDay(): boolean {
+  if (!gameCache.entry || !gameCache.dataDate) return false;
+  const currentETDate = getQueryDate();
+  // If the cached data date is different from today's ET date, cache is stale
+  return gameCache.dataDate !== currentETDate;
+}
+
 // ─── Fetch today's games with lineups ─────────────────────────────────────────
 
 /**
@@ -159,7 +170,15 @@ export async function getDataDate(): Promise<string> {
 }
 
 export async function fetchTodaysGames(): Promise<MLBGame[]> {
-  // Check cache - only use if it has games with lineups
+  // Invalidate cache if we've crossed midnight ET (new day)
+  if (isCacheStaleForNewDay()) {
+    console.log(`New day detected (was ${gameCache.dataDate}, now ${getQueryDate()}). Clearing cache.`);
+    gameCache.entry = null;
+    gameCache.dataDate = null;
+    statsCache.clear();
+  }
+
+  // Check cache - only use if it has games with lineups and isn't expired
   if (gameCache.entry && Date.now() - gameCache.entry.timestamp < GAME_CACHE_TTL) {
     return gameCache.entry.data;
   }

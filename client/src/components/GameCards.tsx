@@ -155,7 +155,10 @@ function GameCard({ game }: { game: Game }) {
 }
 
 export function GameCards() {
-  const { data, isLoading } = trpc.aiPicks.getTodaysGames.useQuery();
+  const { data, isLoading } = trpc.aiPicks.getTodaysGames.useQuery(undefined, {
+    refetchInterval: 5 * 60 * 1000, // Auto-refresh every 5 minutes for game status updates
+    staleTime: 2 * 60 * 1000, // Consider data fresh for 2 minutes
+  });
 
   if (isLoading) {
     return (
