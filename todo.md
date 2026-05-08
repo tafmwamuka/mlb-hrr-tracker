@@ -412,3 +412,9 @@
 - [x] Update parlays.test.ts to handle lineupsPending state
 - [x] Verify all 154 tests pass
 - [x] Verify real players (Aaron Judge, Cody Bellinger, etc.) show with correct team matchups
+
+
+## Bug Fix: Results Page Issues
+- [x] Fix Results page repeating the same 3 names — pull real results for all picks
+- [x] Make Results page responsive (mobile-friendly layout)
+- [x] Update results in real-time after each pick's game finishes (poll MLB API for final scores)

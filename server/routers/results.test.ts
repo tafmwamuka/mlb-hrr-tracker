@@ -294,3 +294,61 @@ describe("Results Router - Backfill Logic", () => {
     expect(playerStats).toBeUndefined();
   });
 });
+
+describe("Results - Live Results Integration (getTodayResults)", () => {
+  it("should return a valid response from getTodayResults with unique players", async () => {
+    const response = await fetch("http://localhost:3000/api/trpc/results.getTodayResults");
+    expect(response.ok).toBe(true);
+
+    const json = await response.json();
+    const result = json?.result?.data?.json;
+
+    expect(result).toBeDefined();
+    expect(result.success).toBe(true);
+    expect(result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(typeof result.totalPlays).toBe("number");
+    expect(typeof result.hitRate).toBe("number");
+    expect(typeof result.hasActuals).toBe("boolean");
+    expect(typeof result.gamesInProgress).toBe("number");
+    expect(typeof result.gamesCompleted).toBe("number");
+    expect(typeof result.gamesScheduled).toBe("number");
+    expect(Array.isArray(result.results)).toBe(true);
+
+    // Key fix validation: should NOT repeat same 3 names
+    if (!result.lineupsPending && result.results.length > 0) {
+      const uniqueNames = new Set(result.results.map((r: any) => r.playerName));
+      expect(uniqueNames.size).toBeGreaterThan(3);
+
+      // No single player should have more than 3 entries (H, R, RBI)
+      const nameCounts: Record<string, number> = {};
+      for (const r of result.results) {
+        nameCounts[r.playerName] = (nameCounts[r.playerName] || 0) + 1;
+      }
+      for (const count of Object.values(nameCounts)) {
+        expect(count).toBeLessThanOrEqual(3);
+      }
+    }
+  }, 30000);
+
+  it("should return results with correct field structure", async () => {
+    const response = await fetch("http://localhost:3000/api/trpc/results.getTodayResults");
+    const json = await response.json();
+    const result = json?.result?.data?.json;
+
+    if (result.lineupsPending || result.results.length === 0) return;
+
+    const firstResult = result.results[0];
+    expect(firstResult).toHaveProperty("playerId");
+    expect(firstResult).toHaveProperty("playerName");
+    expect(firstResult).toHaveProperty("team");
+    expect(firstResult).toHaveProperty("stat");
+    expect(firstResult).toHaveProperty("line");
+    expect(firstResult).toHaveProperty("prediction", "over");
+    expect(firstResult).toHaveProperty("confidence");
+    expect(firstResult).toHaveProperty("gameStatus");
+    expect(["hits", "runs", "rbi"]).toContain(firstResult.stat);
+    expect(["Scheduled", "In Progress", "Final", "Postponed"]).toContain(firstResult.gameStatus);
+    expect(firstResult.confidence).toBeGreaterThanOrEqual(0);
+    expect(firstResult.confidence).toBeLessThanOrEqual(100);
+  }, 30000);
+});
