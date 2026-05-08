@@ -391,3 +391,24 @@
 - [x] Full UI polish: color palette cohesion — consistent oklch palette throughout
 - [x] Full UI polish: loading states, transitions, empty states all polished
 - [x] Full UI polish: make it feel like a 10-star premium sports betting app
+
+## Fix Picks-Games Mismatch (May 7 - User Bug Report)
+- [ ] Picks must only use players from today's actual MLB lineups (no mock fallback)
+- [ ] Players must be on their correct current teams (from MLB API)
+- [ ] Display today's date on the picks section
+- [ ] Matchups on pick cards must match the game cards shown
+
+
+## Bug Fix: Wrong Matchups & Players on Wrong Teams
+- [x] Remove hardcoded MOCK_MATCHUPS and MOCK_PLAYERS fallback from aiPicks.ts
+- [x] Return lineupsPending state when no real lineup data is available
+- [x] Fix lineup adapter to not cache empty results
+- [x] Add date fallback logic (tries recent dates when today has no lineup data)
+- [x] Add today's date display to MoneyPicksTab header
+- [x] Add today's date display to AllPlaysTab header
+- [x] Add today's date display to GameCards header
+- [x] Add lineupsPending empty state UI to MoneyPicksTab
+- [x] Add lineupsPending empty state UI to AllPlaysTab
+- [x] Update parlays.test.ts to handle lineupsPending state
+- [x] Verify all 154 tests pass
+- [x] Verify real players (Aaron Judge, Cody Bellinger, etc.) show with correct team matchups

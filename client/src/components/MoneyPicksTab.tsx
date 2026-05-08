@@ -406,12 +406,44 @@ export function MoneyPicksTab() {
     ? Math.round(selectedPicksList.reduce((acc, p) => acc * (p.recommendedProb / 100), 1) * 100)
     : 0;
 
+  // Format today's date
+  const todayDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
   if (isLoading) {
     return (
       <div className="p-4 space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="animate-pulse rounded-2xl h-40" style={{ background: "oklch(0.14 0.022 255)" }} />
         ))}
+      </div>
+    );
+  }
+
+  // Handle lineups pending state
+  if (data?.lineupsPending || (!isLoading && moneyPicks.length === 0 && !data?.picks?.length)) {
+    return (
+      <div className="p-4 space-y-4">
+        <div className="text-center">
+          <p className="text-[oklch(0.50_0.015_255)] text-xs">{todayDate}</p>
+        </div>
+        <div className="text-center py-16">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "oklch(0.18 0.03 255)" }}>
+            <Target size={28} style={{ color: "oklch(0.72 0.18 165)" }} />
+          </div>
+          <h3 className="text-white font-bold text-lg mb-2">Lineups Posting Soon</h3>
+          <p className="text-[oklch(0.50_0.015_255)] text-sm max-w-xs mx-auto leading-relaxed">
+            Today's picks will appear once MLB lineups are confirmed. Check back closer to game time.
+          </p>
+          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
+            <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />
+            <span className="text-[oklch(0.55_0.015_255)] text-xs">Refreshes automatically</span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -426,7 +458,7 @@ export function MoneyPicksTab() {
             Money Picks
           </h2>
           <p className="text-[oklch(0.50_0.015_255)] text-xs mt-0.5">
-            75%+ probability plays · highest value alternates
+            {todayDate} · 75%+ probability plays
           </p>
         </div>
         <div className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "oklch(0.20 0.03 255)", color: "oklch(0.72 0.18 165)" }}>

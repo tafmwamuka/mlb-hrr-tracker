@@ -143,10 +143,11 @@ function toMatchupData(player: PlayerWithContext): MatchupData {
 /**
  * Get today's real lineup data adapted for the ranking services.
  * Falls back to empty arrays if MLB API is unavailable.
+ * IMPORTANT: Does NOT cache empty results to avoid stale empty cache blocking real data.
  */
 export async function getAdaptedLineupData(): Promise<AdaptedData> {
-  // Check cache
-  if (cachedData && Date.now() - cachedData.timestamp < CACHE_TTL) {
+  // Check cache - only use cache if it has actual player data
+  if (cachedData && cachedData.matchups.length > 0 && Date.now() - cachedData.timestamp < CACHE_TTL) {
     return cachedData;
   }
 
@@ -157,7 +158,8 @@ export async function getAdaptedLineupData(): Promise<AdaptedData> {
     ]);
 
     if (players.length === 0) {
-      // No lineup data available yet (lineups usually posted 1-2 hours before game)
+      // No lineup data available yet - do NOT cache empty results
+      // so next request will try again immediately
       return {
         matchups: [],
         playerDataMap: new Map(),
@@ -174,6 +176,7 @@ export async function getAdaptedLineupData(): Promise<AdaptedData> {
       playerDataMap.set(player.playerId, toPlayerData(player));
     }
 
+    // Only cache when we have real data
     cachedData = {
       matchups,
       playerDataMap,

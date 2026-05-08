@@ -4,25 +4,40 @@ import { aiPicksRouter } from "./aiPicks";
 /**
  * Test the parlay generation logic
  * Parlays are built from AI picks data on the frontend,
- * but we test the backend endpoint that provides the picks data
+ * but we test the backend endpoint that provides the picks data.
+ * 
+ * NOTE: When lineups aren't available (e.g., no games today, early morning),
+ * the endpoint returns { picks: [], lineupsPending: true } instead of mock data.
+ * Tests handle both states.
  */
 describe("Parlays - AI Picks Data Source", () => {
   const caller = aiPicksRouter.createCaller({} as any);
 
-  it("should return enough picks to build parlays (at least 4 for 2-leg, 6 for 3-leg)", async () => {
+  it("should return a valid response with picks array or lineupsPending flag", async () => {
     const result = await caller.getComprehensivePicks();
     
     expect(result).toBeDefined();
     expect(result.picks).toBeDefined();
     expect(Array.isArray(result.picks)).toBe(true);
-    // Need at least 6 picks to build both 2-leg and 3-leg parlays
-    expect(result.picks.length).toBeGreaterThanOrEqual(6);
+    expect(result.success).toBe(true);
+    
+    // Either has picks OR lineupsPending flag
+    if (result.picks.length === 0) {
+      expect((result as any).lineupsPending).toBe(true);
+    }
   }, 30000);
 
-  it("should return picks with required fields for parlay building", async () => {
+  it("should return picks with required fields for parlay building (when lineups available)", async () => {
     const result = await caller.getComprehensivePicks();
     
+    // Skip field validation if lineups pending
+    if ((result as any).lineupsPending) {
+      expect(result.picks.length).toBe(0);
+      return;
+    }
+    
     // Each pick should have the fields needed for parlay construction
+    expect(result.picks.length).toBeGreaterThanOrEqual(6);
     for (const pick of result.picks) {
       expect(pick.playerName).toBeDefined();
       expect(typeof pick.playerName).toBe("string");
@@ -37,18 +52,22 @@ describe("Parlays - AI Picks Data Source", () => {
       expect(pick.line).toBeDefined();
       expect(typeof pick.line).toBe("number");
     }
-  }, 15000);
+  }, 30000);
 
-  it("should return picks from diverse teams (needed for cross-game parlays)", async () => {
+  it("should return picks from diverse teams when lineups available", async () => {
     const result = await caller.getComprehensivePicks();
+    
+    if ((result as any).lineupsPending) return;
     
     const teams = new Set(result.picks.map((p: any) => p.team));
     // Need at least 3 different teams for 3-leg parlays
     expect(teams.size).toBeGreaterThanOrEqual(3);
   }, 15000);
 
-  it("should return picks sorted by rank", async () => {
+  it("should return picks sorted by rank when lineups available", async () => {
     const result = await caller.getComprehensivePicks();
+    
+    if ((result as any).lineupsPending) return;
     
     // Picks should be sorted by rank
     for (let i = 0; i < result.picks.length - 1; i++) {
@@ -56,8 +75,10 @@ describe("Parlays - AI Picks Data Source", () => {
     }
   });
 
-  it("should have at least 15 picks for All Plays variety", async () => {
+  it("should have at least 15 picks for All Plays variety when lineups available", async () => {
     const result = await caller.getComprehensivePicks();
+    
+    if ((result as any).lineupsPending) return;
     
     // All Plays should show 15-20 players
     expect(result.picks.length).toBeGreaterThanOrEqual(15);
@@ -65,6 +86,8 @@ describe("Parlays - AI Picks Data Source", () => {
 
   it("should include pitcherTeam field for game-level diversification", async () => {
     const result = await caller.getComprehensivePicks();
+    
+    if ((result as any).lineupsPending) return;
     
     // Each pick should have pitcherTeam for parlay game-level checks
     for (const pick of result.picks) {
@@ -76,8 +99,10 @@ describe("Parlays - AI Picks Data Source", () => {
     }
   });
 
-  it("should have picks from different games (team vs pitcherTeam pairs)", async () => {
+  it("should have picks from different games when lineups available", async () => {
     const result = await caller.getComprehensivePicks();
+    
+    if ((result as any).lineupsPending) return;
     
     // Build game identifiers: sort team pair alphabetically
     const games = new Set(

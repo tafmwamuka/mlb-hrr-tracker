@@ -219,6 +219,13 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
 export function AllPlaysTab() {
   const { data: aiPicksData, isLoading } = trpc.aiPicks.getComprehensivePicks.useQuery();
 
+  const todayDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -238,12 +245,22 @@ export function AllPlaysTab() {
 
   const picks = aiPicksData?.picks || [];
 
-  if (picks.length === 0) {
+  // Handle lineups pending state
+  if ((aiPicksData as any)?.lineupsPending || picks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4">
-        <TrendingUp size={40} className="text-[oklch(0.40_0.015_255)] mb-3" />
-        <p className="text-white font-semibold mb-1">No plays available</p>
-        <p className="text-sm text-[oklch(0.45_0.015_255)]">Check back closer to game time</p>
+        <div className="w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "oklch(0.18 0.03 255)" }}>
+          <TrendingUp size={24} style={{ color: "oklch(0.82 0.17 85)" }} />
+        </div>
+        <p className="text-white font-semibold mb-1">Lineups Posting Soon</p>
+        <p className="text-sm text-[oklch(0.45_0.015_255)] text-center max-w-xs">
+          Today's plays will appear once MLB lineups are confirmed.
+        </p>
+        <p className="text-[oklch(0.40_0.015_255)] text-xs mt-2">{todayDate}</p>
+        <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
+          <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />
+          <span className="text-[oklch(0.55_0.015_255)] text-[10px]">Refreshes automatically</span>
+        </div>
       </div>
     );
   }
@@ -254,7 +271,7 @@ export function AllPlaysTab() {
       <div className="flex items-center justify-between py-2">
         <div>
           <h3 className="text-sm font-bold text-white">{picks.length} Plays Available</h3>
-          <p className="text-[10px] text-[oklch(0.45_0.015_255)]">Tap any play to see full Statcast + RC analysis</p>
+          <p className="text-[10px] text-[oklch(0.45_0.015_255)]">{todayDate} · Tap any play for full analysis</p>
         </div>
         <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[oklch(1_0_0/4%)] border border-[oklch(1_0_0/8%)]">
           <Flame size={10} className="text-orange-400" />

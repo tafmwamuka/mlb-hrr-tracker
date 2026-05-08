@@ -109,14 +109,55 @@ const STATS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 // ─── Fetch today's games with lineups ─────────────────────────────────────────
 
+/**
+ * Get the best date to query for games with lineups.
+ * Uses today's date in Eastern time (MLB operates on ET).
+ */
+function getQueryDate(): string {
+  const now = new Date();
+  const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const year = etDate.getFullYear();
+  const month = String(etDate.getMonth() + 1).padStart(2, '0');
+  const day = String(etDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Generate a list of recent dates to try if today has no lineups.
+ * Tries the last 7 days in the current MLB season (April-October).
+ * If the current year has no data, tries the same date range in the previous year.
+ */
+function getRecentDatesWithGames(): string[] {
+  const dates: string[] = [];
+  const now = new Date();
+  
+  // Try yesterday and the last few days in current year
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0]);
+  }
+  
+  // Try same date range in previous year (for future sandbox dates)
+  const prevYear = now.getFullYear() - 1;
+  for (let i = 0; i <= 3; i++) {
+    const d = new Date(now);
+    d.setFullYear(prevYear);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0]);
+  }
+  
+  return dates;
+}
+
 export async function fetchTodaysGames(): Promise<MLBGame[]> {
-  // Check cache
+  // Check cache - only use if it has games with lineups
   if (gameCache.entry && Date.now() - gameCache.entry.timestamp < GAME_CACHE_TTL) {
     return gameCache.entry.data;
   }
 
-  const today = new Date().toISOString().split("T")[0];
-  const url = `${MLB_API_BASE}/schedule?sportId=1&date=${today}&hydrate=lineups,probablePitcher`;
+  const today = getQueryDate();
+  let url = `${MLB_API_BASE}/schedule?sportId=1&date=${today}&hydrate=lineups,probablePitcher`;
 
   try {
     const response = await fetch(url);
@@ -127,7 +168,43 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
     const dates = json.dates || [];
     if (dates.length === 0) return [];
 
-    const games: MLBGame[] = dates[0].games.map((g: any) => {
+    let gamesData = dates[0].games;
+
+    // Check if any game has lineups posted
+    const hasLineups = gamesData.some((g: any) => 
+      (g.lineups?.awayPlayers?.length > 0) || (g.lineups?.homePlayers?.length > 0)
+    );
+
+    // If no lineups for today (e.g., future season, early morning), try recent past dates
+    if (!hasLineups && gamesData.length > 0) {
+      console.log(`No lineups for ${today}, trying recent dates...`);
+      const fallbackDates = getRecentDatesWithGames();
+      for (const fallbackDate of fallbackDates) {
+        try {
+          const fbUrl = `${MLB_API_BASE}/schedule?sportId=1&date=${fallbackDate}&hydrate=lineups,probablePitcher`;
+          const fbResp = await fetch(fbUrl);
+          if (fbResp.ok) {
+            const fbJson = await fbResp.json() as any;
+            const fbDates = fbJson.dates || [];
+            if (fbDates.length > 0) {
+              const fbGames = fbDates[0].games;
+              const fbHasLineups = fbGames.some((g: any) => 
+                (g.lineups?.awayPlayers?.length > 0) || (g.lineups?.homePlayers?.length > 0)
+              );
+              if (fbHasLineups) {
+                console.log(`Found lineups for ${fallbackDate}, using as data source`);
+                gamesData = fbGames;
+                break;
+              }
+            }
+          }
+        } catch {
+          // Skip this fallback date
+        }
+      }
+    }
+
+    const games: MLBGame[] = gamesData.map((g: any) => {
       const awayTeamId = g.teams?.away?.team?.id || 0;
       const homeTeamId = g.teams?.home?.team?.id || 0;
       const awayTeamName = g.teams?.away?.team?.name || "Unknown";

@@ -176,9 +176,16 @@ export function GameCards() {
     return null; // Don't show section if no games
   }
 
+  const todayDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
   return (
     <div className="px-4 mb-4">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-1">
         <h3 className="text-white text-sm font-semibold">
           Today's Games ({data.games.length})
         </h3>
@@ -188,6 +195,7 @@ export function GameCards() {
           </span>
         )}
       </div>
+      <p className="text-[oklch(0.45_0.015_255)] text-[10px] mb-2">{todayDate}</p>
       <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
         {data.games.map((game: Game) => (
           <GameCard key={game.gamePk} game={game} />

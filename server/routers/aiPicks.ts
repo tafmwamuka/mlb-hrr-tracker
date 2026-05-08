@@ -643,11 +643,18 @@ export const aiPicksRouter = router({
    */
   getTopPicks: publicProcedure.query(async () => {
     try {
-      // Try real lineup data first, fall back to mock
+      // Only use real lineup data - no mock fallback
       const lineupData = await getAdaptedLineupData();
-      const useReal = lineupData.matchups.length > 0;
-      const matchups = useReal ? lineupData.matchups : MOCK_MATCHUPS;
-      const players = useReal ? lineupData.playerDataMap : MOCK_PLAYERS;
+      if (lineupData.matchups.length === 0) {
+        return {
+          success: true,
+          picks: [],
+          lineupsPending: true,
+          timestamp: new Date(),
+        };
+      }
+      const matchups = lineupData.matchups;
+      const players = lineupData.playerDataMap;
 
       const allPicks = rankAIPicks(
         matchups,
@@ -696,11 +703,18 @@ export const aiPicksRouter = router({
    */
   getComprehensivePicks: publicProcedure.query(async () => {
     try {
-      // Try real lineup data first, fall back to mock
+      // Only use real lineup data - no mock fallback
       const lineupData = await getAdaptedLineupData();
-      const useReal = lineupData.matchups.length > 0;
-      const matchups = useReal ? lineupData.matchups : MOCK_MATCHUPS;
-      const players = useReal ? lineupData.playerDataMap : MOCK_PLAYERS;
+      if (lineupData.matchups.length === 0) {
+        return {
+          success: true,
+          picks: [],
+          lineupsPending: true,
+          timestamp: new Date(),
+        };
+      }
+      const matchups = lineupData.matchups;
+      const players = lineupData.playerDataMap;
 
       const picks = rankAIPicks(
         matchups,
@@ -747,11 +761,19 @@ export const aiPicksRouter = router({
    */
   getHRRPicks: publicProcedure.query(async () => {
     try {
-      // Try real lineup data first, fall back to mock
+      // Only use real lineup data - no mock fallback
       const lineupData = await getAdaptedLineupData();
-      const useReal = lineupData.matchups.length > 0;
-      const matchups = useReal ? lineupData.matchups : MOCK_MATCHUPS;
-      const players = useReal ? lineupData.playerDataMap : MOCK_PLAYERS;
+      if (lineupData.matchups.length === 0) {
+        return {
+          success: true,
+          picks: [],
+          lineupsPending: true,
+          timestamp: new Date(),
+          hasOddsData: false,
+        };
+      }
+      const matchups = lineupData.matchups;
+      const players = lineupData.playerDataMap;
 
       // Get park factors
       const parkFactors = getMockParkFactors();
