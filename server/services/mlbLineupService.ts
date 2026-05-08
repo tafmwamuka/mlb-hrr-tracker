@@ -101,7 +101,7 @@ interface CacheEntry<T> {
   timestamp: number;
 }
 
-const gameCache: { entry: CacheEntry<MLBGame[]> | null } = { entry: null };
+const gameCache: { entry: CacheEntry<MLBGame[]> | null; dataDate: string | null } = { entry: null, dataDate: null };
 const statsCache = new Map<number, CacheEntry<PlayerSeasonStats>>();
 
 const GAME_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -150,6 +150,14 @@ function getRecentDatesWithGames(): string[] {
   return dates;
 }
 
+export async function getDataDate(): Promise<string> {
+  // Return the actual date of the data being displayed
+  if (gameCache.dataDate) return gameCache.dataDate;
+  // If no cache, compute it
+  await fetchTodaysGames();
+  return gameCache.dataDate || getQueryDate();
+}
+
 export async function fetchTodaysGames(): Promise<MLBGame[]> {
   // Check cache - only use if it has games with lineups
   if (gameCache.entry && Date.now() - gameCache.entry.timestamp < GAME_CACHE_TTL) {
@@ -194,6 +202,7 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
               if (fbHasLineups) {
                 console.log(`Found lineups for ${fallbackDate}, using as data source`);
                 gamesData = fbGames;
+                gameCache.dataDate = fallbackDate;
                 break;
               }
             }
@@ -267,6 +276,10 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
       } as MLBGame;
     });
 
+    // If we didn't set a fallback date, use today
+    if (!gameCache.dataDate) {
+      gameCache.dataDate = today;
+    }
     gameCache.entry = { data: games, timestamp: Date.now() };
     return games;
   } catch (error) {

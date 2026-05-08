@@ -219,12 +219,14 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
 export function AllPlaysTab() {
   const { data: aiPicksData, isLoading } = trpc.aiPicks.getComprehensivePicks.useQuery();
 
-  const todayDate = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  const todayDate = (() => {
+    const dateStr = aiPicksData?.dataDate;
+    if (dateStr) {
+      const d = new Date(dateStr + 'T12:00:00');
+      return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    }
+    return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  })();
 
   if (isLoading) {
     return (

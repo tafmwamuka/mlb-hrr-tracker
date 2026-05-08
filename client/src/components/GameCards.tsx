@@ -176,12 +176,14 @@ export function GameCards() {
     return null; // Don't show section if no games
   }
 
-  const todayDate = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  const todayDate = (() => {
+    const dateStr = data?.dataDate;
+    if (dateStr) {
+      const d = new Date(dateStr + 'T12:00:00');
+      return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    }
+    return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  })();
 
   return (
     <div className="px-4 mb-4">

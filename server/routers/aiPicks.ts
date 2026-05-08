@@ -11,7 +11,7 @@ import { generateHRRProjections } from "../services/hrrService";
 import { fetchHRRMarketData, getBestHRRLine, americanToImpliedProbability, removeVig } from "../services/oddsApiService";
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from "../services/poissonModel";
 import { getAdaptedLineupData, getGamesForUI } from "../services/lineupAdapter";
-import type { MLBGame } from "../services/mlbLineupService";
+import { getDataDate, type MLBGame } from "../services/mlbLineupService";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -645,11 +645,13 @@ export const aiPicksRouter = router({
     try {
       // Only use real lineup data - no mock fallback
       const lineupData = await getAdaptedLineupData();
+      const dataDate = await getDataDate();
       if (lineupData.matchups.length === 0) {
         return {
           success: true,
           picks: [],
           lineupsPending: true,
+          dataDate,
           timestamp: new Date(),
         };
       }
@@ -684,13 +686,16 @@ export const aiPicksRouter = router({
       return {
         success: true,
         picks: topPicks,
+        dataDate,
         timestamp: new Date(),
       };
     } catch (error) {
       console.error("Error generating top picks:", error);
+      const fallbackDate = await getDataDate();
       return {
         success: false,
         picks: [],
+        dataDate: fallbackDate,
         error: "Failed to generate top picks",
         timestamp: new Date(),
       };
@@ -705,11 +710,13 @@ export const aiPicksRouter = router({
     try {
       // Only use real lineup data - no mock fallback
       const lineupData = await getAdaptedLineupData();
+      const dataDate = await getDataDate();
       if (lineupData.matchups.length === 0) {
         return {
           success: true,
           picks: [],
           lineupsPending: true,
+          dataDate,
           timestamp: new Date(),
         };
       }
@@ -741,13 +748,16 @@ export const aiPicksRouter = router({
       return {
         success: true,
         picks: sortedPicks,
+        dataDate,
         timestamp: new Date(),
       };
     } catch (error) {
       console.error("Error generating AI picks:", error);
+      const fallbackDate = await getDataDate();
       return {
         success: false,
         picks: [],
+        dataDate: fallbackDate,
         error: "Failed to generate AI picks",
         timestamp: new Date(),
       };
@@ -763,11 +773,13 @@ export const aiPicksRouter = router({
     try {
       // Only use real lineup data - no mock fallback
       const lineupData = await getAdaptedLineupData();
+      const dataDate = await getDataDate();
       if (lineupData.matchups.length === 0) {
         return {
           success: true,
           picks: [],
           lineupsPending: true,
+          dataDate,
           timestamp: new Date(),
           hasOddsData: false,
         };
@@ -868,14 +880,17 @@ export const aiPicksRouter = router({
       return {
         success: true,
         picks: enrichedPicks,
+        dataDate,
         timestamp: new Date(),
         hasOddsData: marketData.size > 0,
       };
     } catch (error) {
       console.error("Error generating HRR picks:", error);
+      const fallbackDate = await getDataDate();
       return {
         success: false,
         picks: [],
+        dataDate: fallbackDate,
         error: "Failed to generate HRR picks",
         timestamp: new Date(),
         hasOddsData: false,
@@ -928,9 +943,11 @@ export const aiPicksRouter = router({
   getTodaysGames: publicProcedure.query(async () => {
     try {
       const games = await getGamesForUI();
+      const dataDate = await getDataDate();
       return {
         success: true,
         games,
+        dataDate,
         timestamp: new Date(),
         lineupAvailable: games.some(g => g.homeLineup.length > 0 || g.awayLineup.length > 0),
       };
@@ -939,6 +956,7 @@ export const aiPicksRouter = router({
       return {
         success: false,
         games: [] as MLBGame[],
+        dataDate: new Date().toISOString().split('T')[0],
         timestamp: new Date(),
         lineupAvailable: false,
       };

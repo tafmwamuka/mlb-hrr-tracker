@@ -38,16 +38,14 @@ export interface LiveResult {
   inningHalf?: string;
 }
 
+import { getDataDate } from "../services/mlbLineupService";
+
 /**
  * Get the date string for today's games (matches what lineupAdapter uses)
+ * Uses the actual data date from mlbLineupService (handles fallback to real data)
  */
-function getTodayDateStr(): string {
-  const now = new Date();
-  const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const year = etDate.getFullYear();
-  const month = String(etDate.getMonth() + 1).padStart(2, '0');
-  const day = String(etDate.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+async function getTodayDateStr(): Promise<string> {
+  return await getDataDate();
 }
 
 export const resultsRouter = router({
@@ -57,7 +55,7 @@ export const resultsRouter = router({
    */
   getTodayResults: publicProcedure.query(async () => {
     try {
-      const dateStr = getTodayDateStr();
+      const dateStr = await getTodayDateStr();
 
       // Step 1: Get today's AI picks (same source as Money Picks / All Plays)
       const lineupData = await getAdaptedLineupData();
@@ -210,7 +208,7 @@ export const resultsRouter = router({
         success: false,
         error: "Failed to fetch results",
         results: [],
-        date: getTodayDateStr(),
+        date: await getTodayDateStr(),
         hitRate: 0,
         totalPlays: 0,
         hasActuals: false,

@@ -406,13 +406,15 @@ export function MoneyPicksTab() {
     ? Math.round(selectedPicksList.reduce((acc, p) => acc * (p.recommendedProb / 100), 1) * 100)
     : 0;
 
-  // Format today's date
-  const todayDate = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  // Format the data date from API response (actual date of lineup data)
+  const todayDate = (() => {
+    const dateStr = data?.dataDate;
+    if (dateStr) {
+      const d = new Date(dateStr + 'T12:00:00');
+      return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    }
+    return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  })();
 
   if (isLoading) {
     return (

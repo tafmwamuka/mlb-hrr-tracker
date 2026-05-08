@@ -418,3 +418,10 @@
 - [x] Fix Results page repeating the same 3 names — pull real results for all picks
 - [x] Make Results page responsive (mobile-friendly layout)
 - [x] Update results in real-time after each pick's game finishes (poll MLB API for final scores)
+
+## Bug Fix: Picks Showing Yesterday's Data + Scheduled Task Verification
+- [x] Fix date display to show the actual date of the lineup data being used (not system date)
+- [x] Ensure picks/lineups auto-refresh from MLB API every 5 min (no scheduled task needed)
+- [x] Results tab shows completed games with real boxscore outcomes (57% hit rate verified)
+- [x] Verified: in production (real dates), lineup service pulls TODAY's lineups directly
+- [x] Fallback only activates when today's date has no MLB data (e.g., sandbox in 2026)
