@@ -15,6 +15,7 @@ import { SaferPlayTip } from "./SaferPlayTip";
 import { useState, useEffect, useMemo } from "react";
 
 const STAT_CONFIG = {
+  hrr: { label: "HRR", abbr: "HRR", icon: Flame, color: "oklch(0.75_0.18_55)", gradient: "from-[oklch(0.75_0.18_55)] to-[oklch(0.65_0.16_55)]" },
   hits: { label: "Hits", abbr: "H", icon: TrendingUp, color: "oklch(0.82_0.17_85)", gradient: "from-[oklch(0.82_0.17_85)] to-[oklch(0.72_0.15_85)]" },
   runs: { label: "Runs", abbr: "R", icon: Zap, color: "oklch(0.68_0.22_25)", gradient: "from-[oklch(0.68_0.22_25)] to-[oklch(0.58_0.20_25)]" },
   rbi: { label: "RBI", abbr: "RBI", icon: Target, color: "oklch(0.72_0.18_165)", gradient: "from-[oklch(0.72_0.18_165)] to-[oklch(0.62_0.16_165)]" },
@@ -65,6 +66,7 @@ function ResultCard({ play, idx }: { play: any; idx: number }) {
   const isLive = play.gameStatus === "In Progress";
   const isPending = play.gameStatus === "Scheduled";
   const isHit = play.hit === true;
+  const isMoney = play.source === "money";
 
   return (
     <motion.div
@@ -112,14 +114,19 @@ function ResultCard({ play, idx }: { play: any; idx: number }) {
               <div className="text-white font-bold text-sm sm:text-[15px] leading-tight truncate">{play.playerName}</div>
               <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 flex-wrap">
                 <span className="text-[10px] sm:text-[11px] text-[oklch(0.50_0.015_255)] font-medium">{play.team}</span>
+                {isMoney && (
+                  <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-[oklch(0.75_0.18_55/15%)] text-[oklch(0.75_0.18_55)]">
+                    💰 MONEY
+                  </span>
+                )}
                 <span
                   className="text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 rounded-md"
                   style={{
-                    background: `${statConfig.color.replace(")", " / 15%)")}`,
+                    background: `${statConfig.color.replace(")", " / 15%)")}`  ,
                     color: statConfig.color,
                   }}
                 >
-                  {play.stat.toUpperCase()} O{play.line}
+                  {play.stat === "hrr" ? "HRR" : play.stat.toUpperCase()} O{play.line}
                 </span>
                 <GameStatusBadge status={play.gameStatus} inning={play.inning} inningHalf={play.inningHalf} />
               </div>
@@ -187,14 +194,14 @@ function ResultCard({ play, idx }: { play: any; idx: number }) {
         <div className="mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-[oklch(1_0_0/6%)]">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[9px] sm:text-[10px] text-[oklch(0.45_0.015_255)] uppercase font-semibold tracking-wider">Model Confidence</span>
-            <span className="text-[10px] sm:text-[11px] font-bold" style={{ color: statConfig.color }}>{play.confidence}%</span>
+            <span className="text-[10px] sm:text-[11px] font-bold" style={{ color: statConfig.color }}>{play.probability}%</span>
           </div>
           <div className="h-1 sm:h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0.20 0.02 255)" }}>
             <motion.div
               className="h-full rounded-full"
               style={{ background: `linear-gradient(90deg, ${statConfig.color}, ${statConfig.color.replace(")", " / 60%)")})` }}
               initial={{ width: 0 }}
-              animate={{ width: `${play.confidence}%` }}
+              animate={{ width: `${play.probability}%` }}
               transition={{ delay: idx * 0.03 + 0.3, duration: 0.8, ease: "easeOut" }}
             />
           </div>
@@ -299,6 +306,14 @@ export function ResultsTab() {
   const misses = finalResults.filter((r: any) => r.hit === false);
   const hitRate = finalResults.length > 0 ? Math.round((hits.length / finalResults.length) * 100) : 0;
   const hasActuals = finalResults.length > 0;
+
+  // Source-based breakdown
+  const moneyFinal = finalResults.filter((r: any) => r.source === "money");
+  const allPlaysFinal = finalResults.filter((r: any) => r.source === "allPlays");
+  const moneyHits = moneyFinal.filter((r: any) => r.hit === true);
+  const allPlaysHits = allPlaysFinal.filter((r: any) => r.hit === true);
+  const moneyHitRate = moneyFinal.length > 0 ? Math.round((moneyHits.length / moneyFinal.length) * 100) : 0;
+  const allPlaysHitRate = allPlaysFinal.length > 0 ? Math.round((allPlaysHits.length / allPlaysFinal.length) * 100) : 0;
 
   return (
     <div className="flex-1 overflow-y-auto pb-20">
@@ -541,13 +556,13 @@ export function ResultsTab() {
             )}
           </div>
 
-          {/* All-time stats row */}
-          {statsData?.success && statsData.stats.totalPredictions > 0 && (
+          {/* Source-based hit rate breakdown */}
+          {hasActuals && (
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-3">
               {[
-                { value: `${statsData.stats.overallHitRate}%`, label: "All-Time", icon: Star },
-                { value: statsData.stats.totalPredictions, label: "Total Picks", icon: Target },
-                { value: `${statsData.stats.last7Days}%`, label: "7-Day", icon: TrendingUp },
+                { value: `${moneyHitRate}%`, label: "Money Picks", sublabel: `${moneyHits.length}/${moneyFinal.length}`, icon: Flame, color: "oklch(0.75 0.18 55)" },
+                { value: `${allPlaysHitRate}%`, label: "All Plays", sublabel: `${allPlaysHits.length}/${allPlaysFinal.length}`, icon: TrendingUp, color: "oklch(0.82 0.17 85)" },
+                { value: `${resultsData?.totalPlays || 0}`, label: "Total Plays", sublabel: `${resultsData?.moneyPlays || 0} + ${resultsData?.allPlaysCount || 0}`, icon: Target, color: "oklch(0.72 0.18 165)" },
               ].map((stat, i) => (
                 <motion.div
                   key={stat.label}
@@ -557,9 +572,10 @@ export function ResultsTab() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.6 + i * 0.1, duration: 0.4 }}
                 >
-                  <stat.icon size={11} className="mx-auto mb-1" style={{ color: "oklch(0.50 0.015 255)" }} />
+                  <stat.icon size={11} className="mx-auto mb-1" style={{ color: stat.color }} />
                   <div className="text-base sm:text-lg font-bold text-white font-stat">{stat.value}</div>
                   <div className="text-[8px] sm:text-[9px] text-[oklch(0.40_0.015_255)] uppercase font-semibold tracking-wider">{stat.label}</div>
+                  <div className="text-[8px] text-[oklch(0.35_0.015_255)] mt-0.5">{stat.sublabel}</div>
                 </motion.div>
               ))}
             </div>

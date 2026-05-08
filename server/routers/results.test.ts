@@ -344,11 +344,13 @@ describe("Results - Live Results Integration (getTodayResults)", () => {
     expect(firstResult).toHaveProperty("stat");
     expect(firstResult).toHaveProperty("line");
     expect(firstResult).toHaveProperty("prediction", "over");
-    expect(firstResult).toHaveProperty("confidence");
+    expect(firstResult).toHaveProperty("probability");
     expect(firstResult).toHaveProperty("gameStatus");
-    expect(["hits", "runs", "rbi"]).toContain(firstResult.stat);
+    expect(firstResult).toHaveProperty("source");
+    expect(["hits", "runs", "rbi", "hrr"]).toContain(firstResult.stat);
+    expect(["money", "allPlays"]).toContain(firstResult.source);
     expect(["Scheduled", "In Progress", "Final", "Postponed"]).toContain(firstResult.gameStatus);
-    expect(firstResult.confidence).toBeGreaterThanOrEqual(0);
-    expect(firstResult.confidence).toBeLessThanOrEqual(100);
+    expect(firstResult.probability).toBeGreaterThanOrEqual(0);
+    expect(firstResult.probability).toBeLessThanOrEqual(100);
   }, 30000);
 });

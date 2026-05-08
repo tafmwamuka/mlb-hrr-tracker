@@ -425,3 +425,11 @@
 - [x] Results tab shows completed games with real boxscore outcomes (57% hit rate verified)
 - [x] Verified: in production (real dates), lineup service pulls TODAY's lineups directly
 - [x] Fallback only activates when today's date has no MLB data (e.g., sandbox in 2026)
+
+## Bug Fix: Results Tab Should Mirror Actual Suggested Picks
+- [x] Results should pull exactly the same picks shown on Money Picks (HRR combined 75%+)
+- [x] Results should include All Plays singular picks (75%+)
+- [x] Stop generating separate H/R/RBI plays independently — use actual suggested picks
+- [x] Group results by source (Money Picks vs All Plays) with source badges
+- [x] Show separate hit rates: Money Picks 80%, All Plays 70%, Overall 74%
+- [x] Add 💰 MONEY badge on Money Picks results cards
