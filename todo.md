@@ -689,3 +689,9 @@
 - [x] Expose HRR score components (xwOBA, Barrel%, Lineup Spot, Park Factor, Weather Boost, Pitcher Weakness) in the API response for each HRR pick
 - [x] Show total HRR Score inline next to player name in HRR tab
 - [x] Show expandable scorecard breakdown per player card in HRR tab
+
+## Phase Q: Per-Game Lineup Badge & Pipeline Audit (2026-05-14)
+- [x] Change lineup badge from global PROJECTED/CONFIRMED to per-game status on game cards
+- [x] Audit full pick pipeline: confirm ballparkpal VS gate (9/10 only) runs BEFORE matrix on all 3 tabs
+- [x] Fix any pipeline gaps where matrix runs without ballparkpal gate
+- [x] Save checkpoint

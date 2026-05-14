@@ -29,6 +29,7 @@ interface Game {
   gameTime: string;
   status: string;
   venue: string;
+  lineupSource?: 'confirmed' | 'projected';
   awayTeam: Team;
   homeTeam: Team;
   awayLineup: LineupPlayer[];
@@ -53,15 +54,27 @@ function GameCard({ game }: { game: Game }) {
             <Clock size={11} />
             <span>{game.gameTime} ET</span>
           </div>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-            game.status === "Live" 
-              ? "bg-green-500/20 text-green-400" 
-              : game.status === "Final"
-              ? "bg-gray-500/20 text-gray-400"
-              : "bg-blue-500/20 text-blue-300"
-          }`}>
-            {game.status === "Preview" ? "Scheduled" : game.status}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {/* Per-game lineup status badge */}
+            {game.status !== "Final" && game.status !== "Live" && (
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold tracking-wide ${
+                game.lineupSource === 'confirmed'
+                  ? 'bg-green-500/20 text-green-400'
+                  : 'bg-yellow-500/15 text-yellow-400'
+              }`}>
+                {game.lineupSource === 'confirmed' ? '✓ OFFICIAL' : '~ PROJ'}
+              </span>
+            )}
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+              game.status === "Live" 
+                ? "bg-green-500/20 text-green-400" 
+                : game.status === "Final"
+                ? "bg-gray-500/20 text-gray-400"
+                : "bg-blue-500/20 text-blue-300"
+            }`}>
+              {game.status === "Preview" ? "Scheduled" : game.status}
+            </span>
+          </div>
         </div>
 
         {/* Teams */}
@@ -194,11 +207,16 @@ export function GameCards() {
         <h3 className="text-white text-sm font-semibold">
           Today's Games ({data.games.length})
         </h3>
-        {data.lineupAvailable && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-medium">
-            Lineups Posted
-          </span>
-        )}
+        {(() => {
+          const confirmed = data.games.filter((g: Game) => g.lineupSource === 'confirmed').length;
+          const total = data.games.length;
+          if (confirmed === 0) return null;
+          return (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-medium">
+              {confirmed}/{total} Official
+            </span>
+          );
+        })()}
       </div>
       <p className="text-[oklch(0.45_0.015_255)] text-[10px] mb-2">{todayDate}</p>
       <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
