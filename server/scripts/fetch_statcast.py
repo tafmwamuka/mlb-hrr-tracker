@@ -19,7 +19,8 @@ except ImportError:
     print(json.dumps({"error": "pybaseball not installed", "players": []}))
     sys.exit(0)
 
-year = int(sys.argv[1]) if len(sys.argv) > 1 else 2025
+from datetime import datetime
+year = int(sys.argv[1]) if len(sys.argv) > 1 else datetime.now().year
 
 players = {}
 
