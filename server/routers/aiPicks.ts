@@ -581,6 +581,122 @@ const MOCK_MATCHUPS = [
   },
 ];
 
+// ─── BallparkPal real data helpers ──────────────────────────────────────────
+
+/**
+ * Build MatchupData objects from ballparkpal starters.
+ * Used when official lineups haven't been posted yet (pre-11am ET).
+ * Creates synthetic matchup entries from ballparkpal's starter list so
+ * all three pick procedures can generate picks using real vsGrade/RC/HR% data.
+ */
+function buildMatchupsFromBallparkPal(
+  ballparkMatchups: import('../services/ballparkMatchupService').BallparkMatchup[]
+): { matchups: import('../services/lineupAdapter').MatchupData[], playerDataMap: Map<number, import('../services/aiRankingService').PlayerData> } {
+  // Only use starters with meaningful RC (>= 5)
+  const starters = ballparkMatchups.filter(bp => bp.starter && bp.rc >= 5);
+  if (starters.length === 0) return { matchups: [], playerDataMap: new Map() };
+
+  const matchups: import('../services/lineupAdapter').MatchupData[] = [];
+  const playerDataMap = new Map<number, import('../services/aiRankingService').PlayerData>();
+
+  // Use a synthetic playerId based on index (negative to avoid collision with real IDs)
+  starters.forEach((bp, idx) => {
+    const syntheticId = -(idx + 1);
+    const avgEst = 0.250;
+    const obpEst = 0.320;
+    const slgEst = 0.400;
+
+    matchups.push({
+      playerId: syntheticId,
+      playerName: bp.batter,
+      team: bp.team,
+      position: 'DH',
+      battingPosition: 5, // middle of order default
+      pitcher: {
+        id: null,
+        name: bp.pitcher,
+        team: '',
+        handedness: (bp.throws as 'R' | 'L') || 'R',
+        era: 4.00,
+      },
+      rc: bp.rc,
+      confidence: 70,
+      gameTime: undefined,
+    });
+
+    playerDataMap.set(syntheticId, {
+      playerId: syntheticId,
+      name: bp.batter,
+      team: bp.team,
+      position: 'DH',
+      battingPosition: 5,
+      handedness: (bp.bats as 'R' | 'L' | 'S') || 'R',
+      stats: {
+        hits: 30,
+        runs: 20,
+        rbi: 20,
+        slg: slgEst,
+        avg: avgEst,
+        obp: obpEst,
+        power: slgEst - avgEst,
+      },
+      recentForm: {
+        last15Games: { hits: 15, runs: 10, rbi: 10, avg: avgEst },
+        trend: 'neutral',
+      },
+    });
+  });
+
+  return { matchups, playerDataMap };
+}
+
+/**
+ * Build a real HR Targets map from ballparkpal hrProb values.
+ * Converts hrProb (0-100 %) to grade + threatScore for the ranking matrix.
+ * Grade scale: A+ (>=5.5%), A (>=4.5%), B+ (>=3.5%), B (>=2.5%), C+ (>=1.5%), C (>=0.5%), D (<0.5%)
+ */
+function buildRealHRTargetsMap(
+  playerNames: string[],
+  ballparkMatchups: import('../services/ballparkMatchupService').BallparkMatchup[]
+): Map<string, { grade: string; hrProbability: number; threatScore: number }> {
+  const map = new Map<string, { grade: string; hrProbability: number; threatScore: number }>();
+  if (ballparkMatchups.length === 0) return map;
+
+  for (const name of playerNames) {
+    const bpMatch = findMatchupForPlayer(name, '', ballparkMatchups);
+    if (!bpMatch) continue;
+    const hrProb = bpMatch.hrProb; // e.g. 4.5 = 4.5%
+    let grade: string;
+    if (hrProb >= 5.5) grade = 'A+';
+    else if (hrProb >= 4.5) grade = 'A';
+    else if (hrProb >= 3.5) grade = 'B+';
+    else if (hrProb >= 2.5) grade = 'B';
+    else if (hrProb >= 1.5) grade = 'C+';
+    else if (hrProb >= 0.5) grade = 'C';
+    else grade = 'D';
+    // threatScore: normalize hrProb to 0-100 (cap at 8% = 100)
+    const threatScore = Math.min(100, Math.round((hrProb / 8) * 100));
+    map.set(name, { grade, hrProbability: Math.round(hrProb * 10), threatScore });
+  }
+  return map;
+}
+
+/**
+ * Enrich matchups with real ballparkpal RC values.
+ * If a player is found in ballparkpal, replace the estimated RC with the real value.
+ */
+function enrichMatchupsWithBallparkRC<T extends { playerName: string; team: string; rc: number }>(
+  matchups: T[],
+  ballparkMatchups: import('../services/ballparkMatchupService').BallparkMatchup[]
+): T[] {
+  if (ballparkMatchups.length === 0) return matchups;
+  return matchups.map(m => {
+    const bpMatch = findMatchupForPlayer(m.playerName, m.team, ballparkMatchups);
+    if (!bpMatch) return m;
+    return { ...m, rc: bpMatch.rc };
+  });
+}
+
 // Map player names to Savant data for enrichment
 function findSavantHitter(playerName: string, savantGames: ReturnType<typeof getMockSavantData>): { hitter: SavantHitter; pitcher: SavantPitcher | null } | null {
   for (const game of savantGames) {
@@ -648,22 +764,10 @@ export const aiPicksRouter = router({
       // Only use real lineup data - no mock fallback
       const lineupData = await getAdaptedLineupData();
       const dataDate = await getDataDate();
-      if (lineupData.matchups.length === 0) {
-        return {
-          success: true,
-          picks: [],
-          lineupsPending: true,
-          dataDate,
-          timestamp: new Date(),
-        };
-      }
-      const matchups = lineupData.matchups;
-      const players = lineupData.playerDataMap;
 
-      // Use shared enrichment cache — deduplicates MLB API calls across all three pick procedures
-      // Pass pitcherId and pitcherHand for hrtargets-style matchup scoring
+      // Get enrichment data early so we can use ballparkpal starters as fallback
       const enrichment = await getEnrichmentData(
-        matchups.map(m => ({
+        lineupData.matchups.map(m => ({
           playerId: m.playerId,
           playerName: m.playerName,
           team: m.team,
@@ -677,14 +781,53 @@ export const aiPicksRouter = router({
         dayNightSplitsMap: new Map(),
         mlbStreakMap: new Map(),
         statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
+        ballparkMatchups: [] as import('../services/ballparkMatchupService').BallparkMatchup[],
         fetchedAt: Date.now(),
+        isWarm: false,
       }));
-      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache } = enrichment;
+      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache, ballparkMatchups } = enrichment;
+
+      // If official lineup is sparse (<50 players) but ballparkpal has starters, use ballparkpal
+      let matchups = lineupData.matchups;
+      let players = lineupData.playerDataMap;
+      let lineupsPending = false;
+
+      if (matchups.length < 50 && ballparkMatchups.length > 0) {
+        const bpData = buildMatchupsFromBallparkPal(ballparkMatchups);
+        if (bpData.matchups.length > 0) {
+          // Merge: real lineup players take priority, supplement with ballparkpal starters
+          const realNames = new Set(matchups.map(m => m.playerName));
+          const bpOnly = bpData.matchups.filter(m => !realNames.has(m.playerName));
+          matchups = [...matchups, ...bpOnly];
+          for (const [id, pd] of Array.from(bpData.playerDataMap.entries())) {
+            if (!players.has(id)) players.set(id, pd);
+          }
+          lineupsPending = matchups.length < 50; // still pending if very few players
+        }
+      }
+
+      if (matchups.length === 0) {
+        return {
+          success: true,
+          picks: [],
+          lineupsPending: true,
+          dataDate,
+          timestamp: new Date(),
+        };
+      }
+
+      // Use real ballparkpal HR% data if available, fall back to mock
+      const hrTargetsMap = ballparkMatchups.length > 0
+        ? buildRealHRTargetsMap(matchups.map(m => m.playerName), ballparkMatchups)
+        : getMockHRTargets();
+
+      // Enrich matchup RC values with real ballparkpal RC
+      const enrichedMatchups = enrichMatchupsWithBallparkRC(matchups, ballparkMatchups);
 
       const allPicks = rankAIPicks(
-        matchups,
+        enrichedMatchups,
         players,
-        getMockHRTargets(),
+        hrTargetsMap,
         getMockParkFactors(),
         dayNightSplitsMap,
         mlbStreakMap,
@@ -740,22 +883,10 @@ export const aiPicksRouter = router({
       // Only use real lineup data - no mock fallback
       const lineupData = await getAdaptedLineupData();
       const dataDate = await getDataDate();
-      if (lineupData.matchups.length === 0) {
-        return {
-          success: true,
-          picks: [],
-          lineupsPending: true,
-          dataDate,
-          timestamp: new Date(),
-        };
-      }
-      const matchups = lineupData.matchups;
-      const players = lineupData.playerDataMap;
 
-      // Use shared enrichment cache — deduplicates MLB API calls across all three pick procedures
-      // Pass pitcherId and pitcherHand for hrtargets-style matchup scoring
+      // Get enrichment data early so we can use ballparkpal starters as fallback
       const enrichment2 = await getEnrichmentData(
-        matchups.map(m => ({
+        lineupData.matchups.map(m => ({
           playerId: m.playerId,
           playerName: m.playerName,
           team: m.team,
@@ -769,14 +900,50 @@ export const aiPicksRouter = router({
         dayNightSplitsMap: new Map(),
         mlbStreakMap: new Map(),
         statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
+        ballparkMatchups: [] as import('../services/ballparkMatchupService').BallparkMatchup[],
         fetchedAt: Date.now(),
+        isWarm: false,
       }));
-      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache2 } = enrichment2;
+      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache2, ballparkMatchups: bpMatchups2 } = enrichment2;
+
+      // If official lineup is sparse (<50 players) but ballparkpal has starters, supplement
+      let matchups = lineupData.matchups;
+      let players = lineupData.playerDataMap;
+
+      if (matchups.length < 50 && bpMatchups2.length > 0) {
+        const bpData2 = buildMatchupsFromBallparkPal(bpMatchups2);
+        if (bpData2.matchups.length > 0) {
+          const realNames2 = new Set(matchups.map(m => m.playerName));
+          const bpOnly2 = bpData2.matchups.filter(m => !realNames2.has(m.playerName));
+          matchups = [...matchups, ...bpOnly2];
+          for (const [id, pd] of Array.from(bpData2.playerDataMap.entries())) {
+            if (!players.has(id)) players.set(id, pd);
+          }
+        }
+      }
+
+      if (matchups.length === 0) {
+        return {
+          success: true,
+          picks: [],
+          lineupsPending: true,
+          dataDate,
+          timestamp: new Date(),
+        };
+      }
+
+      // Use real ballparkpal HR% data if available, fall back to mock
+      const hrTargetsMap2 = bpMatchups2.length > 0
+        ? buildRealHRTargetsMap(matchups.map(m => m.playerName), bpMatchups2)
+        : getMockHRTargets();
+
+      // Enrich matchup RC values with real ballparkpal RC
+      const enrichedMatchups2 = enrichMatchupsWithBallparkRC(matchups, bpMatchups2);
 
       const picks = rankAIPicks(
-        matchups,
+        enrichedMatchups2,
         players,
-        getMockHRTargets(),
+        hrTargetsMap2,
         getMockParkFactors(),
         dayNightSplitsMap,
         mlbStreakMap,
@@ -830,7 +997,39 @@ export const aiPicksRouter = router({
       // Only use real lineup data - no mock fallback
       const lineupData = await getAdaptedLineupData();
       const dataDate = await getDataDate();
-      if (lineupData.matchups.length === 0) {
+
+      // Get enrichment data early so we can use ballparkpal starters as fallback
+      const enrichment3 = await getEnrichmentData(
+        lineupData.matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName, team: m.team, gameTime: m.gameTime, pitcherId: m.pitcher.id ?? null, pitcherHand: m.pitcher.handedness ?? null }))
+      ).catch(() => ({
+        vsGradeMap: new Map<string, number>(),
+        gameTotalsMap: new Map(),
+        dayNightSplitsMap: new Map(),
+        mlbStreakMap: new Map(),
+        statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
+        ballparkMatchups: [] as import('../services/ballparkMatchupService').BallparkMatchup[],
+        fetchedAt: Date.now(),
+        isWarm: false,
+      }));
+      const { vsGradeMap, gameTotalsMap: _gameTotalsMap3, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache3, ballparkMatchups: bpMatchups3 } = enrichment3;
+
+      // If official lineup is sparse (<50 players) but ballparkpal has starters, supplement
+      let matchups = lineupData.matchups;
+      let players = lineupData.playerDataMap;
+
+      if (matchups.length < 50 && bpMatchups3.length > 0) {
+        const bpData3 = buildMatchupsFromBallparkPal(bpMatchups3);
+        if (bpData3.matchups.length > 0) {
+          const realNames3 = new Set(matchups.map(m => m.playerName));
+          const bpOnly3 = bpData3.matchups.filter(m => !realNames3.has(m.playerName));
+          matchups = [...matchups, ...bpOnly3];
+          for (const [id, pd] of Array.from(bpData3.playerDataMap.entries())) {
+            if (!players.has(id)) players.set(id, pd);
+          }
+        }
+      }
+
+      if (matchups.length === 0) {
         return {
           success: true,
           picks: [],
@@ -840,8 +1039,6 @@ export const aiPicksRouter = router({
           hasOddsData: false,
         };
       }
-      const matchups = lineupData.matchups;
-      const players = lineupData.playerDataMap;
 
       // Get park factors
       const parkFactors = getMockParkFactors();
@@ -859,28 +1056,15 @@ export const aiPicksRouter = router({
           });
         }
       }
-      
-      // Use shared enrichment cache — deduplicates MLB API calls across all three pick procedures
-      const enrichment3 = await getEnrichmentData(
-        matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName, team: m.team, gameTime: m.gameTime }))
-      ).catch(() => ({
-        vsGradeMap: new Map<string, number>(),
-        gameTotalsMap: new Map(),
-        dayNightSplitsMap: new Map(),
-        mlbStreakMap: new Map(),
-        statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
-        fetchedAt: Date.now(),
-      }));
-      const { vsGradeMap, gameTotalsMap: _gameTotalsMap3, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache3 } = enrichment3;
 
       // Filter matchups through VS gate before HRR projections
-      // VS=10: always included; VS=9: included (all go through scoring matrix)
+      // BallparkPal vsGrade is normalized to 0-10 scale: >=8.5 = vsGrade 7+ (STRONG)
       // If no VS data available, use all matchups (graceful degradation)
       const gatedMatchups = vsGradeMap.size > 0
         ? matchups.filter(m => {
-            const vsGrade = vsGradeMap.get(m.playerName) ?? vsGradeMap.get(m.playerName.split(' ').pop() || '') ?? null;
-            if (vsGrade === null) return true; // No data: include
-            return vsGrade >= 9; // Only VS=9+ for HRR
+            const vsScore = vsGradeMap.get(m.playerName) ?? null;
+            if (vsScore === null) return true; // No data: include
+            return vsScore >= 8.5; // Only top-tier matchups for HRR (vsGrade 7+ on ballparkpal scale)
           })
         : matchups;
 
@@ -889,10 +1073,19 @@ export const aiPicksRouter = router({
       // ── STAGE 1: Run the 10-factor scoring matrix on all VS-gated players ──────
       // Every pick on every tab must pass through rankAIPicks first.
       const { gameTotalsMap } = enrichment3;
+
+      // Use real ballparkpal HR% data if available, fall back to mock
+      const hrTargetsMap3 = bpMatchups3.length > 0
+        ? buildRealHRTargetsMap(gatedMatchups.map(m => m.playerName), bpMatchups3)
+        : getMockHRTargets();
+
+      // Enrich matchup RC values with real ballparkpal RC
+      const enrichedGatedMatchups = enrichMatchupsWithBallparkRC(gatedMatchups, bpMatchups3);
+
       const matrixPicks = rankAIPicks(
-        gatedMatchups,
+        enrichedGatedMatchups,
         players,
-        getMockHRTargets(),
+        hrTargetsMap3,
         parkFactors,
         dayNightSplitsMap,
         mlbStreakMap,

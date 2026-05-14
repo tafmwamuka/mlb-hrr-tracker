@@ -36,7 +36,7 @@ interface PlayerData {
   };
 }
 
-interface MatchupData {
+export interface MatchupData {
   playerId: number;
   playerName: string;
   team: string;

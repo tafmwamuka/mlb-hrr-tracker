@@ -12,7 +12,7 @@ import type { GameTotal } from "./gameTotalsService";
 import { getGameTotalScoreForTeam } from "./gameTotalsService";
 import { lookupStatcastPlayer, calculateStatcastScore, type StatcastCache } from "./pybaseballService";
 
-interface PlayerData {
+export interface PlayerData {
   playerId: number;
   name: string;
   team: string;

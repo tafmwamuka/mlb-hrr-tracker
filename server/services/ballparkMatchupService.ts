@@ -57,9 +57,11 @@ async function fetchMatchupData(): Promise<BallparkMatchup[]> {
   try {
     const resp = await fetch('https://www.ballparkpal.com/MatchUps.php', {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; MLBHRRTracker/1.0)',
-        'Accept': 'text/html',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
       },
+      signal: AbortSignal.timeout(20000), // 20s — site is slow but reliable
     });
 
     if (!resp.ok) {
@@ -68,8 +70,11 @@ async function fetchMatchupData(): Promise<BallparkMatchup[]> {
     }
 
     const html = await resp.text();
-    const match = html.match(/var __matchupExportData = (\[[\s\S]*?\]);/);
-    if (!match) {
+    // Try multiple regex patterns to handle page structure variations
+    const match = html.match(/var __matchupExportData = (\[[\s\S]*?\]);/) ||
+                  html.match(/var __matchupExportData=(\[[\s\S]*?\]);/) ||
+                  html.match(/__matchupExportData\s*=\s*(\[[\s\S]*?\]);/);
+    if (!match || !match[1] || match[1].length < 10) {
       console.error('[BallparkPal] Could not find matchup data in page');
       return cachedMatchups || [];
     }
@@ -106,6 +111,40 @@ async function fetchMatchupData(): Promise<BallparkMatchup[]> {
     console.error('[BallparkPal] Error fetching matchups:', error);
     return cachedMatchups || [];
   }
+}
+
+/**
+ * Public export: fetch matchup data for use by enrichmentCache.
+ */
+export async function fetchMatchupDataPublic(): Promise<BallparkMatchup[]> {
+  return fetchMatchupData();
+}
+
+/**
+ * Public export: compute game totals from matchups for use by enrichmentCache.
+ * Returns a Map<gameName, GameTotal> using the gameTotalsService-compatible interface.
+ * Converts BallparkPal RC aggregate into the gameTotalsService.GameTotal shape.
+ */
+export function computeGameTotalsFromMatchups(matchups: BallparkMatchup[]): Map<string, import('./gameTotalsService').GameTotal> {
+  const raw = computeGameTotals(matchups);
+  const result = new Map<string, import('./gameTotalsService').GameTotal>();
+  for (const entry of Array.from(raw.entries())) {
+    const [game, gt] = entry;
+    // Parse game string like "Giants @ Dodgers" → away=Giants, home=Dodgers
+    const parts = game.split('@').map(s => s.trim());
+    const awayTeam = parts[0] || game;
+    const homeTeam = parts[1] || game;
+    result.set(game, {
+      game: gt.game,
+      awayTeam,
+      homeTeam,
+      overUnder: null, // not available from RC aggregate
+      source: 'rc_aggregate' as const,
+      gameTotalScore: gt.gameTotalScore,
+      rcAggregate: (gt as any).totalRC ?? 0,
+    });
+  }
+  return result;
 }
 
 /**

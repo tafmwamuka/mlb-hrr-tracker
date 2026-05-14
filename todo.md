@@ -648,3 +648,12 @@
 - [ ] Wire into enrichmentCache replacing ballparkMatchupService
 - [ ] TypeScript 0 errors
 - [ ] Save checkpoint
+
+## Ballparkpal Re-Integration (May 14, 2026)
+- [x] Fix ballparkMatchupService regex to parse current page structure
+- [x] Wire real ballparkpal vsGrade (-10 to +10) into enrichmentCache as primary VS signal
+- [x] Wire real ballparkpal RC into matrix RC factor (replacing HRR-per-game estimate)
+- [x] Wire real ballparkpal HR% into matrix HR Targets factor (replacing mock data)
+- [x] Ensure all three pick tabs (Top Picks, All Plays, HRR Picks) use real ballparkpal data
+- [ ] TypeScript 0 errors
+- [ ] Save checkpoint
