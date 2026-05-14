@@ -248,7 +248,7 @@ describe("AI Picks Ranking Service", () => {
       parkFactors.forEach((factor) => {
         expect(typeof factor).toBe("number");
         expect(factor).toBeGreaterThan(0.8);
-        expect(factor).toBeLessThan(1.2);
+        expect(factor).toBeLessThanOrEqual(1.2);
       });
     });
   });

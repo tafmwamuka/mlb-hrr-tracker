@@ -1,14 +1,16 @@
 /**
  * AI Ranking Service
  * Integrates all data sources to create comprehensive AI picks
- * Factors: RC, player stats, park factors, HR Targets, pitcher matchup, batting position,
- *          day/night splits, theLAB edge/streak, dynamic count (quality over quantity)
+ * Factors: VS Gate (ballparkpal), RC, player stats, park factors, HR Targets, pitcher matchup,
+ *          batting position, day/night splits, theLAB edge/streak, game totals (O/U)
  */
 
 import type { PlayerDayNightSplits } from "./dayNightSplitService";
 import type { TheLabPlayerData } from "./theLabService";
 import type { PlayerStreakData } from "./mlbStreakService";
 import { calculateHandednessAdvantage } from "./advancedDataService";
+import type { GameTotal } from "./gameTotalsService";
+import { getGameTotalScoreForTeam } from "./gameTotalsService";
 
 interface PlayerData {
   playerId: number;
@@ -96,7 +98,12 @@ export interface AIPick {
     dayNightSplit?: number; // Day/night split score (0-100)
     streakBonus?: number; // Streak/hot hand bonus (0-100)
     theLabEdge?: number; // theLAB edge score (0-100)
+    gameTotal?: number; // Game total (O/U) environment score (0-100)
   };
+  // VS Gate data (from ballparkpal matchup page)
+  vsGrade?: number; // -10 to 10 batter vs pitcher matchup grade
+  gameTotalOU?: number | null; // Vegas over/under line (e.g. 9.5)
+  gameTotalScore?: number; // Normalized 0-100 game environment score
   overallScore: number; // Weighted average (0-100)
   // Day/night split data
   dayNightSplit?: {
@@ -381,19 +388,53 @@ function calculateTheLabScore(theLabData: TheLabPlayerData | null): number {
 
 /**
  * Rank AI picks using comprehensive algorithm
- * Now includes day/night splits, theLAB edge, streak detection, and dynamic count
+ * VS Gate: only batters with vsGrade >= 9 (or 8+ with strong secondary signals) enter.
+ * Game Totals: Odds API O/U line boosts picks in high-scoring game environments.
+ * Remaining factors: RC, player stats, park factors, HR Targets, pitcher matchup,
+ *                    batting position, day/night splits, theLAB edge/streak.
  */
 export function rankAIPicks(
   matchups: MatchupData[],
   playerDataMap: Map<number, PlayerData>,
   hrTargetsMap: Map<string, HRTargetData>,
   parkFactors: Map<string, number>,
-  // New optional enrichment data
+  // Enrichment data
   dayNightSplitsMap?: Map<number, PlayerDayNightSplits>,
   theLabMismatchMap?: Map<string, TheLabPlayerData>,
-  mlbStreakMap?: Map<number, PlayerStreakData>
+  mlbStreakMap?: Map<number, PlayerStreakData>,
+  // VS Gate: map from playerName -> vsGrade (-10 to 10)
+  vsGradeMap?: Map<string, number>,
+  // Game Totals: map from teamAbbr -> GameTotal
+  gameTotalsMap?: Map<string, GameTotal>
 ): AIPick[] {
-  const picks = matchups
+  // ── VS Gate: pre-filter to only batters with strong matchup grades ──────────
+  // VS=10: always included
+  // VS=9: included if at least one strong secondary signal (hot streak, strong stats, or high HR Targets)
+  // VS=8 or below: excluded unless vsGradeMap is not provided (fallback: include all)
+  const gatedMatchups = vsGradeMap && vsGradeMap.size > 0
+    ? matchups.filter(m => {
+        const vsGrade = vsGradeMap.get(m.playerName) ?? vsGradeMap.get(m.playerName.split(' ').pop() || '') ?? null;
+        if (vsGrade === null) return true; // No data: include (don't penalize missing data)
+        if (vsGrade >= 10) return true; // VS=10: always in
+        if (vsGrade >= 9) {
+          // VS=9: include if secondary signals are strong
+          const playerData = playerDataMap.get(m.playerId);
+          const hrTargets = hrTargetsMap.get(m.playerName);
+          const mlbStreak = mlbStreakMap?.get(m.playerId);
+          const theLabData = theLabMismatchMap?.get(m.playerName);
+          const hasHotStreak = (mlbStreak?.last5HitRate ?? 0) >= 60 || (mlbStreak?.streakLength ?? 0) >= 3;
+          const hasStrongStats = (playerData?.stats.avg ?? 0) >= 0.280;
+          const hasGoodHRTargets = hrTargets ? ['A+', 'A', 'B+'].includes(hrTargets.grade) : false;
+          const hasLabEdge = theLabData?.strongHitCandidate ?? false;
+          return hasHotStreak || hasStrongStats || hasGoodHRTargets || hasLabEdge;
+        }
+        return false; // VS <= 8: excluded
+      })
+    : matchups; // No VS data: use all matchups (graceful degradation)
+
+  console.log(`[rankAIPicks] VS Gate: ${matchups.length} → ${gatedMatchups.length} matchups passed`);
+
+  const picks = gatedMatchups
     .map((matchup) => {
       const playerData = playerDataMap.get(matchup.playerId);
       const hrTargets = hrTargetsMap.get(matchup.playerName);
@@ -423,22 +464,42 @@ export function rankAIPicks(
       const streakScore = streakResult.score;
       const theLabScore = calculateTheLabScore(theLabData);
 
+      // ── VS Grade from ballparkpal ─────────────────────────────────────────
+      // VS grade is the primary gate (already filtered above), but we also use it
+      // as a scoring signal — VS=10 gets a meaningful boost over VS=9.
+      const vsGrade = vsGradeMap?.get(matchup.playerName) ?? null;
+      // Convert VS grade (-10 to 10) to 0-100 score
+      // VS=10 → 100, VS=9 → 85, VS=8 → 70, etc.
+      const vsScore = vsGrade !== null ? Math.round(((vsGrade + 10) / 20) * 100) : 50;
+
+      // ── Game Total (O/U) environment score ───────────────────────────────
+      const gameTotalData = gameTotalsMap ? getGameTotalScoreForTeam(matchup.team, gameTotalsMap) : null;
+      const gameTotalScore = gameTotalData?.score ?? 50;
+      const gameTotalOU = gameTotalData?.overUnder ?? null;
+
       // ── Weighted overall score ────────────────────────────────────────────
-      // Rebalanced weights: real-time signals (theLAB, streak, day/night) get more weight
+      // New weights incorporate VS grade and game total.
+      // VS grade replaces pure RC as the primary matchup signal.
+      // Game total replaces part of park factor (O/U already prices in park).
       // Total = 1.0
       const overallScore =
-        rcScore * 0.14 +           // Ballpark.com RC matchup
-        playerStatsScore * 0.12 +  // Season stats (avg, slg, power)
-        parkFactorScore * 0.10 +   // Park factor
-        hrTargetsScore * 0.10 +    // HR Targets grade
-        pitcherMatchupScore * 0.12 + // Pitcher weakness
+        vsScore * 0.15 +             // VS Grade (batter vs pitcher matchup) — PRIMARY
+        rcScore * 0.10 +             // Ballpark.com RC (secondary matchup signal)
+        playerStatsScore * 0.12 +    // Season stats (avg, slg, power)
+        gameTotalScore * 0.08 +      // Game total O/U environment
+        parkFactorScore * 0.06 +     // Park factor (reduced — O/U already prices this in)
+        hrTargetsScore * 0.10 +      // HR Targets grade
+        pitcherMatchupScore * 0.11 + // Pitcher weakness
         battingPositionScore * 0.08 + // Lineup position
-        dayNightScore * 0.12 +     // Day/night split (was 0.10)
-        streakScore * 0.12 +       // Streak/hot hand (was 0.08)
-        theLabScore * 0.10;        // theLAB edge (was 0.05)
+        dayNightScore * 0.10 +       // Day/night split
+        streakScore * 0.10 +         // Streak/hot hand
+        theLabScore * 0.10;          // theLAB edge
 
       // ── Reasoning ────────────────────────────────────────────────────────
       const reasons: string[] = [];
+      if (vsGrade !== null && vsGrade >= 10) reasons.push("VS=10 elite matchup");
+      else if (vsGrade !== null && vsGrade >= 9) reasons.push("VS=9 strong matchup");
+      if (gameTotalOU !== null && gameTotalOU >= 9.5) reasons.push(`High-scoring game (O/U ${gameTotalOU})`);
       if (rcScore > 80) reasons.push("High RC vs this pitcher");
       if (playerStatsScore > 80) reasons.push("Strong season stats");
       if (parkFactorScore > 70) reasons.push("Hitter-friendly park");
@@ -454,7 +515,8 @@ export function rankAIPicks(
 
       // Build ballpark-specific reasoning
       const parkFactorValue = parkFactorScore > 70 ? "hitter-friendly" : parkFactorScore < 50 ? "pitcher-friendly" : "neutral";
-      const ballparkReasoning = `Playing at ${parkFactorValue} park. RC ranking: ${Math.round(matchup.rc)}/100. ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ""}`;
+      const ouStr = gameTotalOU !== null ? ` Game O/U: ${gameTotalOU}.` : "";
+      const ballparkReasoning = `Playing at ${parkFactorValue} park. RC ranking: ${Math.round(matchup.rc)}/100.${ouStr} ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ""}`;
 
       // ── Best stat type ────────────────────────────────────────────────────
       const stats = playerData.stats;
@@ -517,8 +579,12 @@ export function rankAIPicks(
           dayNightSplit: Math.round(dayNightScore),
           streakBonus: Math.round(streakScore),
           theLabEdge: Math.round(theLabScore),
+          gameTotal: Math.round(gameTotalScore),
         },
         overallScore: Math.round(overallScore),
+        vsGrade: vsGrade ?? undefined,
+        gameTotalOU,
+        gameTotalScore: Math.round(gameTotalScore),
       };
 
       // Attach day/night split info if available

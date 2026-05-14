@@ -570,3 +570,24 @@
 - [x] Add prime position badge to HRRTab badge row (+ added primePosition fields to HRRPick interface)
 - [x] Alt lines section added to AllPlaysTab expanded card (shows Over X.X with % per line)
 - [x] Alt lines already present in MoneyPicksTab as "All Lines" section (O 0.5–5.5 grid)
+
+## Pick Pipeline Overhaul: VS Rating Gate + Game Totals (May 14, 2026)
+- [x] Use ballpark.com VS column (batter vs pitcher matchup, 1-10 scale) as PRIMARY gate filter
+- [x] Only allow VS=10 batters through the gate by default
+- [x] Allow VS=9 batters through as exceptions if they have strong secondary signals
+- [x] Add projected game totals (over/under) as scoring influence — high-total games boost picks
+- [x] Apply existing 9-factor matrix AFTER the VS gate to refine and rank the filtered list
+- [x] Wire new gated pipeline into getTopPicks procedure
+- [x] Wire new gated pipeline into getComprehensivePicks procedure
+- [x] Wire new gated pipeline into getHRRPicks procedure
+- [x] Ensure all tabs (Money Picks, All Plays, Top Plays, HRR) use the new pipeline
+- [x] TypeScript 0 errors after changes
+- [ ] Save checkpoint with new pipeline
+
+## Game Totals via Odds API (May 14, 2026)
+- [x] Build gameTotalsService: fetch MLB game O/U lines from Odds API (totals market)
+- [x] Add RC aggregate fallback when Odds API unavailable
+- [x] Normalize game total (O/U) to 0-100 score for use in scoring matrix
+- [x] Wire game total score into aiRankingService as new factor (replaces RC weight partially)
+- [ ] Wire game total score into hrrService for HRR projections (uses VS gate filter instead)
+- [ ] Display game O/U line on pick cards (e.g. "O/U 9.5")

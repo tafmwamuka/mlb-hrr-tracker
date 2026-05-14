@@ -15,6 +15,8 @@ import { fetchHRRMarketData, getBestHRRLine, americanToImpliedProbability, remov
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from "../services/poissonModel";
 import { getAdaptedLineupData, getGamesForUI } from "../services/lineupAdapter";
 import { getDataDate, type MLBGame } from "../services/mlbLineupService";
+import { getVSGatedPool, findMatchupForPlayer } from "../services/ballparkMatchupService";
+import { fetchGameTotals } from "../services/gameTotalsService";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -661,9 +663,11 @@ export const aiPicksRouter = router({
       const matchups = lineupData.matchups;
       const players = lineupData.playerDataMap;
 
-      // Fetch day/night splits, theLAB data, and MLB game log streaks in parallel
+      // Fetch VS gate data + game totals + enrichment data in parallel
       const season = new Date().getFullYear();
-      const [dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
+      const oddsApiKey = process.env.ODDS_API_KEY;
+      const [vsGateResult, dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
+        getVSGatedPool().catch(() => ({ pool: [], gameTotals: new Map(), allMatchups: [] })),
         batchGetDayNightSplits(
           matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
           'hits',
@@ -679,6 +683,15 @@ export const aiPicksRouter = router({
         ).catch(() => new Map()),
       ]);
 
+      // Build VS grade map: playerName -> vsGrade
+      const vsGradeMap = new Map<string, number>();
+      for (const m of vsGateResult.allMatchups) {
+        if (m.vsGrade !== undefined) vsGradeMap.set(m.batter, m.vsGrade);
+      }
+
+      // Fetch game totals (Odds API primary, RC aggregate fallback)
+      const gameTotalsMap = await fetchGameTotals(oddsApiKey, vsGateResult.allMatchups).catch(() => new Map());
+
       const allPicks = rankAIPicks(
         matchups,
         players,
@@ -686,7 +699,9 @@ export const aiPicksRouter = router({
         getMockParkFactors(),
         dayNightSplitsMap,
         theLabDataMap,
-        mlbStreakMap
+        mlbStreakMap,
+        vsGradeMap,
+        gameTotalsMap
       );
       
       // Enrich with Savant data
@@ -747,9 +762,11 @@ export const aiPicksRouter = router({
       const matchups = lineupData.matchups;
       const players = lineupData.playerDataMap;
 
-      // Fetch day/night splits, theLAB data, and MLB game log streaks in parallel (non-blocking)
+      // Fetch VS gate data + game totals + enrichment data in parallel (non-blocking)
       const season = new Date().getFullYear();
-      const [dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
+      const oddsApiKey = process.env.ODDS_API_KEY;
+      const [vsGateResult, dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
+        getVSGatedPool().catch(() => ({ pool: [], gameTotals: new Map(), allMatchups: [] })),
         batchGetDayNightSplits(
           matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
           'hits',
@@ -764,6 +781,15 @@ export const aiPicksRouter = router({
         ).catch(() => new Map()),
       ]);
 
+      // Build VS grade map: playerName -> vsGrade
+      const vsGradeMap = new Map<string, number>();
+      for (const m of vsGateResult.allMatchups) {
+        if (m.vsGrade !== undefined) vsGradeMap.set(m.batter, m.vsGrade);
+      }
+
+      // Fetch game totals (Odds API primary, RC aggregate fallback)
+      const gameTotalsMap = await fetchGameTotals(oddsApiKey, vsGateResult.allMatchups).catch(() => new Map());
+
       const picks = rankAIPicks(
         matchups,
         players,
@@ -771,7 +797,9 @@ export const aiPicksRouter = router({
         getMockParkFactors(),
         dayNightSplitsMap,
         theLabDataMap,
-        mlbStreakMap
+        mlbStreakMap,
+        vsGradeMap,
+        gameTotalsMap
       );
       
       // Enrich all picks with Savant data
@@ -848,9 +876,11 @@ export const aiPicksRouter = router({
         }
       }
       
-      // Fetch day/night splits, theLAB data, and MLB game log streaks in parallel
+      // Fetch VS gate data + enrichment data in parallel
       const season = new Date().getFullYear();
-      const [dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
+      const oddsApiKey = process.env.ODDS_API_KEY;
+      const [vsGateResult, dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
+        getVSGatedPool().catch(() => ({ pool: [], gameTotals: new Map(), allMatchups: [] })),
         batchGetDayNightSplits(
           matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
           'hits',
@@ -865,9 +895,31 @@ export const aiPicksRouter = router({
         ).catch(() => new Map()),
       ]);
 
+      // Build VS grade map for HRR gate filtering
+      const vsGradeMap = new Map<string, number>();
+      for (const m of vsGateResult.allMatchups) {
+        if (m.vsGrade !== undefined) vsGradeMap.set(m.batter, m.vsGrade);
+      }
+
+      // Fetch game totals (Odds API primary, RC aggregate fallback)
+      const gameTotalsMap = await fetchGameTotals(oddsApiKey, vsGateResult.allMatchups).catch(() => new Map());
+
+      // Filter matchups through VS gate before HRR projections
+      // VS=10: always included; VS=9: included (all go through scoring matrix)
+      // If no VS data available, use all matchups (graceful degradation)
+      const gatedMatchups = vsGradeMap.size > 0
+        ? matchups.filter(m => {
+            const vsGrade = vsGradeMap.get(m.playerName) ?? vsGradeMap.get(m.playerName.split(' ').pop() || '') ?? null;
+            if (vsGrade === null) return true; // No data: include
+            return vsGrade >= 9; // Only VS=9+ for HRR
+          })
+        : matchups;
+
+      console.log(`[HRR] VS Gate: ${matchups.length} → ${gatedMatchups.length} matchups passed`);
+
       // Generate HRR projections using real player stats + splits + streak
       const projections = generateHRRProjections(
-        matchups,
+        gatedMatchups,
         players,
         parkFactors,
         savantMap,

@@ -1,5 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { aiPicksRouter } from "./aiPicks";
+import { vi } from "vitest";
+
+// Mock external network services to prevent test timeouts
+vi.mock("../services/ballparkMatchupService", () => ({
+  getVSGatedPool: vi.fn().mockResolvedValue({ pool: [], gameTotals: new Map(), allMatchups: [] }),
+  findMatchupForPlayer: vi.fn().mockReturnValue(null),
+  getAllMatchups: vi.fn().mockResolvedValue([]),
+  getGameTotalsMap: vi.fn().mockResolvedValue(new Map()),
+  getGameTotalScore: vi.fn().mockReturnValue(50),
+}));
+
+vi.mock("../services/gameTotalsService", () => ({
+  fetchGameTotals: vi.fn().mockResolvedValue(new Map()),
+  getGameTotalScoreForTeam: vi.fn().mockReturnValue({ score: 50, overUnder: null, source: "default" }),
+  ouToScore: vi.fn().mockReturnValue(50),
+}));
 
 /**
  * Test the parlay generation logic
