@@ -868,9 +868,31 @@ export const aiPicksRouter = router({
 
       console.log(`[HRR] VS Gate: ${matchups.length} → ${gatedMatchups.length} matchups passed`);
 
-      // Generate HRR projections using real player stats + splits + streak
-      const projections = generateHRRProjections(
+      // ── STAGE 1: Run the 10-factor scoring matrix on all VS-gated players ──────
+      // Every pick on every tab must pass through rankAIPicks first.
+      const { gameTotalsMap } = enrichment3;
+      const matrixPicks = rankAIPicks(
         gatedMatchups,
+        players,
+        getMockHRTargets(),
+        parkFactors,
+        dayNightSplitsMap,
+        theLabDataMap,
+        mlbStreakMap,
+        vsGradeMap,
+        gameTotalsMap
+      );
+
+      console.log(`[HRR] Matrix scored: ${matrixPicks.length} picks`);
+
+      // ── STAGE 2: Generate HRR projections for matrix-ranked players ───────────
+      // Use the matrix-ranked player list to drive HRR projections.
+      // This ensures the same VS gate + matrix ranking applies to HRR/Money Picks.
+      const matrixPlayerNames = new Set(matrixPicks.map(p => p.playerName));
+      const matrixGatedMatchups = gatedMatchups.filter(m => matrixPlayerNames.has(m.playerName));
+
+      const projections = generateHRRProjections(
+        matrixGatedMatchups,
         players,
         parkFactors,
         savantMap,
@@ -879,10 +901,11 @@ export const aiPicksRouter = router({
         mlbStreakMap
       );
 
-      // Enrich projections with Poisson probabilities.
-      // Odds come from theLAB mismatch board (already in theLabDataMap per player).
-      // The Odds API is no longer used (credits exhausted).
+      // ── STAGE 3: Enrich with Poisson probabilities + matrix scores ────────────
       const enrichedPicks = projections.map((proj) => {
+        // Find the corresponding matrix pick for this player
+        const matrixPick = matrixPicks.find(p => p.playerName === proj.playerName);
+
         // Lambda = expected HRR total per game (from our model)
         const lambda = proj.expectedTotal;
         const activeLine = proj.hrrLine;
@@ -913,6 +936,13 @@ export const aiPicksRouter = router({
           ...proj,
           hrrLine: activeLine,
           lineSource: theLabOdds !== null ? "thelab" as const : "model" as const,
+          // Matrix scores (from 10-factor scoring pipeline)
+          overallScore: matrixPick?.overallScore ?? proj.hrrConfidence,
+          factorBreakdown: matrixPick?.factorBreakdown,
+          vsGrade: matrixPick?.vsGrade,
+          gameTotalOU: matrixPick?.gameTotalOU,
+          primePosition: matrixPick?.primePosition,
+          primePositionFactors: matrixPick?.primePositionFactors,
           // Poisson-based probabilities
           overProbability: Math.round(modelOverProb * 100),
           // Edge vs book
@@ -933,13 +963,16 @@ export const aiPicksRouter = router({
         };
       });
 
-      // Re-sort by: picks with edge > 0 first, then by overProbability
+      // ── STAGE 4: Sort by matrix score first, then Poisson quality ────────────
+      // Primary sort: matrix overallScore (same ranking as All Plays / Top Plays)
+      // Secondary sort: Poisson pick quality + over probability
       enrichedPicks.sort((a, b) => {
-        // Primary: pick quality (strong > moderate > lean > avoid)
+        const scoreDiff = ((b.overallScore ?? 0) - (a.overallScore ?? 0));
+        if (Math.abs(scoreDiff) > 3) return scoreDiff;
+        // Within 3 points, prefer by Poisson quality
         const qualityOrder: Record<string, number> = { strong: 4, moderate: 3, lean: 2, avoid: 1 };
         const qDiff = (qualityOrder[b.pickQuality] ?? 0) - (qualityOrder[a.pickQuality] ?? 0);
         if (qDiff !== 0) return qDiff;
-        // Secondary: over probability
         return b.overProbability - a.overProbability;
       });
 

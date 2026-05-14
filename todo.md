@@ -605,3 +605,9 @@
 - [x] Add aggressive timeouts to all external API calls (ballparkpal, hrtargets, theLAB, savant)
 - [x] Parallelize independent external fetches instead of sequential awaits
 - [x] Add server-side caching with TTL for expensive data (shared enrichmentCache, 15 min TTL)
+
+## All Tabs Through Matrix (May 14, 2026)
+- [x] Refactor getHRRPicks: run rankAIPicks (10-factor matrix) first, then apply Poisson model as final quality filter
+- [x] Money Picks tab: show matrix-scored picks with Poisson probability as confidence overlay
+- [x] HRR tab: show matrix-scored picks with HRR Poisson model on combined H+R+RBI line
+- [x] All four tabs (Money Picks, All Plays, Top Plays, HRR) use VS gate → matrix → quality threshold pipeline

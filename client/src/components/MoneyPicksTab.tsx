@@ -80,6 +80,9 @@ interface MoneyPick {
     dayNightFavorable: boolean;
     favorableCount: number;
   } | null;
+  overallScore?: number; // Matrix score (0-100) — same ranking as All Plays / Top Plays
+  vsGrade?: number; // Ballparkpal VS grade (-10 to 10)
+  gameTotalOU?: number | null; // Vegas over/under line
 }
 
 function getProbColor(prob: number): string {
@@ -493,10 +496,17 @@ export function MoneyPicksTab() {
           theLabEdge,
           primePosition: pick.primePosition ?? false,
           primePositionFactors: pick.primePositionFactors ?? null,
+          overallScore: pick.overallScore ?? pick.hrrConfidence,
+          vsGrade: pick.vsGrade ?? null,
+          gameTotalOU: pick.gameTotalOU ?? null,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)
       .sort((a: MoneyPick, b: MoneyPick) => {
+        // Primary: matrix overallScore (same ranking as All Plays / Top Plays)
+        const scoreDiff = ((b.overallScore ?? 0) - (a.overallScore ?? 0));
+        if (Math.abs(scoreDiff) > 3) return scoreDiff;
+        // Within 3 points: prefer higher recommended line, then higher probability
         if (b.recommendedLine !== a.recommendedLine) return b.recommendedLine - a.recommendedLine;
         return b.recommendedProb - a.recommendedProb;
       });
