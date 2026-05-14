@@ -237,35 +237,10 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
  * Returns a map of player name → HRR market data
  */
 export async function fetchHRRMarketData(): Promise<Map<string, HRRMarketData>> {
-  const apiKey = process.env.ODDS_API_KEY;
-  if (!apiKey) {
-    console.warn("ODDS_API_KEY not set, returning empty market data");
-    return new Map();
-  }
-
-  try {
-    // Step 1: Get today's events
-    const events = await fetchMLBEvents(apiKey);
-    if (events.length === 0) {
-      console.warn("No MLB events found today");
-      return new Map();
-    }
-
-    // Step 2: Fetch props for each game (limit to 8 games to conserve API calls)
-    const allBookmakers: BookmakerData[] = [];
-    for (const event of events.slice(0, 8)) {
-      const bookmakers = await fetchPlayerProps(apiKey, event.id);
-      allBookmakers.push(...bookmakers);
-      // Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    // Step 3: Parse into structured data
-    return parseHRRData(allBookmakers);
-  } catch (error) {
-    console.error("Error fetching HRR market data:", error);
-    return new Map();
-  }
+  // Odds API credits exhausted — theLAB mismatch board is now the sole odds source.
+  // Odds are attached per-player in theLabService and flow through theLabMismatchMap.
+  // This function intentionally returns an empty map so callers fall back to theLAB odds.
+  return new Map();
 }
 
 /**

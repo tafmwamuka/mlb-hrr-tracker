@@ -286,22 +286,31 @@ function calculateStreakScore(theLabData: TheLabPlayerData | null): {
   last10HitRate: number;
   trendDirection: 'up' | 'down' | 'stable';
 } {
-  if (!theLabData) {
+  // No theLAB data at all — return neutral defaults, no streak badge
+  if (!theLabData || !theLabData.hasRealData) {
     return { score: 50, isOnStreak: false, streakLength: 0, streakType: 'neutral', last5HitRate: 50, last10HitRate: 50, trendDirection: 'stable' };
   }
 
+  // last5HitRate is null when theLAB has the player but no hit rate data — treat as neutral (50)
   const last5 = theLabData.last5HitRate ?? 50;
   const streakLen = theLabData.streakLength ?? 0;
   const trend = theLabData.trendDirection ?? 'NEUTRAL'; // HOT | COLD | NEUTRAL
 
-  // Streak type
+  // Streak type: only mark cold if we have real evidence (not just missing data)
+  // Require BOTH a low hit rate AND a cold trend OR negative streak to mark cold
   let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
-  if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') streakType = 'hot';
-  else if (last5 <= 30 || streakLen <= -3 || trend === 'COLD') streakType = 'cold';
+  if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') {
+    streakType = 'hot';
+  } else if ((last5 <= 30 && (streakLen <= -3 || trend === 'COLD')) || (streakLen <= -5) || (trend === 'COLD' && streakLen <= -3)) {
+    // Only cold if multiple signals agree — prevents false cold from single weak signal
+    streakType = 'cold';
+  }
 
   // Score: base 50, boosted by last5 hit rate and streak
   let score = 50;
-  score += (last5 - 50) * 0.8; // last5 hit rate carries most weight
+  if (theLabData.last5HitRate !== null) {
+    score += (last5 - 50) * 0.8; // last5 hit rate carries most weight (only when real data)
+  }
   if (streakLen >= 3) score += 10; // hot streak bonus
   if (streakLen <= -3) score -= 10; // cold streak penalty
   if (trend === 'HOT') score += 5;

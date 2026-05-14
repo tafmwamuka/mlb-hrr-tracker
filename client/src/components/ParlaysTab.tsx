@@ -512,6 +512,10 @@ export function ParlaysTab() {
       ? hrrParlays 
       : parlays.filter(p => p.type === activeFilter);
 
+  // Determine if lineups are still pending
+  const lineupsPending = data?.lineupsPending === true;
+  const hasNoPicks = !isLoading && (data?.picks?.length ?? 0) === 0;
+
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center py-16">
@@ -523,6 +527,26 @@ export function ParlaysTab() {
             transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
           />
           <p className="text-sm text-[oklch(0.50_0.015_255)]">Analyzing Savant + Ballpark data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (hasNoPicks) {
+    return (
+      <div className="flex-1 flex items-center justify-center py-16 px-6">
+        <div className="text-center max-w-xs">
+          <div className="w-16 h-16 rounded-full bg-[oklch(1_0_0/5%)] flex items-center justify-center mx-auto mb-4">
+            <Layers size={28} className="text-[oklch(0.45_0.015_255)]" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-2">
+            {lineupsPending ? "Lineups Not Yet Posted" : "No Parlays Available"}
+          </h3>
+          <p className="text-sm text-[oklch(0.50_0.015_255)] leading-relaxed">
+            {lineupsPending
+              ? "Today's lineups haven't been posted yet. Parlay suggestions will appear once MLB releases starting lineups (usually 2–3 hours before first pitch)."
+              : "Not enough high-confidence picks today to build quality parlays. Check back closer to game time when more data is available."}
+          </p>
         </div>
       </div>
     );
@@ -593,7 +617,11 @@ export function ParlaysTab() {
             </span>
           </div>
           <div className="space-y-3">
-            {filteredParlays
+            {filteredParlays.filter((p: Parlay) => p.type === "2-leg" && !p.id.startsWith("hrr-")).length === 0 ? (
+              <p className="text-xs text-[oklch(0.45_0.015_255)] text-center py-4">
+                Need at least 2 high-confidence picks from different teams to build a 2-leg parlay.
+              </p>
+            ) : filteredParlays
               .filter((p: Parlay) => p.type === "2-leg" && !p.id.startsWith("hrr-"))
               .map((parlay: Parlay, i: number) => (
                 <ParlayCard key={parlay.id} parlay={parlay} index={i} />
@@ -631,7 +659,11 @@ export function ParlaysTab() {
             </span>
           </div>
           <div className="space-y-3">
-            {filteredParlays
+            {filteredParlays.filter((p: Parlay) => p.type === "3-leg" && !p.id.startsWith("hrr-")).length === 0 ? (
+              <p className="text-xs text-[oklch(0.45_0.015_255)] text-center py-4">
+                Need at least 3 high-confidence picks from different teams to build a 3-leg parlay.
+              </p>
+            ) : filteredParlays
               .filter((p: Parlay) => p.type === "3-leg" && !p.id.startsWith("hrr-"))
               .map((parlay: Parlay, i: number) => (
                 <ParlayCard key={parlay.id} parlay={parlay} index={i} />

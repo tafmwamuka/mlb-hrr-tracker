@@ -52,7 +52,7 @@ export interface TheLabPlayerData {
   mismatch: TheLabMismatchItem | null;
   momentum: TheLabMomentumItem | null;
   edgeScore: number;
-  last5HitRate: number;
+  last5HitRate: number | null; // null = no data (not 0 = cold)
   streakLength: number;
   trendDirection: "HOT" | "COLD" | "NEUTRAL";
   streakBoost: number; // -0.12 to +0.12
@@ -60,6 +60,7 @@ export interface TheLabPlayerData {
   odds: number | null; // American odds from theLAB
   oddsProvider: string | null;
   strongHitCandidate: boolean;
+  hasRealData: boolean; // true only when theLAB returned actual data for this player
 }
 
 // Cache for 10 minutes
@@ -71,8 +72,19 @@ const MOMENTUM_TTL = 30 * 60 * 1000;
 let theLabSession: string | null = null;
 let sessionExpiry = 0;
 
+// Circuit breaker: stop retrying after repeated 401s to avoid rate-limiting
+let authFailCount = 0;
+let authBackoffUntil = 0;
+const MAX_AUTH_FAILS = 3;
+const AUTH_BACKOFF_MS = 30 * 60 * 1000; // 30 minutes before retrying after circuit trips
+
 async function getTheLabSession(): Promise<string | null> {
   if (theLabSession && Date.now() < sessionExpiry) return theLabSession;
+
+  // Circuit breaker: if we've failed too many times recently, don't retry
+  if (authFailCount >= MAX_AUTH_FAILS && Date.now() < authBackoffUntil) {
+    return null; // silently skip — no console spam
+  }
 
   try {
     // Login to theLAB
@@ -86,9 +98,18 @@ async function getTheLabSession(): Promise<string | null> {
     });
 
     if (!loginRes.ok) {
-      console.warn("[TheLAB] Login failed:", loginRes.status);
+      authFailCount++;
+      if (authFailCount >= MAX_AUTH_FAILS) {
+        authBackoffUntil = Date.now() + AUTH_BACKOFF_MS;
+        console.warn(`[TheLAB] Auth circuit tripped after ${authFailCount} failures. Pausing for 30 min.`);
+      } else {
+        console.warn("[TheLAB] Login failed:", loginRes.status, `(fail ${authFailCount}/${MAX_AUTH_FAILS})`);
+      }
       return null;
     }
+    // Successful login — reset circuit breaker
+    authFailCount = 0;
+    authBackoffUntil = 0;
 
     // Extract session cookie
     const setCookie = loginRes.headers.get("set-cookie");
@@ -108,7 +129,14 @@ async function getTheLabSession(): Promise<string | null> {
 
     return null;
   } catch (err) {
-    console.warn("[TheLAB] Session error:", err);
+    authFailCount++;
+    if (authFailCount >= MAX_AUTH_FAILS) {
+      authBackoffUntil = Date.now() + AUTH_BACKOFF_MS;
+      // Only log once when circuit trips, not every time
+      if (authFailCount === MAX_AUTH_FAILS) {
+        console.warn(`[TheLAB] Network error circuit tripped. Pausing theLAB requests for 30 min.`);
+      }
+    }
     return null;
   }
 }
@@ -117,6 +145,9 @@ async function fetchMismatchBoard(date: string, propType: "hits" | "runs" | "rbi
   const cacheKey = `${date}-${propType}`;
   const cached = mismatchCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < MISMATCH_TTL) return cached.data;
+
+  // Circuit breaker: skip if auth is known to be down
+  if (authFailCount >= MAX_AUTH_FAILS && Date.now() < authBackoffUntil) return [];
 
   try {
     const session = await getTheLabSession();
@@ -185,6 +216,9 @@ async function fetchMismatchBoard(date: string, propType: "hits" | "runs" | "rbi
 async function fetchPlayerMomentum(theLabPlayerId: number): Promise<TheLabMomentumItem[]> {
   const cached = momentumCache.get(theLabPlayerId);
   if (cached && Date.now() - cached.ts < MOMENTUM_TTL) return cached.data;
+
+  // Circuit breaker: skip if auth is known to be down
+  if (authFailCount >= MAX_AUTH_FAILS && Date.now() < authBackoffUntil) return [];
 
   try {
     const session = await getTheLabSession();
@@ -294,7 +328,8 @@ export async function getTheLabPlayerData(
     mismatch,
     momentum,
     edgeScore: mismatch?.edgeScore ?? 0,
-    last5HitRate: mismatch?.last5HitRate ?? 0,
+    // Use null when no real data — prevents false cold streak from defaulting to 0
+    last5HitRate: mismatch?.last5HitRate != null ? mismatch.last5HitRate : null,
     streakLength,
     trendDirection,
     streakBoost,
@@ -302,6 +337,7 @@ export async function getTheLabPlayerData(
     odds: mismatch?.odds ?? null,
     oddsProvider: mismatch?.provider ?? null,
     strongHitCandidate: mismatch?.strongHitCandidate ?? false,
+    hasRealData: mismatch !== null,
   };
 }
 

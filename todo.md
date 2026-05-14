@@ -502,3 +502,18 @@
 - [x] Add streak/split badges to MoneyPicksTab pick cards (visible on card face, not just expanded)
 - [x] Ensure AllPlaysTab streak/split badges are visible
 - [x] Add "Why this pick?" score breakdown tooltip/section to Money Picks cards
+
+## Bug Fixes (May 13, 2026 - User Report)
+- [x] Fix cold streak bug: last5HitRate default changed from 0 to null — prevents false cold streak when theLAB data unavailable
+- [x] Fix calculateStreakScore to treat null last5HitRate as neutral (no badge shown)
+- [x] Fix Parlays tab: added proper empty state UI for lineupsPending and no-picks states
+- [x] Add per-section empty state messages in Parlays tab (2-leg, 3-leg)
+- [x] Fix All Plays tab: getComprehensivePicks now uses theLAB + day/night + streak in scoring
+- [x] Add circuit breaker to theLabService: stops retrying after 3 failures, waits 30 min
+
+## Odds API Removal & theLAB Odds Wiring (May 13, 2026)
+- [x] Remove Odds API calls from getHRRPicks and getComprehensivePicks (key is invalid/expired)
+- [x] Use theLAB mismatch board odds as sole odds source (already fetched per player)
+- [x] Make oddsApiService.fetchHRRMarketData return empty map gracefully without API calls
+- [x] Fix parlays error handling so it shows empty state instead of crashing when no data
+- [x] Remove ODDS_API_KEY dependency from all active code paths

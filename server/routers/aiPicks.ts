@@ -862,28 +862,27 @@ export const aiPicksRouter = router({
         theLabDataMap
       );
 
-      // Fetch real sportsbook lines from The Odds API (non-blocking, falls back gracefully)
-      let marketData = new Map<string, any>();
-      try {
-        marketData = await fetchHRRMarketData();
-      } catch (e) {
-        console.warn("Odds API unavailable, using model-only lines");
-      }
-
-      // Enrich projections with Poisson probabilities and real sportsbook lines
+      // Enrich projections with Poisson probabilities.
+      // Odds come from theLAB mismatch board (already in theLabDataMap per player).
+      // The Odds API is no longer used (credits exhausted).
       const enrichedPicks = projections.map((proj) => {
         // Lambda = expected HRR total per game (from our model)
         const lambda = proj.expectedTotal;
+        const activeLine = proj.hrrLine;
 
-        // Get sportsbook line if available, otherwise use model line
-        const bestLine = getBestHRRLine(proj.playerName, marketData, proj.hrrLine);
-        const activeLine = bestLine.line;
+        // Pull theLAB odds for this player if available
+        const theLabData = theLabDataMap.get(proj.playerName);
+        const theLabOdds = theLabData?.odds ?? null;
+        const theLabOddsProvider = theLabData?.oddsProvider ?? null;
 
         // Calculate Poisson probability of going OVER the active line
         const modelOverProb = poissonOverProbability(activeLine, lambda);
 
-        // Calculate edge vs sportsbook
-        const bookImpliedProb = bestLine.impliedProb || 0.5; // Default 50% if no book data
+        // Edge vs implied probability from theLAB odds (if available)
+        let bookImpliedProb = 0.5;
+        if (theLabOdds !== null) {
+          bookImpliedProb = americanToImpliedProbability(theLabOdds);
+        }
         const edge = calculateEdge(modelOverProb, bookImpliedProb);
         const pickQuality = getPickQuality(edge);
 
@@ -895,16 +894,16 @@ export const aiPicksRouter = router({
 
         return {
           ...proj,
-          // Override line with sportsbook line if available
           hrrLine: activeLine,
-          lineSource: bestLine.source,
+          lineSource: theLabOdds !== null ? "thelab" as const : "model" as const,
           // Poisson-based probabilities
           overProbability: Math.round(modelOverProb * 100),
           // Edge vs book
           edge: Math.round(edge * 100), // as percentage points
           pickQuality,
-          bookOdds: bestLine.odds,
-          bookImpliedProb: bestLine.impliedProb ? Math.round(bestLine.impliedProb * 100) : null,
+          bookOdds: theLabOdds,
+          bookOddsProvider: theLabOddsProvider,
+          bookImpliedProb: theLabOdds !== null ? Math.round(bookImpliedProb * 100) : null,
           // Alternate lines
           alternateLines: alternates.map(alt => ({
             line: alt.line,
@@ -920,8 +919,8 @@ export const aiPicksRouter = router({
       // Re-sort by: picks with edge > 0 first, then by overProbability
       enrichedPicks.sort((a, b) => {
         // Primary: pick quality (strong > moderate > lean > avoid)
-        const qualityOrder = { strong: 4, moderate: 3, lean: 2, avoid: 1 };
-        const qDiff = qualityOrder[b.pickQuality] - qualityOrder[a.pickQuality];
+        const qualityOrder: Record<string, number> = { strong: 4, moderate: 3, lean: 2, avoid: 1 };
+        const qDiff = (qualityOrder[b.pickQuality] ?? 0) - (qualityOrder[a.pickQuality] ?? 0);
         if (qDiff !== 0) return qDiff;
         // Secondary: over probability
         return b.overProbability - a.overProbability;
@@ -932,7 +931,7 @@ export const aiPicksRouter = router({
         picks: enrichedPicks,
         dataDate,
         timestamp: new Date(),
-        hasOddsData: marketData.size > 0,
+        hasOddsData: enrichedPicks.some(p => p.bookOdds !== null),
       };
     } catch (error) {
       console.error("Error generating HRR picks:", error);
