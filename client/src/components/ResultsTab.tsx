@@ -8,11 +8,162 @@
  * - Fully responsive mobile-first design
  */
 
-import { Trophy, TrendingUp, Zap, Target, CheckCircle2, XCircle, Clock, Flame, BarChart3, Award, Star, RefreshCw, Radio } from "lucide-react";
+import { Trophy, TrendingUp, Zap, Target, CheckCircle2, XCircle, Clock, Flame, BarChart3, Award, Star, RefreshCw, Radio, History, ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import { SaferPlayTip } from "./SaferPlayTip";
 import { useState, useEffect, useMemo } from "react";
+
+// ─── Historical Performance Mini-Panel ────────────────────────────────────────
+function HistoricalPerformancePanel() {
+  const [period, setPeriod] = useState<"week" | "month" | "all">("week");
+  const [expanded, setExpanded] = useState(false);
+  const { data: summary, isLoading } = trpc.history.getPerformanceSummary.useQuery({ period });
+
+  const hitRateColor = (rate: number) =>
+    rate >= 65 ? "oklch(0.72 0.18 165)" : rate >= 50 ? "oklch(0.82 0.17 85)" : "oklch(0.68 0.22 25)";
+
+  const PERIODS = [
+    { key: "week" as const, label: "7D" },
+    { key: "month" as const, label: "30D" },
+    { key: "all" as const, label: "All" },
+  ];
+
+  return (
+    <div
+      className="rounded-2xl border overflow-hidden"
+      style={{ background: "oklch(0.12 0.022 255)", borderColor: "oklch(1 0 0 / 10%)" }}
+    >
+      {/* Header row */}
+      <button
+        className="w-full flex items-center justify-between px-4 py-3"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-2">
+          <History size={13} style={{ color: "oklch(0.72 0.18 165)" }} />
+          <span className="text-xs font-bold text-white">Pick History</span>
+          {!isLoading && summary && summary.totalPlays > 0 && (
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{
+                background: `${hitRateColor(summary.hitRate)}20`,
+                color: hitRateColor(summary.hitRate),
+              }}
+            >
+              {summary.hitRate}% ({summary.hits}/{summary.totalPlays})
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Period pills */}
+          <div className="flex gap-1">
+            {PERIODS.map(p => (
+              <button
+                key={p.key}
+                onClick={e => { e.stopPropagation(); setPeriod(p.key); if (!expanded) setExpanded(true); }}
+                className="text-[9px] font-bold px-2 py-0.5 rounded-full transition-all"
+                style={{
+                  background: period === p.key ? "oklch(0.72 0.18 165 / 20%)" : "oklch(1 0 0 / 5%)",
+                  color: period === p.key ? "oklch(0.72 0.18 165)" : "oklch(0.45 0.015 255)",
+                  border: period === p.key ? "1px solid oklch(0.72 0.18 165 / 30%)" : "1px solid transparent",
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {expanded ? <ChevronUp size={12} className="text-[oklch(0.45_0.015_255)]" /> : <ChevronDown size={12} className="text-[oklch(0.45_0.015_255)]" />}
+        </div>
+      </button>
+
+      {/* Expanded content */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 pt-1 space-y-3 border-t border-[oklch(1_0_0/6%)]">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <motion.div
+                    className="w-6 h-6 rounded-full border-2 border-transparent"
+                    style={{ borderTopColor: "oklch(0.72 0.18 165)" }}
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  />
+                </div>
+              ) : !summary || summary.totalPlays === 0 ? (
+                <div className="text-center py-4">
+                  <p className="text-[oklch(0.45_0.015_255)] text-xs">No historical data yet. Results are saved automatically after games finish.</p>
+                </div>
+              ) : (
+                <>
+                  {/* KPI row */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: "Overall", rate: summary.hitRate, detail: `${summary.hits}/${summary.totalPlays}` },
+                      { label: "Money Picks", rate: summary.moneyHitRate, detail: "money" },
+                      { label: "All Plays", rate: summary.allPlaysHitRate, detail: "all plays" },
+                    ].map(kpi => (
+                      <div
+                        key={kpi.label}
+                        className="rounded-xl p-2.5 text-center border"
+                        style={{ background: "oklch(0.14 0.022 255)", borderColor: "oklch(1 0 0 / 8%)" }}
+                      >
+                        <div
+                          className="text-lg font-bold font-stat"
+                          style={{ color: hitRateColor(kpi.rate) }}
+                        >
+                          {kpi.rate}%
+                        </div>
+                        <div className="text-[8px] text-[oklch(0.40_0.015_255)] uppercase font-semibold tracking-wider">{kpi.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Mini bar chart — last 14 days */}
+                  {summary.byDate.length > 0 && (
+                    <div>
+                      <div className="text-[9px] text-[oklch(0.40_0.015_255)] uppercase font-semibold tracking-wider mb-2">
+                        Daily Hit Rate
+                      </div>
+                      <div className="flex items-end gap-0.5 h-12">
+                        {summary.byDate.slice(-14).map((day, i) => (
+                          <div key={day.date} className="flex-1 flex flex-col items-center gap-0.5">
+                            <motion.div
+                              className="w-full rounded-sm"
+                              style={{ background: hitRateColor(day.hitRate), minHeight: 2 }}
+                              initial={{ height: 0 }}
+                              animate={{ height: `${Math.max(4, day.hitRate)}%` }}
+                              transition={{ delay: i * 0.03, duration: 0.4, ease: "easeOut" }}
+                              title={`${day.date}: ${day.hitRate}% (${day.hits}/${day.total})`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <span className="text-[8px] text-[oklch(0.35_0.015_255)]">
+                          {summary.byDate.slice(-14)[0]?.date?.slice(5)}
+                        </span>
+                        <span className="text-[8px] text-[oklch(0.35_0.015_255)]">
+                          {summary.byDate.slice(-1)[0]?.date?.slice(5)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 const STAT_CONFIG = {
   hrr: { label: "HRR", abbr: "HRR", icon: Flame, color: "oklch(0.75_0.18_55)", gradient: "from-[oklch(0.75_0.18_55)] to-[oklch(0.65_0.16_55)]" },
@@ -630,6 +781,11 @@ export function ResultsTab() {
       {/* Safer play tip */}
       <div className="px-3 sm:px-4 mb-3 sm:mb-4">
         <SaferPlayTip />
+      </div>
+
+      {/* Historical performance panel */}
+      <div className="px-3 sm:px-4 mb-3 sm:mb-4">
+        <HistoricalPerformancePanel />
       </div>
 
       {/* Results List */}

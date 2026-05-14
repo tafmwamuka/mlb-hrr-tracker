@@ -72,6 +72,14 @@ interface MoneyPick {
     odds?: string;
     provider?: string;
   } | null;
+  primePosition?: boolean;
+  primePositionFactors?: {
+    platoonAdvantage: boolean;
+    pitcherMatchup: boolean;
+    battingPositionStrong: boolean;
+    dayNightFavorable: boolean;
+    favorableCount: number;
+  } | null;
 }
 
 function getProbColor(prob: number): string {
@@ -242,6 +250,21 @@ function MoneyPickCard({
           {pick.theLabEdge?.strongHitCandidate && (
             <div className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: "oklch(0.82 0.17 85 / 20%)", color: "oklch(0.82 0.17 85)", border: "1px solid oklch(0.82 0.17 85 / 40%)" }}>
               ⭐ theLAB Pick
+            </div>
+          )}
+          {/* Prime Position badge: data-driven 3+ of 4 factors favorable */}
+          {pick.primePosition && (
+            <div
+              className="px-2 py-0.5 rounded text-[10px] font-bold"
+              style={{ background: "oklch(0.75 0.20 55 / 20%)", color: "oklch(0.85 0.18 55)", border: "1px solid oklch(0.75 0.20 55 / 40%)" }}
+              title={pick.primePositionFactors ? [
+                pick.primePositionFactors.platoonAdvantage ? '✓ Platoon advantage' : '✗ Platoon',
+                pick.primePositionFactors.pitcherMatchup ? '✓ Pitcher matchup' : '✗ Pitcher matchup',
+                pick.primePositionFactors.battingPositionStrong ? '✓ Batting position' : '✗ Batting position',
+                pick.primePositionFactors.dayNightFavorable ? '✓ Day/night split' : '✗ Day/night split',
+              ].join(' | ') : '3+ favorable factors'}
+            >
+              🎯 Prime {pick.primePositionFactors?.favorableCount ?? '3+'}/4
             </div>
           )}
           <div className="px-2 py-0.5 rounded text-[10px] text-[oklch(0.50_0.015_255)]" style={{ background: "oklch(0.18 0.02 255)" }}>
@@ -468,6 +491,8 @@ export function MoneyPicksTab() {
           streakInfo,
           dayNightSplit,
           theLabEdge,
+          primePosition: pick.primePosition ?? false,
+          primePositionFactors: pick.primePositionFactors ?? null,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)

@@ -141,6 +141,21 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
                 ⭐ theLAB
               </span>
             )}
+            {/* Prime Position badge */}
+            {pick.primePosition && (
+              <span
+                className="text-[10px] font-bold"
+                style={{ color: "oklch(0.85 0.18 55)" }}
+                title={pick.primePositionFactors ? [
+                  pick.primePositionFactors.platoonAdvantage ? '✓ Platoon' : '✗ Platoon',
+                  pick.primePositionFactors.pitcherMatchup ? '✓ Pitcher' : '✗ Pitcher',
+                  pick.primePositionFactors.battingPositionStrong ? '✓ Bat pos' : '✗ Bat pos',
+                  pick.primePositionFactors.dayNightFavorable ? '✓ Split' : '✗ Split',
+                ].join(' | ') : '3+ favorable factors'}
+              >
+                🎯 Prime {pick.primePositionFactors?.favorableCount ?? '3+'}/4
+              </span>
+            )}
             {pick.savantMetrics && (
               <>
                 <span className="text-[10px] text-[oklch(0.50_0.015_255)]">
@@ -214,6 +229,33 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Alt Line Options */}
+                {pick.alternateLines && pick.alternateLines.length > 0 && (
+                  <div>
+                    <div className="text-[10px] font-bold text-[oklch(0.45_0.015_255)] uppercase tracking-wider mb-1.5">Alt Lines</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {pick.alternateLines.map((alt: { line: number; overProb: number; underProb: number }, i: number) => {
+                        const isMain = alt.line === pick.line;
+                        const altColor = alt.overProb >= 85 ? 'oklch(0.72 0.18 165)' : alt.overProb >= 75 ? 'oklch(0.78 0.16 140)' : 'oklch(0.82 0.17 85)';
+                        return (
+                          <div
+                            key={i}
+                            className="px-2.5 py-1.5 rounded-lg text-center"
+                            style={{
+                              background: isMain ? `${altColor}20` : 'oklch(0.16 0.02 255)',
+                              border: `1px solid ${isMain ? `${altColor}40` : 'oklch(1 0 0 / 8%)'}`,
+                            }}
+                          >
+                            <div className="text-[9px] text-[oklch(0.45_0.015_255)]">Over {alt.line}</div>
+                            <div className="text-[12px] font-stat font-bold" style={{ color: altColor }}>{alt.overProb}%</div>
+                            {isMain && <div className="text-[8px] text-[oklch(0.45_0.015_255)] mt-0.5">main</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 

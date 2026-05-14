@@ -8,6 +8,7 @@
 import type { PlayerDayNightSplits } from "./dayNightSplitService";
 import type { TheLabPlayerData } from "./theLabService";
 import type { PlayerStreakData } from "./mlbStreakService";
+import { calculateHandednessAdvantage } from "./advancedDataService";
 
 interface PlayerData {
   playerId: number;
@@ -149,6 +150,14 @@ export interface AIPick {
     savantFactors: string[]; // Reasoning factors from Savant data
   };
   combinedScore?: number; // Ballpark RC + Savant combined score
+  primePosition?: boolean; // True when 3+ of 4 data-driven factors are favorable
+  primePositionFactors?: {
+    platoonAdvantage: boolean;   // batter avg vs pitcher handedness > season avg by 15+ pts
+    pitcherMatchup: boolean;     // pitcher matchup score >= 65
+    battingPositionStrong: boolean; // batting position weight >= 65
+    dayNightFavorable: boolean;  // day/night split is favorable
+    favorableCount: number;      // how many of 4 factors are favorable
+  };
 }
 
 /**
@@ -537,6 +546,46 @@ export function rankAIPicks(
         last10HitRate: streakResult.last10HitRate,
         trendDirection: streakResult.trendDirection,
         streakLabel,
+      };
+
+      // ── Data-driven Prime Position: 3+ of 4 factors must be favorable ─────────
+      // Factor 1: Platoon advantage — batter avg vs pitcher handedness > season avg by 15+ pts
+      const platoonSplit = matchup.platoonSplit;
+      const platoonScore = calculateHandednessAdvantage(
+        playerData.handedness,
+        matchup.pitcher.handedness,
+        platoonSplit
+      );
+      const platoonAdvantage = platoonSplit
+        ? (() => {
+            const relevantAvg = matchup.pitcher.handedness === 'R' ? platoonSplit.vsRHP : platoonSplit.vsLHP;
+            return relevantAvg - playerData.stats.avg >= 0.015; // 15+ pts above season avg
+          })()
+        : platoonScore >= 55; // fallback: opposite handedness is slight advantage
+
+      // Factor 2: Pitcher matchup score >= 65
+      const pitcherMatchupFavorable = pitcherMatchupScore >= 65;
+
+      // Factor 3: Batting position weight >= 65 (productive spots in lineup)
+      const battingPositionStrong = battingPositionScore >= 65;
+
+      // Factor 4: Day/night split is favorable
+      const dayNightFavorable = dayNightResult.favorable;
+
+      const primeFactors = [
+        platoonAdvantage,
+        pitcherMatchupFavorable,
+        battingPositionStrong,
+        dayNightFavorable,
+      ];
+      const favorableCount = primeFactors.filter(Boolean).length;
+      pick.primePosition = favorableCount >= 3;
+      pick.primePositionFactors = {
+        platoonAdvantage,
+        pitcherMatchup: pitcherMatchupFavorable,
+        battingPositionStrong,
+        dayNightFavorable,
+        favorableCount,
       };
 
       // Attach theLAB edge info

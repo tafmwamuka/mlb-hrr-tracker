@@ -528,3 +528,45 @@
 - [x] Wire mlbStreakMap into generateHRRProjections as fallback when theLAB is unavailable
 - [x] Show real streak badges (HOT/COLD) from MLB Stats API game log data
 - [ ] Odds: will show when paid API (SportsGameOdds $99/mo or new Odds API key $30/mo) is set up in 2 weeks
+
+## Feature: Results Tab Historical Performance (May 14, 2026)
+- [ ] Add "Past Picks Performance" panel to ResultsTab showing last 7 days hit rate
+- [ ] Show daily breakdown: date, picks count, hits, misses, hit rate %
+- [ ] Show overall rolling hit rate (7-day and 30-day)
+- [ ] Show today's picks alongside historical performance in same view
+- [ ] Add visual hit rate trend chart (bar or sparkline per day)
+- [ ] Color-code days: green (>60% hit rate), yellow (40-60%), red (<40%)
+
+## Feature: Day/Night Split by Actual Game Time (May 14, 2026)
+- [ ] Ensure game time is fetched from MLB schedule API per game (not estimated)
+- [ ] Pass actual game time (ET) to dayNightSplitService for each matchup
+- [ ] Apply correct day split (before 5pm ET) or night split (5pm ET or later) per player
+- [ ] Show "Day Game" or "Night Game" context label on all pick cards
+- [ ] Show player's day/night avg in the split badge (e.g. "Day: .312 avg")
+- [ ] Boost/penalize score based on player's performance delta in that game type
+
+## Feature: Alt Lines on All Plays Tab (May 14, 2026)
+- [ ] Add alt line selector to each AllPlays card (e.g. 0.5, 1.5, 2.5 for hits)
+- [ ] Show probability for each alt line based on Poisson model
+- [ ] Highlight the "best value" alt line (highest probability above 70%)
+- [ ] Allow user to tap alt line to see updated probability and reasoning
+- [ ] Show alt lines for H, R, and RBI separately per player
+
+## Data-Driven Prime Position (May 14, 2026)
+- [ ] Replace fixed 1-6 batting order cutoff with data-driven prime position logic
+- [ ] Factor 1: platoon split advantage — batter avg vs pitcher handedness > season avg by 15+ pts
+- [ ] Factor 2: pitcher matchup score >= 65 (pitcher is weak against this batter type)
+- [ ] Factor 3: batting position historically productive (position weight >= 65)
+- [ ] Factor 4: day/night split favorable (existing)
+- [ ] Prime = at least 3 of 4 factors are favorable
+- [ ] Add primePositionFactors to AIPick for detailed reasoning on card
+- [ ] Show prime position badge with count of favorable factors (e.g. "🎯 Prime 3/4")
+- [ ] Wire primePosition into MoneyPicksTab, AllPlaysTab, TopPlaysTab, HRRTab cards
+
+## Prime Position Badge + Alt Lines — All Tabs (May 14, 2026)
+- [x] Add prime position badge to MoneyPicksTab (🎯 Prime X/4 with tooltip)
+- [x] Add prime position badge to AllPlaysTab quick stats row
+- [x] Add prime position badge to TopPlaysTab factor pills row
+- [x] Add prime position badge to HRRTab badge row (+ added primePosition fields to HRRPick interface)
+- [x] Alt lines section added to AllPlaysTab expanded card (shows Over X.X with % per line)
+- [x] Alt lines already present in MoneyPicksTab as "All Lines" section (O 0.5–5.5 grid)

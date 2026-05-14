@@ -186,6 +186,23 @@ function HeroPickCard({ pick, index }: { pick: any; index: number }) {
                 <span className="text-[11px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>⭐ theLAB Pick</span>
               </div>
             )}
+            {/* Prime Position badge: data-driven 3+ of 4 factors favorable */}
+            {pick.primePosition && (
+              <div
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md"
+                style={{ background: "oklch(0.75 0.20 55 / 20%)", border: "1px solid oklch(0.75 0.20 55 / 40%)" }}
+                title={pick.primePositionFactors ? [
+                  pick.primePositionFactors.platoonAdvantage ? '✓ Platoon advantage' : '✗ Platoon',
+                  pick.primePositionFactors.pitcherMatchup ? '✓ Pitcher matchup' : '✗ Pitcher matchup',
+                  pick.primePositionFactors.battingPositionStrong ? '✓ Batting position' : '✗ Batting position',
+                  pick.primePositionFactors.dayNightFavorable ? '✓ Day/night split' : '✗ Day/night split',
+                ].join(' | ') : '3+ favorable factors'}
+              >
+                <span className="text-[11px] font-bold" style={{ color: "oklch(0.85 0.18 55)" }}>
+                  🎯 Prime {pick.primePositionFactors?.favorableCount ?? '3+'}/4
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Reasoning */}
