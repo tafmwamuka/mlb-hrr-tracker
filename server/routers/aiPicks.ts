@@ -833,7 +833,8 @@ export const aiPicksRouter = router({
         mlbStreakMap,
         vsGradeMap,
         gameTotalsMap,
-        statcastCache
+        statcastCache,
+        ballparkMatchups.length > 0 // hasBallparkPalData
       );
       
       // Enrich with Savant data
@@ -949,7 +950,8 @@ export const aiPicksRouter = router({
         mlbStreakMap,
         vsGradeMap,
         gameTotalsMap,
-        statcastCache2
+        statcastCache2,
+        bpMatchups2.length > 0 // hasBallparkPalData
       );
       
       // Enrich all picks with Savant data
@@ -1058,17 +1060,34 @@ export const aiPicksRouter = router({
       }
 
       // Filter matchups through VS gate before HRR projections
-      // BallparkPal vsGrade is normalized to 0-10 scale: >=8.5 = vsGrade 7+ (STRONG)
-      // If no VS data available, use all matchups (graceful degradation)
+      // Adaptive two-stage VS gate (same logic as rankAIPicks):
+      //   hasBallparkPalData=true  (real ballparkpal): STRONG>=9.5, MODERATE>=8.5
+      //   hasBallparkPalData=false (mlbMatchupService fallback): STRONG>=7.0, MODERATE>=5.5
+      const hrrHasBallparkPalData = bpMatchups3.length > 0;
+      const HRR_STRONG_THRESHOLD = hrrHasBallparkPalData ? 9.5 : 7.0;
+      const HRR_MODERATE_THRESHOLD = hrrHasBallparkPalData ? 8.5 : 5.5;
       const gatedMatchups = vsGradeMap.size > 0
         ? matchups.filter(m => {
             const vsScore = vsGradeMap.get(m.playerName) ?? null;
-            if (vsScore === null) return true; // No data: include
-            return vsScore >= 8.5; // Only top-tier matchups for HRR (vsGrade 7+ on ballparkpal scale)
+            if (vsScore === null) return false; // Exclude if no entry
+            if (vsScore >= HRR_STRONG_THRESHOLD) return true; // STRONG: always in
+            if (vsScore >= HRR_MODERATE_THRESHOLD) {
+              // MODERATE: enter only with good matchup context
+              const playerData = players.get(m.playerId);
+              const batterHand = playerData?.handedness ?? 'R';
+              const pitcherHand = m.pitcher?.handedness ?? 'R';
+              const hasPlatoonAdvantage = batterHand !== pitcherHand;
+              const pitcherERA = m.pitcher?.era ?? null;
+              const pitcherIsVulnerable = pitcherERA !== null ? pitcherERA >= 4.50 : false;
+              const savantEntry = savantMap.get(m.playerName);
+              const isBarrelThreat = savantEntry ? savantEntry.barrelPct >= 8.0 : false;
+              return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat;
+            }
+            return false; // Below MODERATE_THRESHOLD: excluded
           })
         : matchups;
 
-      console.log(`[HRR] VS Gate: ${matchups.length} → ${gatedMatchups.length} matchups passed`);
+      console.log(`[HRR] VS Gate (${hrrHasBallparkPalData ? 'ballparkpal' : 'mlbMatchup'} mode, STRONG>=${HRR_STRONG_THRESHOLD}, MOD>=${HRR_MODERATE_THRESHOLD}): ${matchups.length} → ${gatedMatchups.length} matchups passed`);
 
       // ── STAGE 1: Run the 10-factor scoring matrix on all VS-gated players ──────
       // Every pick on every tab must pass through rankAIPicks first.
@@ -1091,7 +1110,8 @@ export const aiPicksRouter = router({
         mlbStreakMap,
         vsGradeMap,
         gameTotalsMap,
-        statcastCache3
+        statcastCache3,
+        bpMatchups3.length > 0 // hasBallparkPalData
       );
 
       console.log(`[HRR] Matrix scored: ${matrixPicks.length} picks`);

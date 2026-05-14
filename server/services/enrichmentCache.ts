@@ -291,6 +291,35 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
 }
 
 /**
+ * Warm the enrichment cache on server startup using today's MLB lineup players.
+ * This ensures the first user request gets real data instead of neutral placeholders.
+ * Called once from server startup — does not block startup.
+ */
+export async function warmEnrichmentCacheOnStartup(): Promise<void> {
+  try {
+    // Fetch today's lineup players to warm the cache
+    const { getAdaptedLineupData } = await import('./lineupAdapter');
+    const lineupData = await getAdaptedLineupData();
+    const players: PlayerRef[] = lineupData.matchups.map((m: import('./lineupAdapter').MatchupData) => ({
+      playerId: m.playerId,
+      playerName: m.playerName,
+      team: m.team,
+      gameTime: m.gameTime,
+      pitcherId: m.pitcher?.id ?? null,
+      pitcherHand: m.pitcher?.handedness ?? null,
+    }));
+    if (players.length > 0) {
+      console.log(`[EnrichmentCache] Startup warm triggered for ${players.length} players`);
+      await warmCacheInBackground(players);
+    } else {
+      console.log('[EnrichmentCache] Startup warm skipped — no lineup players yet');
+    }
+  } catch (err) {
+    console.error('[EnrichmentCache] Startup warm failed:', err);
+  }
+}
+
+/**
  * Invalidate the enrichment cache (e.g., after a scheduled refresh or new day).
  */
 export function invalidateEnrichmentCache(): void {

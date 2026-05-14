@@ -328,10 +328,9 @@ function calculateStreakScore(
 
 /**
  * Rank AI picks using comprehensive algorithm
- * VS Gate: MLB-native matchup quality score (0-10 float scale from mlbMatchupService).
- *   - Score >= 7.0: always included (strong matchup)
- *   - Score >= 5.5: included if secondary signals are strong (hot streak, strong stats, good HR Targets)
- *   - Score < 5.5: excluded (unfavorable matchup)
+ * VS Gate: Two-stage filter using vsGrade scores.
+ *   hasBallparkPalData=true  (real ballparkpal data): STRONG_THRESHOLD=9.5, MODERATE_THRESHOLD=8.5
+ *   hasBallparkPalData=false (mlbMatchupService fallback): STRONG_THRESHOLD=7.0, MODERATE_THRESHOLD=5.5
  * Game Totals: Odds API O/U line boosts picks in high-scoring game environments.
  * Remaining factors: RC, player stats, park factors, HR Targets, pitcher matchup,
  *                    batting position, day/night splits, streak.
@@ -344,38 +343,78 @@ export function rankAIPicks(
   // Enrichment data
   dayNightSplitsMap?: Map<number, PlayerDayNightSplits>,
   mlbStreakMap?: Map<number, PlayerStreakData>,
-  // VS Gate: map from playerName -> vsGrade (-10 to 10)
+  // VS Gate: map from playerName -> vsGrade (0-10 scale)
   vsGradeMap?: Map<string, number>,
   // Game Totals: map from teamAbbr -> GameTotal
   gameTotalsMap?: Map<string, GameTotal>,
   // Statcast data from pybaseball
-  statcastCache?: StatcastCache
+  statcastCache?: StatcastCache,
+  // Whether vsGradeMap is from real ballparkpal data (true) or mlbMatchupService fallback (false)
+  hasBallparkPalData?: boolean
 ): AIPick[] {
-  // ── VS Gate: pre-filter using MLB-native matchup quality scores (0-10 float scale) ──────
-  // Score >= 7.0: always included (strong matchup — equivalent to old VS=10)
-  // Score >= 5.5: included if secondary signals are strong (equivalent to old VS=9)
-  // Score < 5.5: excluded (unfavorable matchup)
-  // No data (score = null): include (don't penalize missing data)
-  const gatedMatchups = vsGradeMap && vsGradeMap.size > 0
+  // ── VS Gate: two-stage filter with adaptive thresholds ──────────────────────────────
+  //
+  // Two threshold modes based on data source:
+  //   hasBallparkPalData=true  (real ballparkpal, grade 10→10.0, grade 9→9.5):
+  //     STRONG_THRESHOLD = 9.5 (grade 10 = always in)
+  //     MODERATE_THRESHOLD = 8.5 (grade 9 = conditional)
+  //   hasBallparkPalData=false (mlbMatchupService fallback, max score ~7.0):
+  //     STRONG_THRESHOLD = 7.0 (STRONG tier = always in)
+  //     MODERATE_THRESHOLD = 5.5 (MODERATE tier = conditional)
+  //
+  // Stage 1 — Entry rules:
+  //   STRONG (score >= STRONG_THRESHOLD): ALWAYS enters the matrix
+  //   MODERATE (score >= MODERATE_THRESHOLD): enters ONLY if matchup context is good:
+  //     - Platoon advantage (batter hits opposite-hand pitcher well), OR
+  //     - Pitcher ERA >= 4.50 (vulnerable starter), OR
+  //     - Batter barrel% >= 8% (real power threat)
+  //   Below MODERATE_THRESHOLD: excluded
+  //   No data (score = null): excluded if vsGradeMap is populated
+  //
+  // Stage 2 — Matrix quality gate (applied AFTER scoring, see bottom of function):
+  //   All players must score >= 75 in the matrix to become picks.
+  //   No free passes — the matrix is the final judge.
+  const hasVSData = vsGradeMap && vsGradeMap.size > 0;
+  // Adaptive thresholds: tight for real ballparkpal data, looser for mlbMatchupService fallback
+  const STRONG_THRESHOLD = hasBallparkPalData ? 9.5 : 7.0;
+  const MODERATE_THRESHOLD = hasBallparkPalData ? 8.5 : 5.5;
+  const gatedMatchups = hasVSData
     ? matchups.filter(m => {
-        const vsScore = vsGradeMap.get(m.playerName) ?? vsGradeMap.get(m.playerName.split(' ').pop() || '') ?? null;
-        if (vsScore === null) return true; // No data: include
-        if (vsScore >= 7.0) return true; // Strong matchup: always in
-        if (vsScore >= 5.5) {
-          // Moderate matchup: include if secondary signals are strong
-          const playerData = playerDataMap.get(m.playerId);
-          const hrTargets = hrTargetsMap.get(m.playerName);
-          const mlbStreak = mlbStreakMap?.get(m.playerId);
-          const hasHotStreak = (mlbStreak?.last5HitRate ?? 0) >= 60 || (mlbStreak?.streakLength ?? 0) >= 3;
-          const hasStrongStats = (playerData?.stats.avg ?? 0) >= 0.280;
-          const hasGoodHRTargets = hrTargets ? ['A+', 'A', 'B+'].includes(hrTargets.grade) : false;
-          return hasHotStreak || hasStrongStats || hasGoodHRTargets;
-        }
-        return false; // Score < 5.5: excluded
-      })
-    : matchups; // No VS data: use all matchups (graceful degradation)
+        const vsScore = vsGradeMap!.get(m.playerName) ?? vsGradeMap!.get(m.playerName.split(' ').pop() || '') ?? null;
 
-  console.log(`[rankAIPicks] VS Gate: ${matchups.length} → ${gatedMatchups.length} matchups passed`);
+        // No entry for this player — exclude when we have data for others
+        if (vsScore === null) return false;
+
+        // STRONG: always enters the matrix
+        if (vsScore >= STRONG_THRESHOLD) return true;
+
+        // MODERATE: enters only with good matchup context
+        if (vsScore >= MODERATE_THRESHOLD) {
+          const playerData = playerDataMap.get(m.playerId);
+          const statcastEntry = statcastCache?.data?.get(m.playerName);
+
+          // Context check 1: platoon advantage (opposite handedness)
+          const batterHand = playerData?.handedness ?? 'R';
+          const pitcherHand = m.pitcher?.handedness ?? 'R';
+          const hasPlatoonAdvantage = batterHand !== pitcherHand;
+
+          // Context check 2: pitcher ERA >= 4.50 (vulnerable starter)
+          const pitcherERA = m.pitcher?.era ?? null;
+          const pitcherIsVulnerable = pitcherERA !== null ? pitcherERA >= 4.50 : false;
+
+          // Context check 3: batter barrel% >= 8% (real power threat)
+          const barrelPct = statcastEntry?.barrelPct ?? null;
+          const isBarrelThreat = barrelPct !== null ? barrelPct >= 8.0 : false;
+
+          return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat;
+        }
+
+        // Below MODERATE_THRESHOLD: excluded
+        return false;
+      })
+    : matchups; // No VS data at all: use all matchups (graceful degradation)
+
+  console.log(`[rankAIPicks] VS Gate (${hasBallparkPalData ? 'ballparkpal' : 'mlbMatchup'} mode, STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD}): ${matchups.length} → ${gatedMatchups.length} matchups passed`);
 
   const picks = gatedMatchups
     .map((matchup) => {
@@ -617,16 +656,22 @@ export function rankAIPicks(
       rank: index + 1,
     }));
 
-  // ── Quality gate: only return picks that genuinely clear the threshold ────────────────
+  // ── Quality gate: adaptive threshold based on data source ────────────────────────────────────
   // Quality over quantity — even 1 pick is fine if only 1 qualifies.
-  // Threshold calibrated to real score distribution (weights sum to 1.0, neutral = 50):
-  //   Neutral player (all factors = 50): scores exactly 50
-  //   VS=10, decent stats: scores ~62-68
-  //   VS=10, hot streak, strong Statcast: scores ~70-80
-  //   Elite (VS=10, top Statcast, hot streak, weak pitcher): scores ~82-90
-  // 68 ensures multiple strong signals required — not just VS=10 alone.
-  const qualityPicks = picks.filter(p => p.overallScore >= 68);
-
+  //
+  // Threshold modes:
+  //   hasBallparkPalData=true  (real ballparkpal, VS scores up to 10.0):
+  //     QUALITY_THRESHOLD = 75
+  //     VS=10 alone scores ~65, needs hot streak + Statcast to reach 75
+  //     VS=9 with platoon + good stats: ~70-76
+  //   hasBallparkPalData=false (mlbMatchupService fallback, VS scores max ~7.0):
+  //     QUALITY_THRESHOLD = 65
+  //     VS=7 (STRONG) scores ~70 on 0-100 scale, needs 1-2 other signals to reach 65
+  //     VS=5.5 (MODERATE) scores ~55, needs strong stats + streak to reach 65
+  //     This ensures we still get picks when ballparkpal is unavailable
+  const QUALITY_THRESHOLD = hasBallparkPalData ? 75 : 65;
+  const qualityPicks = picks.filter(p => p.overallScore >= QUALITY_THRESHOLD);
+  console.log(`[rankAIPicks] Quality gate (>= ${QUALITY_THRESHOLD}, ${hasBallparkPalData ? 'ballparkpal' : 'mlbMatchup'} mode): ${picks.length} → ${qualityPicks.length} picks`);
   return qualityPicks;
 }
 

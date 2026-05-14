@@ -9,6 +9,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import scheduledBackfillRouter from "../routes/scheduledBackfill";
+import { warmEnrichmentCacheOnStartup } from "../services/enrichmentCache";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -63,6 +64,13 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Warm enrichment cache in background after server starts
+    // This ensures the first user request gets real data instead of neutral placeholders
+    setTimeout(() => {
+      warmEnrichmentCacheOnStartup().catch(err => {
+        console.error('[Startup] Enrichment cache warm failed:', err);
+      });
+    }, 2000); // 2s delay to let Vite/Express finish initializing
   });
 }
 

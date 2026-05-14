@@ -657,3 +657,18 @@
 - [x] Ensure all three pick tabs (Top Picks, All Plays, HRR Picks) use real ballparkpal data
 - [ ] TypeScript 0 errors
 - [ ] Save checkpoint
+
+## VS Gate Tightening & Quality Over Quantity (May 14, 2026)
+- [ ] VS gate: vsGrade 10 always passes, vsGrade 9 only if matrix score >= 75 (exception)
+- [ ] Raise quality threshold: only picks with confidence >= 75 shown (was 68)
+- [ ] Apply same gate logic to all three tabs (Top Picks, All Plays, HRR Picks)
+- [ ] Ensure pick count is small and high-quality (aim for 5-15 picks per tab max)
+- [ ] TypeScript 0 errors
+- [ ] Save checkpoint
+
+## Phase N: VS Gate Adaptive Thresholds & Schedule Fix (2026-05-14)
+- [x] Fix VS gate to use adaptive thresholds: ballparkpal mode (9.5/8.5) vs mlbMatchup fallback mode (7.0/5.5)
+- [x] Fix quality gate to use adaptive threshold: 75 for ballparkpal, 65 for mlbMatchup fallback
+- [x] Fix HRR inline VS gate to also use adaptive thresholds based on bpMatchups3.length
+- [x] Add warmEnrichmentCacheOnStartup() to server startup so first request gets real data
+- [x] Add 7 AM EST early morning run to scheduled job (was 10,13,16,20 → now 7,10,13,16,20)
