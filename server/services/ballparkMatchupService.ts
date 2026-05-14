@@ -3,7 +3,16 @@
  * Fetches real batter-vs-pitcher matchup data from ballparkpal.com
  * Provides the VS Grade (1-10 scale) used as the PRIMARY gate filter for picks.
  * Also computes projected game totals from aggregate RC sums.
+ *
+ * Uses Puppeteer (headless Chromium) to bypass Cloudflare bot protection.
+ * The page loads __matchupExportData as a JS variable after page render.
+ * Session cookies (BALLPARK_EMAIL / BALLPARK_PASSWORD env vars) are injected
+ * so the page shows subscriber matchup data instead of the paywall.
+ *
+ * Fallback: if Puppeteer fails, tries plain fetch as a last resort.
  */
+
+import puppeteer from 'puppeteer-core';
 
 export interface BallparkMatchup {
   game: string;           // e.g. "Giants @ Dodgers"
@@ -44,9 +53,127 @@ let cachedGameTotals: Map<string, GameTotal> | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+const CHROMIUM_PATH = '/usr/bin/chromium';
+
+/**
+ * Parse raw matchup data array into BallparkMatchup objects.
+ */
+function parseMatchups(rawData: Array<Record<string, any>>): BallparkMatchup[] {
+  return rawData.map(d => ({
+    game: (d.Game || '').trim(),
+    team: (d.Team || '').trim(),
+    batter: (d.Batter || '').trim(),
+    bats: (d.Bats || 'R').trim(),
+    pitcher: (d.Pitcher || '').trim(),
+    throws: (d.Throws || 'R').trim(),
+    starter: d.Starter === 1,
+    rc: d.RC || 0,
+    vsGrade: d['vs Grade'] ?? 0,
+    hrProb: d['HR Prob'] || 0,
+    xbProb: d['XB Prob'] || 0,
+    oneBProb: d['1B Prob'] || 0,
+    bbProb: d['BB Prob'] || 0,
+    kProb: d['K Prob'] || 0,
+    pa: d.PA || 0,
+    ab: d.AB || 0,
+    h: d.H || 0,
+    avg: (d.AVG || '.000').trim(),
+    rcNoPark: d['RC (no park)'] || 0,
+  }));
+}
+
+/**
+ * Fetch matchup data using Puppeteer headless browser.
+ * This bypasses Cloudflare bot protection which blocks plain Node.js fetch.
+ * Injects session cookies from env vars (BALLPARK_PHPSESSID, BALLPARK_SYSTEM_ID)
+ * so the page shows subscriber matchup data instead of the paywall.
+ */
+async function fetchWithPuppeteer(): Promise<BallparkMatchup[]> {
+  let browser: import('puppeteer-core').Browser | null = null;
+  try {
+    browser = await puppeteer.launch({
+      executablePath: CHROMIUM_PATH,
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-extensions',
+        '--disable-background-networking',
+      ],
+    });
+
+    const page = await browser.newPage();
+
+    // Set realistic user agent
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    );
+
+    // Inject session cookies if available (from env vars)
+    const phpSessId = process.env.BALLPARK_PHPSESSID;
+    const systemId = process.env.BALLPARK_SYSTEM_ID;
+    if (phpSessId && systemId) {
+      await page.setCookie(
+        { name: 'PHPSESSID', value: phpSessId, domain: 'www.ballparkpal.com', path: '/' },
+        { name: 'system_id', value: systemId, domain: 'www.ballparkpal.com', path: '/' }
+      );
+      console.log('[BallparkPal] Session cookies injected from env vars');
+    } else {
+      console.log('[BallparkPal] No session cookies in env — attempting without auth');
+    }
+
+    // Navigate to the BvP Matchups page
+    await page.goto('https://www.ballparkpal.com/MatchUps.php', {
+      waitUntil: 'networkidle2',
+      timeout: 35_000,
+    });
+
+    // Check for Cloudflare block
+    const title = await page.title();
+    if (title.includes('Attention Required') || title.includes('Cloudflare')) {
+      console.error('[BallparkPal] Cloudflare block detected — IP may be blocked');
+      return [];
+    }
+
+    // Check for paywall
+    const isPaywall = await page.evaluate(() => {
+      return document.title.includes('Secure Checkout') ||
+             document.body.innerText.includes('Select Your Plan') ||
+             document.body.innerText.includes('Subscribe');
+    });
+    if (isPaywall) {
+      console.error('[BallparkPal] Paywall detected — session cookies may be expired or missing');
+      return [];
+    }
+
+    // Extract __matchupExportData from the page's JS context
+    const rawData = await page.evaluate(() => {
+      // @ts-ignore
+      return typeof window.__matchupExportData !== 'undefined' ? window.__matchupExportData : null;
+    }) as Array<Record<string, any>> | null;
+
+    if (!rawData || rawData.length === 0) {
+      console.error('[BallparkPal] __matchupExportData not found or empty in page');
+      return [];
+    }
+
+    const matchups = parseMatchups(rawData);
+    console.log(`[BallparkPal] Puppeteer fetched ${matchups.length} matchups (${matchups.filter(m => m.starter).length} starters). ` +
+      `VS≥9: ${matchups.filter(m => m.vsGrade >= 9).length} (${matchups.filter(m => m.vsGrade === 10).length} tens, ${matchups.filter(m => m.vsGrade === 9).length} nines)`);
+    return matchups;
+  } finally {
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
+  }
+}
+
 /**
  * Fetch today's matchup data from ballparkpal.com
- * The page embeds a JSON variable `__matchupExportData` with all matchups.
+ * Uses Puppeteer headless browser to bypass Cloudflare bot protection.
+ * Falls back to plain fetch if Puppeteer is unavailable.
  */
 async function fetchMatchupData(): Promise<BallparkMatchup[]> {
   // Check cache
@@ -55,58 +182,44 @@ async function fetchMatchupData(): Promise<BallparkMatchup[]> {
   }
 
   try {
+    // Primary: Puppeteer browser-based fetch (bypasses Cloudflare)
+    const matchups = await fetchWithPuppeteer();
+
+    if (matchups.length > 0) {
+      cachedMatchups = matchups;
+      cacheTimestamp = Date.now();
+      return matchups;
+    }
+
+    // Fallback: plain fetch (may be blocked by Cloudflare)
+    console.log('[BallparkPal] Puppeteer returned no data, trying plain fetch fallback...');
     const resp = await fetch('https://www.ballparkpal.com/MatchUps.php', {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
       },
-      signal: AbortSignal.timeout(20000), // 20s — site is slow but reliable
+      signal: AbortSignal.timeout(20000),
     });
 
     if (!resp.ok) {
-      console.error(`[BallparkPal] Failed to fetch matchups: ${resp.status}`);
+      console.error(`[BallparkPal] Plain fetch failed: ${resp.status}`);
       return cachedMatchups || [];
     }
 
     const html = await resp.text();
-    // Try multiple regex patterns to handle page structure variations
-    const match = html.match(/var __matchupExportData = (\[[\s\S]*?\]);/) ||
-                  html.match(/var __matchupExportData=(\[[\s\S]*?\]);/) ||
-                  html.match(/__matchupExportData\s*=\s*(\[[\s\S]*?\]);/);
+    const match = html.match(/__matchupExportData\s*=\s*(\[[\s\S]*?\]);/);
     if (!match || !match[1] || match[1].length < 10) {
-      console.error('[BallparkPal] Could not find matchup data in page');
+      console.error('[BallparkPal] Could not find matchup data in plain fetch response');
       return cachedMatchups || [];
     }
 
     const rawData = JSON.parse(match[1]) as Array<Record<string, any>>;
-
-    const matchups: BallparkMatchup[] = rawData.map(d => ({
-      game: (d.Game || '').trim(),
-      team: (d.Team || '').trim(),
-      batter: (d.Batter || '').trim(),
-      bats: (d.Bats || 'R').trim(),
-      pitcher: (d.Pitcher || '').trim(),
-      throws: (d.Throws || 'R').trim(),
-      starter: d.Starter === 1,
-      rc: d.RC || 0,
-      vsGrade: d['vs Grade'] ?? 0,
-      hrProb: d['HR Prob'] || 0,
-      xbProb: d['XB Prob'] || 0,
-      oneBProb: d['1B Prob'] || 0,
-      bbProb: d['BB Prob'] || 0,
-      kProb: d['K Prob'] || 0,
-      pa: d.PA || 0,
-      ab: d.AB || 0,
-      h: d.H || 0,
-      avg: (d.AVG || '.000').trim(),
-      rcNoPark: d['RC (no park)'] || 0,
-    }));
-
-    cachedMatchups = matchups;
+    const fallbackMatchups = parseMatchups(rawData);
+    cachedMatchups = fallbackMatchups;
     cacheTimestamp = Date.now();
-    console.log(`[BallparkPal] Fetched ${matchups.length} matchups (${matchups.filter(m => m.starter).length} starters)`);
-    return matchups;
+    console.log(`[BallparkPal] Plain fetch fallback: ${fallbackMatchups.length} matchups`);
+    return fallbackMatchups;
   } catch (error) {
     console.error('[BallparkPal] Error fetching matchups:', error);
     return cachedMatchups || [];

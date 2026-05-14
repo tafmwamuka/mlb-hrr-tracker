@@ -676,3 +676,11 @@
 - [x] Track cacheDataDate in enrichmentCache to detect day changes
 - [x] Add 7 AM EST early morning run to scheduled job (cron: 0 0 7,10,13,16,20 * * *)
 - [x] Note: scheduled job runMode (ask_user vs auto) must be changed in Manus UI Settings → Schedules
+
+## Phase O: BallparkPal Puppeteer Scraper (2026-05-14)
+- [x] Replace plain fetch with Puppeteer headless browser in ballparkMatchupService
+- [x] Inject BALLPARK_PHPSESSID and BALLPARK_SYSTEM_ID cookies for subscriber auth
+- [x] Detect Cloudflare block and paywall, log clearly, fall back gracefully
+- [x] VS gate already configured: grade 9 → score 9.5 (STRONG), grade 10 → score 10.0 (STRONG)
+- [x] Add BALLPARK_PHPSESSID and BALLPARK_SYSTEM_ID as env secrets
+- [x] All 168 tests pass
