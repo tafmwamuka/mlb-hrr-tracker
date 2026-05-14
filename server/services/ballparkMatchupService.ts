@@ -56,6 +56,19 @@ const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 const CHROMIUM_PATH = '/usr/bin/chromium';
 
 /**
+ * Check if Chromium is available on this system.
+ * In production (deployed), Chromium is not installed — skip Puppeteer entirely.
+ */
+function isChromiumAvailable(): boolean {
+  try {
+    const fs = require('fs');
+    return fs.existsSync(CHROMIUM_PATH);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Parse raw matchup data array into BallparkMatchup objects.
  */
 function parseMatchups(rawData: Array<Record<string, any>>): BallparkMatchup[] {
@@ -182,44 +195,55 @@ async function fetchMatchupData(): Promise<BallparkMatchup[]> {
   }
 
   try {
-    // Primary: Puppeteer browser-based fetch (bypasses Cloudflare)
-    const matchups = await fetchWithPuppeteer();
+    // Step 1: Try plain fetch first (fast, ~2s) — works when not Cloudflare-blocked
+    console.log('[BallparkPal] Attempting plain fetch...');
+    try {
+      const resp = await fetch('https://www.ballparkpal.com/MatchUps.php', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Cookie': process.env.BALLPARK_PHPSESSID ? `PHPSESSID=${process.env.BALLPARK_PHPSESSID}; system_id=${process.env.BALLPARK_SYSTEM_ID}` : '',
+        },
+        signal: AbortSignal.timeout(8000), // 8s max — fail fast
+      });
 
-    if (matchups.length > 0) {
-      cachedMatchups = matchups;
-      cacheTimestamp = Date.now();
-      return matchups;
+      if (resp.ok) {
+        const html = await resp.text();
+        // Check for paywall/block
+        if (!html.includes('Secure Checkout') && !html.includes('Attention Required')) {
+          const match = html.match(/__matchupExportData\s*=\s*(\[[\s\S]*?\]);/);
+          if (match && match[1] && match[1].length > 10) {
+            const rawData = JSON.parse(match[1]) as Array<Record<string, any>>;
+            const matchups = parseMatchups(rawData);
+            if (matchups.length > 0) {
+              cachedMatchups = matchups;
+              cacheTimestamp = Date.now();
+              console.log(`[BallparkPal] Plain fetch success: ${matchups.length} matchups (${matchups.filter(m => m.vsGrade >= 9).length} grade 9+)`);
+              return matchups;
+            }
+          }
+        }
+      }
+    } catch (fetchErr) {
+      console.log('[BallparkPal] Plain fetch failed (Cloudflare block or network error), trying Puppeteer...');
     }
 
-    // Fallback: plain fetch (may be blocked by Cloudflare)
-    console.log('[BallparkPal] Puppeteer returned no data, trying plain fetch fallback...');
-    const resp = await fetch('https://www.ballparkpal.com/MatchUps.php', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
-      signal: AbortSignal.timeout(20000),
-    });
-
-    if (!resp.ok) {
-      console.error(`[BallparkPal] Plain fetch failed: ${resp.status}`);
-      return cachedMatchups || [];
+    // Step 2: Puppeteer fallback — only if Chromium is available (dev/sandbox only)
+    if (isChromiumAvailable()) {
+      console.log('[BallparkPal] Trying Puppeteer headless browser...');
+      const matchups = await fetchWithPuppeteer();
+      if (matchups.length > 0) {
+        cachedMatchups = matchups;
+        cacheTimestamp = Date.now();
+        return matchups;
+      }
+    } else {
+      console.log('[BallparkPal] Chromium not available (production) — skipping Puppeteer');
     }
 
-    const html = await resp.text();
-    const match = html.match(/__matchupExportData\s*=\s*(\[[\s\S]*?\]);/);
-    if (!match || !match[1] || match[1].length < 10) {
-      console.error('[BallparkPal] Could not find matchup data in plain fetch response');
-      return cachedMatchups || [];
-    }
-
-    const rawData = JSON.parse(match[1]) as Array<Record<string, any>>;
-    const fallbackMatchups = parseMatchups(rawData);
-    cachedMatchups = fallbackMatchups;
-    cacheTimestamp = Date.now();
-    console.log(`[BallparkPal] Plain fetch fallback: ${fallbackMatchups.length} matchups`);
-    return fallbackMatchups;
+    console.log('[BallparkPal] All fetch methods failed — using mlbMatchupService fallback');
+    return cachedMatchups || [];
   } catch (error) {
     console.error('[BallparkPal] Error fetching matchups:', error);
     return cachedMatchups || [];

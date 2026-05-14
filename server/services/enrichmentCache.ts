@@ -137,7 +137,7 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
     const [ballparkMatchups, statcastCache, dayNightSplitsMap, mlbStreakMap] = await Promise.all([
       withTimeout(
         fetchMatchupDataPublic(),
-        25_000, // 25s — ballparkpal is slow (~5s) but reliable
+        12_000, // 12s — plain fetch (8s) + small buffer; Puppeteer adds ~10s if needed
         [] as BallparkMatchup[]
       ),
       withTimeout(
