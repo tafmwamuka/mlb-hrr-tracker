@@ -517,3 +517,14 @@
 - [x] Make oddsApiService.fetchHRRMarketData return empty map gracefully without API calls
 - [x] Fix parlays error handling so it shows empty state instead of crashing when no data
 - [x] Remove ODDS_API_KEY dependency from all active code paths
+
+## Temporary Free Data Sources (2-week bridge until paid API)
+- [ ] Wire DraftKings public sportsbook API for MLB player props odds (no key needed — blocked server-side, 403)
+- [ ] Wire FanDuel public API for MLB player props odds as fallback (blocked server-side, 403)
+- [x] Use MLB Stats API last5Games/recentGameLog for streak/hot-cold detection (free)
+- [x] Create mlbStreakService.ts: fetches last 7 games per player, calculates HOT/COLD/NEUTRAL streak
+- [x] Wire MLB Stats API recent game logs into all three pick procedures (getTopPicks, getComprehensivePicks, getHRRPicks)
+- [x] Wire mlbStreakMap into rankAIPicks as fallback when theLAB is unavailable
+- [x] Wire mlbStreakMap into generateHRRProjections as fallback when theLAB is unavailable
+- [x] Show real streak badges (HOT/COLD) from MLB Stats API game log data
+- [ ] Odds: will show when paid API (SportsGameOdds $99/mo or new Odds API key $30/mo) is set up in 2 weeks

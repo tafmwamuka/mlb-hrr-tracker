@@ -8,6 +8,7 @@ import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/a
 import type { AIPick } from "../services/aiRankingService";
 import { batchGetDayNightSplits } from "../services/dayNightSplitService";
 import { batchGetTheLabData } from "../services/theLabService";
+import { batchGetPlayerStreaks } from "../services/mlbStreakService";
 import { getMockSavantData, calculateCombinedScore, type SavantHitter, type SavantPitcher } from "../services/savantService";
 import { generateHRRProjections } from "../services/hrrService";
 import { fetchHRRMarketData, getBestHRRLine, americanToImpliedProbability, removeVig } from "../services/oddsApiService";
@@ -660,9 +661,9 @@ export const aiPicksRouter = router({
       const matchups = lineupData.matchups;
       const players = lineupData.playerDataMap;
 
-      // Fetch day/night splits and theLAB data in parallel (same as getComprehensivePicks)
+      // Fetch day/night splits, theLAB data, and MLB game log streaks in parallel
       const season = new Date().getFullYear();
-      const [dayNightSplitsMap, theLabDataMap] = await Promise.all([
+      const [dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
         batchGetDayNightSplits(
           matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
           'hits',
@@ -672,6 +673,10 @@ export const aiPicksRouter = router({
           matchups.map(m => ({ playerName: m.playerName, teamAbbr: m.team, statType: 'hits' as const })),
           dataDate
         ).catch(() => new Map()),
+        batchGetPlayerStreaks(
+          matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName })),
+          season
+        ).catch(() => new Map()),
       ]);
 
       const allPicks = rankAIPicks(
@@ -680,7 +685,8 @@ export const aiPicksRouter = router({
         getMockHRTargets(),
         getMockParkFactors(),
         dayNightSplitsMap,
-        theLabDataMap
+        theLabDataMap,
+        mlbStreakMap
       );
       
       // Enrich with Savant data
@@ -741,9 +747,9 @@ export const aiPicksRouter = router({
       const matchups = lineupData.matchups;
       const players = lineupData.playerDataMap;
 
-      // Fetch day/night splits and theLAB data in parallel (non-blocking)
+      // Fetch day/night splits, theLAB data, and MLB game log streaks in parallel (non-blocking)
       const season = new Date().getFullYear();
-      const [dayNightSplitsMap, theLabDataMap] = await Promise.all([
+      const [dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
         batchGetDayNightSplits(
           matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
           'hits',
@@ -753,6 +759,9 @@ export const aiPicksRouter = router({
           matchups.map(m => ({ playerName: m.playerName, teamAbbr: m.team, statType: 'hits' as const })),
           dataDate
         ).catch(() => new Map()),
+        batchGetPlayerStreaks(
+          matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName }))
+        ).catch(() => new Map()),
       ]);
 
       const picks = rankAIPicks(
@@ -761,7 +770,8 @@ export const aiPicksRouter = router({
         getMockHRTargets(),
         getMockParkFactors(),
         dayNightSplitsMap,
-        theLabDataMap
+        theLabDataMap,
+        mlbStreakMap
       );
       
       // Enrich all picks with Savant data
@@ -838,9 +848,9 @@ export const aiPicksRouter = router({
         }
       }
       
-      // Fetch day/night splits and theLAB data in parallel
+      // Fetch day/night splits, theLAB data, and MLB game log streaks in parallel
       const season = new Date().getFullYear();
-      const [dayNightSplitsMap, theLabDataMap] = await Promise.all([
+      const [dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
         batchGetDayNightSplits(
           matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
           'hits',
@@ -849,6 +859,9 @@ export const aiPicksRouter = router({
         batchGetTheLabData(
           matchups.map(m => ({ playerName: m.playerName, teamAbbr: m.team, statType: 'hits' as const })),
           dataDate
+        ).catch(() => new Map()),
+        batchGetPlayerStreaks(
+          matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName }))
         ).catch(() => new Map()),
       ]);
 
@@ -859,7 +872,8 @@ export const aiPicksRouter = router({
         parkFactors,
         savantMap,
         dayNightSplitsMap,
-        theLabDataMap
+        theLabDataMap,
+        mlbStreakMap
       );
 
       // Enrich projections with Poisson probabilities.

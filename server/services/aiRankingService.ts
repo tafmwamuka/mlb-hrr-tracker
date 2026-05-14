@@ -7,6 +7,7 @@
 
 import type { PlayerDayNightSplits } from "./dayNightSplitService";
 import type { TheLabPlayerData } from "./theLabService";
+import type { PlayerStreakData } from "./mlbStreakService";
 
 interface PlayerData {
   playerId: number;
@@ -114,6 +115,7 @@ export interface AIPick {
     last5HitRate: number; // 0-100
     last10HitRate: number; // 0-100
     trendDirection: 'up' | 'down' | 'stable';
+    streakLabel?: string; // e.g. "🔥 HOT (5-game hit streak)"
   };
   // theLAB edge data
   theLabEdge?: {
@@ -276,8 +278,12 @@ function calculateDayNightScore(
 /**
  * Calculate streak/hot hand score (0-100)
  * Players on a streak get a bonus; cold players get a penalty
+ * Uses theLAB data when available, falls back to real MLB game log streak
  */
-function calculateStreakScore(theLabData: TheLabPlayerData | null): {
+function calculateStreakScore(
+  theLabData: TheLabPlayerData | null,
+  mlbStreak?: PlayerStreakData | null
+): {
   score: number;
   isOnStreak: boolean;
   streakLength: number;
@@ -286,8 +292,32 @@ function calculateStreakScore(theLabData: TheLabPlayerData | null): {
   last10HitRate: number;
   trendDirection: 'up' | 'down' | 'stable';
 } {
-  // No theLAB data at all — return neutral defaults, no streak badge
+  // No theLAB data — try MLB game log streak as free fallback
   if (!theLabData || !theLabData.hasRealData) {
+    if (mlbStreak && mlbStreak.hasRealData) {
+      const last5 = mlbStreak.last5HitRate;
+      const streakLen = mlbStreak.streakLength;
+      const trend = mlbStreak.trendDirection;
+      let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
+      if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') streakType = 'hot';
+      else if ((last5 <= 30 && (streakLen <= -3 || trend === 'COLD')) || streakLen <= -5) streakType = 'cold';
+      let score = 50;
+      score += (last5 - 50) * 0.8;
+      if (streakLen >= 3) score += 10;
+      if (streakLen <= -3) score -= 10;
+      if (trend === 'HOT') score += 5;
+      if (trend === 'COLD') score -= 5;
+      const trendDirection = trend === 'HOT' ? 'up' : trend === 'COLD' ? 'down' : 'stable';
+      return {
+        score: Math.min(100, Math.max(0, Math.round(score))),
+        isOnStreak: streakLen >= 3,
+        streakLength: Math.abs(streakLen),
+        streakType,
+        last5HitRate: Math.round(last5),
+        last10HitRate: Math.round(last5),
+        trendDirection,
+      };
+    }
     return { score: 50, isOnStreak: false, streakLength: 0, streakType: 'neutral', last5HitRate: 50, last10HitRate: 50, trendDirection: 'stable' };
   }
 
@@ -351,7 +381,8 @@ export function rankAIPicks(
   parkFactors: Map<string, number>,
   // New optional enrichment data
   dayNightSplitsMap?: Map<number, PlayerDayNightSplits>,
-  theLabMismatchMap?: Map<string, TheLabPlayerData>
+  theLabMismatchMap?: Map<string, TheLabPlayerData>,
+  mlbStreakMap?: Map<number, PlayerStreakData>
 ): AIPick[] {
   const picks = matchups
     .map((matchup) => {
@@ -377,7 +408,9 @@ export function rankAIPicks(
 
       // ── Streak / theLAB data ──────────────────────────────────────────────
       const theLabData: TheLabPlayerData | null = theLabMismatchMap?.get(matchup.playerName) ?? null;
-      const streakResult = calculateStreakScore(theLabData);
+      // Use MLB game log streak as fallback when theLAB is unavailable
+      const mlbStreak = mlbStreakMap?.get(matchup.playerId) ?? null;
+      const streakResult = calculateStreakScore(theLabData, mlbStreak);
       const streakScore = streakResult.score;
       const theLabScore = calculateTheLabScore(theLabData);
 
@@ -492,7 +525,10 @@ export function rankAIPicks(
         };
       }
 
-      // Attach streak info
+      // Attach streak info — prefer theLAB label, fall back to MLB game log label
+      const streakLabel = (theLabData?.hasRealData && theLabData.streakLabel)
+        ? theLabData.streakLabel
+        : (mlbStreak?.hasRealData ? mlbStreak.streakLabel : "");
       pick.streakInfo = {
         isOnStreak: streakResult.isOnStreak,
         streakLength: streakResult.streakLength,
@@ -500,6 +536,7 @@ export function rankAIPicks(
         last5HitRate: streakResult.last5HitRate,
         last10HitRate: streakResult.last10HitRate,
         trendDirection: streakResult.trendDirection,
+        streakLabel,
       };
 
       // Attach theLAB edge info
