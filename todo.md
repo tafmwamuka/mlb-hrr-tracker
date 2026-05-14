@@ -440,3 +440,44 @@
 - [x] Cache invalidates at midnight ET so new day always gets fresh data
 - [x] Results tab polls every 2 min for live game updates (already implemented)
 - [x] All 156 tests passing
+
+## Major Update: 7 Feature Enhancements (May 13, 2026)
+
+### 1. Day/Night Split Integration
+- [x] Add MLB Stats API day/night split service (sitCodes=d,n per player)
+- [x] Determine game time (day = before 5pm local, night = after 5pm) and apply correct split
+- [x] Factor day/night split performance into pick scoring (boost/penalize based on split)
+
+### 2. Remove AI Props Tab
+- [x] Remove AI Props tab from navigation (already done in Home.tsx)
+- [x] Remove AI Props route from App.tsx
+- [x] Remove AI Props bottom bar button from Home.tsx
+
+### 3. Results History Storage
+- [x] Add dailyResults DB table (date, playerName, statType, line, actual, hit, source, probability)
+- [x] Add history router with storeDailyResults, getPerformanceSummary, getResultsByDate, getResultDates
+- [x] Auto-save today's results to DB when games go Final (in ResultsTab)
+- [x] Create History page showing past week/month performance
+
+### 4. Streak Detection
+- [x] Integrate theLAB momentum API for streakLength and trendDirection per player
+- [x] Boost score for HOT streak players (streakLength > 3, trendDirection = HOT)
+- [x] Penalize COLD streak players (streakLength < -3, trendDirection = COLD)
+- [x] Show streak indicator on pick cards (real data from backend)
+
+### 5. Dynamic Player Count (Quality Over Quantity)
+- [x] Remove fixed 35-player cap — only include players meeting all criteria
+- [x] Minimum threshold: 75%+ confidence filter in aiRankingService
+- [x] Show count dynamically
+
+### 6. theLAB Mismatch Integration
+- [x] Add theLAB service with session authentication
+- [x] Fetch mismatch board data for today's games
+- [x] Use edgeScore, strongHitCandidate, last5HitRate, opponentScore in scoring
+- [x] Use theLAB odds (line, odds, provider) as primary odds source
+
+### 7. Odds Display on All Plays
+- [x] Show American odds on Money Picks cards
+- [x] Show odds on All Plays cards
+- [ ] Show odds on Results cards (future enhancement)
+- [x] Source: theLAB mismatch board, fallback to Odds API

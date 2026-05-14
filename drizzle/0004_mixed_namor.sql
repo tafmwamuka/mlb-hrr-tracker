@@ -1,0 +1,20 @@
+CREATE TABLE `daily_results` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`gameDate` varchar(16) NOT NULL,
+	`playerId` int NOT NULL,
+	`playerName` varchar(128) NOT NULL,
+	`playerTeam` varchar(64) NOT NULL,
+	`statType` enum('hits','runs','rbi','hrr') NOT NULL,
+	`source` enum('money','allplays') NOT NULL,
+	`line` text NOT NULL,
+	`probability` int NOT NULL,
+	`actualValue` int,
+	`result` enum('pending','hit','miss') NOT NULL DEFAULT 'pending',
+	`odds` varchar(16),
+	`oddsProvider` varchar(64),
+	`streakLabel` varchar(64),
+	`dayNightLabel` varchar(64),
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `daily_results_id` PRIMARY KEY(`id`)
+);

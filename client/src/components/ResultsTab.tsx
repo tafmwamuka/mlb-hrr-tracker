@@ -219,6 +219,10 @@ export function ResultsTab() {
   });
   const { data: statsData } = trpc.results.getHitRateStats.useQuery();
 
+  // Auto-save to history DB when there are final results
+  const storeDailyResults = trpc.history.storeDailyResults.useMutation();
+  const [lastSavedDate, setLastSavedDate] = useState<string | null>(null);
+
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
   useEffect(() => {
@@ -226,6 +230,46 @@ export function ResultsTab() {
       setLastRefresh(new Date());
     }
   }, [resultsData]);
+
+  // Count of final results for stable dependency
+  const finalResultsCount = useMemo(
+    () => (resultsData?.results || []).filter((r: any) => r.gameStatus === "Final").length,
+    [resultsData]
+  );
+
+  // Auto-save settled results to history DB when games go Final
+  useEffect(() => {
+    if (!resultsData?.success || !resultsData.date) return;
+    if (finalResultsCount === 0) return;
+    // Only save once per date (avoid repeated saves on every poll)
+    if (lastSavedDate === resultsData.date) return;
+
+    const finalResults = (resultsData.results || []).filter((r: any) => r.gameStatus === "Final");
+    const plays = finalResults.map((r: any) => ({
+      playerId: r.playerId,
+      playerName: r.playerName,
+      playerTeam: r.team,
+      statType: (r.stat === "hrr" ? "hrr" : r.stat) as "hits" | "runs" | "rbi" | "hrr",
+      source: (r.source === "money" ? "money" : "allplays") as "money" | "allplays",
+      line: String(r.line),
+      probability: r.probability,
+      actualValue: r.actualValue ?? null,
+      result: (r.hit === true ? "hit" : r.hit === false ? "miss" : "pending") as "pending" | "hit" | "miss",
+      odds: null,
+      oddsProvider: null,
+      streakLabel: null,
+      dayNightLabel: null,
+    }));
+
+    storeDailyResults.mutate(
+      { gameDate: resultsData.date, plays },
+      {
+        onSuccess: () => setLastSavedDate(resultsData.date),
+        onError: (err) => console.warn("[ResultsTab] Auto-save failed:", err),
+      }
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultsData?.date, finalResultsCount, lastSavedDate]);
 
   if (isLoading) {
     return (

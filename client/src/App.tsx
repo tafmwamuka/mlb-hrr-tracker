@@ -8,16 +8,16 @@ import { NotificationProvider } from "./contexts/NotificationContext";
 import { NotificationCenter } from "./components/NotificationCenter";
 import { useNotifications } from "./contexts/NotificationContext";
 import Home from "./pages/Home";
-import Props from "./pages/Props";
 import Favorites from "./pages/Favorites";
+import History from "./pages/History";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
       <Route path={"/"} component={Home} />
-      <Route path={"/props"} component={Props} />
       <Route path={"/favorites"} component={Favorites} />
+      <Route path={"/history"} component={History} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

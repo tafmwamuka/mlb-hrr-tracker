@@ -26,10 +26,9 @@ import { ParlaysTab } from "@/components/ParlaysTab";
 import { MoneyPicksTab } from "@/components/MoneyPicksTab";
 import { ResultsTab } from "@/components/ResultsTab";
 import { GameCards } from "@/components/GameCards";
-import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Calendar, Trophy, Zap as ZapIcon, Layers, Ticket, Activity } from "lucide-react";
-import { useLocation } from "wouter";
+import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, Layers, Ticket } from "lucide-react";
 
-type TabType = "topPlays" | "allPlays" | "ai" | "parlays" | "results";
+type TabType = "topPlays" | "allPlays" | "parlays" | "results";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -73,11 +72,6 @@ const TAB_CONFIG = {
     label: "All Plays",
     icon: Layers,
     color: "oklch(0.75 0.20 290)",
-  },
-  ai: {
-    label: "AI Props",
-    icon: Sparkles,
-    color: "oklch(0.68 0.22 25)",
   },
   parlays: {
     label: "Parlays",
@@ -540,7 +534,6 @@ function LeaderboardTabContent() {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>("topPlays");
-  const [, navigate] = useLocation();
 
   return (
     <div
@@ -662,30 +655,6 @@ export default function Home() {
             </motion.div>
           )}
 
-          {activeTab === "ai" && (
-            <motion.div
-              key="ai"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 overflow-y-auto flex flex-col items-center justify-center"
-            >
-              <div className="text-center p-8">
-                <Sparkles size={48} className="mx-auto mb-4" style={{ color: "oklch(0.68 0.22 25)" }} />
-                <h3 className="text-white font-bold text-lg mb-2">AI Prop Predictions</h3>
-                <p className="text-[oklch(0.50_0.015_255)] text-sm mb-6">Full analysis with individual H/R/RBI props, detailed matchup breakdowns, and Statcast metrics</p>
-                <button
-                  onClick={() => navigate("/props")}
-                  className="px-6 py-3 rounded-xl font-semibold text-sm text-white transition-all active:scale-95"
-                  style={{ background: "linear-gradient(135deg, oklch(0.68 0.22 25), oklch(0.68 0.22 25 / 0.7))" }}
-                >
-                  View AI Prop Predictions →
-                </button>
-              </div>
-            </motion.div>
-          )}
-
           {activeTab === "parlays" && (
             <motion.div
               key="parlays"
@@ -715,26 +684,24 @@ export default function Home() {
         </AnimatePresence>
       </main>
 
-      {/* ── Bottom Bar ────────────────────────────────────────────────────── */}
-      <div className="shrink-0 px-4 py-3 relative" style={{ background: "oklch(0.10 0.022 255)" }}>
-        {/* Top gradient border */}
-        <div className="absolute top-0 left-0 right-0 h-px" style={{ background: "linear-gradient(90deg, transparent, oklch(0.68 0.22 25 / 30%), transparent)" }} />
-        <motion.button
-          onClick={() => navigate("/props")}
-          className="w-full flex items-center justify-center gap-2.5 rounded-xl py-3 px-4 font-semibold text-sm transition-all duration-300 active:scale-95 relative overflow-hidden"
-          style={{
-            background: "linear-gradient(135deg, oklch(0.68_0.22_25 / 90%), oklch(0.55_0.20_25 / 80%))",
-            border: "1px solid oklch(0.68 0.22 25 / 40%)",
-            boxShadow: "0 4px 20px oklch(0.68 0.22 25 / 20%), inset 0 1px 0 oklch(1 0 0 / 10%)",
-          }}
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.97 }}
-        >
-          <Sparkles size={16} className="text-white" />
-          <span className="text-white">Full AI Prop Analysis</span>
-          <span className="ml-auto text-xs text-white/60">→</span>
-        </motion.button>
-      </div>
+      {/* ── Bottom nav links ─────────────────────────────────────────────── */}
+      <nav
+        className="shrink-0 flex items-center justify-around px-4 py-3 border-t"
+        style={{ background: "oklch(0.10 0.020 255)", borderColor: "oklch(1 0 0 / 8%)" }}
+      >
+        <Link href="/history">
+          <button className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors" style={{ color: "oklch(0.55 0.015 255)" }}>
+            <Trophy size={16} />
+            <span className="text-[10px] font-semibold">History</span>
+          </button>
+        </Link>
+        <Link href="/favorites">
+          <button className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors" style={{ color: "oklch(0.55 0.015 255)" }}>
+            <Sparkles size={16} />
+            <span className="text-[10px] font-semibold">Favorites</span>
+          </button>
+        </Link>
+      </nav>
     </div>
   );
 }

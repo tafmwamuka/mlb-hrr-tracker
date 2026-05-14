@@ -24,7 +24,6 @@ export default function Favorites() {
   const topThreeQuery = trpc.favorites.getTopThreePlays.useQuery();
   const historyQuery = trpc.favorites.getFavoritesHistory.useQuery();
   const hitRateQuery = trpc.favorites.getUserHitRate.useQuery();
-  const modelPerformanceQuery = trpc.props.getModelPerformance.useQuery();
 
   // Mutations
   const removeFavoriteMutation = trpc.favorites.removeFavorite.useMutation({
@@ -45,7 +44,6 @@ export default function Favorites() {
   const topThreePlays = topThreeQuery.data || [];
   const allHistory = historyQuery.data || [];
   const hitRate = hitRateQuery.data || { total: 0, hits: 0, misses: 0, hitRate: 0 };
-  const modelPerformance = modelPerformanceQuery.data || { overallHitRate: 0, hitsHitRate: 0, runsHitRate: 0, rbiHitRate: 0 };
 
   const handleRemove = (id: number) => {
     removeFavoriteMutation.mutate({ favoriteId: id });
@@ -259,7 +257,7 @@ export default function Favorites() {
                       No plays marked yet
                     </p>
                     <p className="text-[oklch(0.40_0.015_255)] text-xs mt-1">
-                      Go to Props and star your favorite predictions
+                      Go to Money Picks and add your favorite predictions
                     </p>
                   </div>
                 ) : (

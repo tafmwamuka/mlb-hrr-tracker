@@ -201,3 +201,30 @@ export const notifications = mysqlTable("notifications", {
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+/**
+ * Daily Results table — stores the outcome of each day's picks for historical tracking
+ * Populated automatically when games go Final (via the live results service)
+ */
+export const dailyResults = mysqlTable("daily_results", {
+  id: int("id").autoincrement().primaryKey(),
+  gameDate: varchar("gameDate", { length: 16 }).notNull(), // YYYY-MM-DD
+  playerId: int("playerId").notNull(),
+  playerName: varchar("playerName", { length: 128 }).notNull(),
+  playerTeam: varchar("playerTeam", { length: 64 }).notNull(),
+  statType: mysqlEnum("statType", ["hits", "runs", "rbi", "hrr"]).notNull(),
+  source: mysqlEnum("source", ["money", "allplays"]).notNull(),
+  line: text("line").notNull(), // e.g. "OVER 0.5"
+  probability: int("probability").notNull(), // 0-100
+  actualValue: int("actualValue"), // null until game is Final
+  result: mysqlEnum("result", ["pending", "hit", "miss"]).default("pending").notNull(),
+  odds: varchar("odds", { length: 16 }), // American odds e.g. "-164" or "+120"
+  oddsProvider: varchar("oddsProvider", { length: 64 }),
+  streakLabel: varchar("streakLabel", { length: 64 }),
+  dayNightLabel: varchar("dayNightLabel", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DailyResult = typeof dailyResults.$inferSelect;
+export type InsertDailyResult = typeof dailyResults.$inferInsert;

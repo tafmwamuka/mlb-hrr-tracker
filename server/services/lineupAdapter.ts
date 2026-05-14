@@ -50,6 +50,7 @@ interface MatchupData {
   };
   rc: number;
   confidence: number;
+  gameTime?: string; // ISO string of game start time (UTC)
 }
 
 // Cache for adapted data
@@ -137,6 +138,7 @@ function toMatchupData(player: PlayerWithContext): MatchupData {
     },
     rc: rcEstimate,
     confidence: baseConfidence,
+    gameTime: player.game.gameDate ?? undefined,
   };
 }
 

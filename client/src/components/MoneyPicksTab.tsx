@@ -49,6 +49,29 @@ interface MoneyPick {
   recommendedLine: number;
   recommendedProb: number;
   streak: string; // e.g., "4 of last 5"
+  // Real data from backend
+  odds?: string | null; // American odds e.g. "-115"
+  oddsProvider?: string | null;
+  streakInfo?: {
+    isOnStreak: boolean;
+    streakLength: number;
+    streakType: 'hot' | 'cold' | 'neutral';
+    last5HitRate: number;
+    trendDirection: 'up' | 'down' | 'stable';
+  } | null;
+  dayNightSplit?: {
+    gameTimeType: 'day' | 'night';
+    splitAvg: number;
+    splitBoost: number;
+    favorable: boolean;
+  } | null;
+  theLabEdge?: {
+    edgeScore: number;
+    strongHitCandidate: boolean;
+    last5HitRate: number;
+    odds?: string;
+    provider?: string;
+  } | null;
 }
 
 function getProbColor(prob: number): string {
@@ -141,24 +164,68 @@ function MoneyPickCard({
             >
               HRR O {pick.recommendedLine}
             </div>
-            <div className="flex items-center gap-1">
-              <CheckCircle2 size={10} style={{ color: probColor }} />
-              <span className="text-xs font-bold" style={{ color: probColor }}>
-                {pick.recommendedProb}% hit rate
-              </span>
-            </div>
+            {/* Real American odds */}
+            {pick.odds ? (
+              <div className="flex items-center gap-1">
+                <DollarSign size={10} style={{ color: "oklch(0.82 0.17 85)" }} />
+                <span className="text-xs font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
+                  {pick.odds}
+                </span>
+                {pick.oddsProvider && (
+                  <span className="text-[9px] text-[oklch(0.45_0.015_255)]">{pick.oddsProvider}</span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <CheckCircle2 size={10} style={{ color: probColor }} />
+                <span className="text-xs font-bold" style={{ color: probColor }}>
+                  {pick.recommendedProb}% hit rate
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Streak indicator + Confidence badge row */}
         <div className="flex items-center gap-2 mb-3 flex-wrap">
-          {/* Streak badge */}
-          <div className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: "oklch(0.82 0.17 85 / 12%)", border: "1px solid oklch(0.82 0.17 85 / 25%)" }}>
-            <Flame size={10} style={{ color: "oklch(0.82 0.17 85)" }} />
-            <span className="text-[10px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
-              Hit {pick.streak}
-            </span>
-          </div>
+          {/* Streak badge - real data from theLAB if available */}
+          {pick.streakInfo?.streakType === 'hot' ? (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: "oklch(0.68 0.22 25 / 15%)", border: "1px solid oklch(0.68 0.22 25 / 35%)" }}>
+              <Flame size={10} style={{ color: "oklch(0.82 0.17 85)" }} />
+              <span className="text-[10px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
+                {pick.streak}
+              </span>
+            </div>
+          ) : pick.streakInfo?.streakType === 'cold' ? (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: "oklch(0.55 0.15 240 / 15%)", border: "1px solid oklch(0.55 0.15 240 / 35%)" }}>
+              <span className="text-[10px] font-bold" style={{ color: "oklch(0.65 0.12 240)" }}>
+                {pick.streak}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: "oklch(0.82 0.17 85 / 12%)", border: "1px solid oklch(0.82 0.17 85 / 25%)" }}>
+              <Flame size={10} style={{ color: "oklch(0.82 0.17 85)" }} />
+              <span className="text-[10px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
+                {pick.streak}
+              </span>
+            </div>
+          )}
+
+          {/* Day/night split badge */}
+          {pick.dayNightSplit && (
+            <div
+              className="flex items-center gap-1 px-2 py-1 rounded-lg"
+              style={{
+                background: pick.dayNightSplit.favorable ? "oklch(0.72 0.18 165 / 12%)" : "oklch(0.18 0.02 255)",
+                border: `1px solid ${pick.dayNightSplit.favorable ? "oklch(0.72 0.18 165 / 30%)" : "oklch(1 0 0 / 8%)"}`,
+              }}
+            >
+              <span className="text-[10px] font-bold" style={{ color: pick.dayNightSplit.favorable ? "oklch(0.72 0.18 165)" : "oklch(0.50 0.015 255)" }}>
+                {pick.dayNightSplit.gameTimeType === 'day' ? '☀️' : '🌙'} {pick.dayNightSplit.splitAvg.toFixed(3)}
+                {pick.dayNightSplit.splitBoost > 0.05 ? ' 🌟' : pick.dayNightSplit.splitBoost < -0.05 ? ' ⚠️' : ''}
+              </span>
+            </div>
+          )}
 
           <div
             className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide"
@@ -169,6 +236,12 @@ function MoneyPickCard({
           {pick.edge > 0 && (
             <div className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: "oklch(0.72 0.18 165 / 15%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 30%)" }}>
               +{pick.edge}% edge
+            </div>
+          )}
+          {/* theLAB strong hit candidate badge */}
+          {pick.theLabEdge?.strongHitCandidate && (
+            <div className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: "oklch(0.82 0.17 85 / 20%)", color: "oklch(0.82 0.17 85)", border: "1px solid oklch(0.82 0.17 85 / 40%)" }}>
+              ⭐ theLAB Pick
             </div>
           )}
           <div className="px-2 py-0.5 rounded text-[10px] text-[oklch(0.50_0.015_255)]" style={{ background: "oklch(0.18 0.02 255)" }}>
@@ -348,7 +421,21 @@ export function MoneyPicksTab() {
         if (qualifyingLines.length === 0) return null;
 
         const recommended = qualifyingLines[0];
-        const streak = generateStreak(pick.expectedTotal, recommended.line, recommended.overProb);
+        // Use real streak from backend if available, otherwise generate from probability
+        const streakInfo = pick.streakInfo ?? null;
+        const theLabEdge = pick.theLabEdge ?? null;
+        const dayNightSplit = pick.dayNightSplit ?? null;
+        // Real odds from theLAB or bookOdds
+        const realOdds = theLabEdge?.odds ?? (pick.bookOdds ? String(pick.bookOdds) : null);
+        const oddsProvider = theLabEdge?.provider ?? pick.lineSource ?? null;
+        // Streak label: use real data if available
+        const streak = streakInfo
+          ? (streakInfo.isOnStreak && streakInfo.streakLength >= 3
+              ? `🔥 ${streakInfo.streakLength}-game streak`
+              : streakInfo.streakType === 'cold'
+              ? `❄️ Cold (last 5: ${streakInfo.last5HitRate}%)`
+              : `${streakInfo.last5HitRate}% last 5`)
+          : generateStreak(pick.expectedTotal, recommended.line, recommended.overProb);
 
         return {
           playerName: pick.playerName,
@@ -376,6 +463,11 @@ export function MoneyPicksTab() {
           recommendedLine: recommended.line,
           recommendedProb: recommended.overProb,
           streak,
+          odds: realOdds,
+          oddsProvider,
+          streakInfo,
+          dayNightSplit,
+          theLabEdge,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)

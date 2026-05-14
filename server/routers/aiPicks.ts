@@ -6,6 +6,8 @@
 import { router, publicProcedure } from "../_core/trpc";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import type { AIPick } from "../services/aiRankingService";
+import { batchGetDayNightSplits } from "../services/dayNightSplitService";
+import { batchGetTheLabData } from "../services/theLabService";
 import { getMockSavantData, calculateCombinedScore, type SavantHitter, type SavantPitcher } from "../services/savantService";
 import { generateHRRProjections } from "../services/hrrService";
 import { fetchHRRMarketData, getBestHRRLine, americanToImpliedProbability, removeVig } from "../services/oddsApiService";
@@ -723,11 +725,27 @@ export const aiPicksRouter = router({
       const matchups = lineupData.matchups;
       const players = lineupData.playerDataMap;
 
+      // Fetch day/night splits and theLAB data in parallel (non-blocking)
+      const season = new Date().getFullYear();
+      const [dayNightSplitsMap, theLabDataMap] = await Promise.all([
+        batchGetDayNightSplits(
+          matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
+          'hits',
+          season
+        ).catch(() => new Map()),
+        batchGetTheLabData(
+          matchups.map(m => ({ playerName: m.playerName, teamAbbr: m.team, statType: 'hits' as const })),
+          dataDate
+        ).catch(() => new Map()),
+      ]);
+
       const picks = rankAIPicks(
         matchups,
         players,
         getMockHRTargets(),
-        getMockParkFactors()
+        getMockParkFactors(),
+        dayNightSplitsMap,
+        theLabDataMap
       );
       
       // Enrich all picks with Savant data

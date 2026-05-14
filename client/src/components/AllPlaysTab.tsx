@@ -105,7 +105,42 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
           </div>
 
           {/* Quick stats row */}
-          <div className="flex items-center gap-3 mt-2 pl-10">
+          <div className="flex items-center gap-3 mt-2 pl-10 flex-wrap">
+            {/* Odds badge */}
+            {(pick.odds?.overOdds || pick.theLabEdge?.odds) && (
+              <span className="text-[10px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
+                {pick.odds?.overOdds || pick.theLabEdge?.odds}
+                {(pick.odds?.provider || pick.theLabEdge?.provider) && (
+                  <span className="text-[9px] text-[oklch(0.45_0.015_255)] ml-0.5">
+                    {pick.odds?.provider || pick.theLabEdge?.provider}
+                  </span>
+                )}
+              </span>
+            )}
+            {/* Day/night split */}
+            {pick.dayNightSplit && (
+              <span className="text-[10px]" style={{ color: pick.dayNightSplit.favorable ? "oklch(0.72 0.18 165)" : "oklch(0.50 0.015 255)" }}>
+                {pick.dayNightSplit.gameTimeType === 'day' ? '☀️' : '🌙'} {pick.dayNightSplit.splitAvg?.toFixed(3)}
+                {pick.dayNightSplit.splitBoost > 0.05 ? ' 🌟' : pick.dayNightSplit.splitBoost < -0.05 ? ' ⚠️' : ''}
+              </span>
+            )}
+            {/* Streak info */}
+            {pick.streakInfo?.streakType === 'hot' && pick.streakInfo.streakLength >= 3 && (
+              <span className="text-[10px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
+                🔥 {pick.streakInfo.streakLength}-game
+              </span>
+            )}
+            {pick.streakInfo?.streakType === 'cold' && (
+              <span className="text-[10px] font-bold" style={{ color: "oklch(0.65 0.12 240)" }}>
+                ❄️ Cold
+              </span>
+            )}
+            {/* theLAB strong hit */}
+            {pick.theLabEdge?.strongHitCandidate && (
+              <span className="text-[10px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
+                ⭐ theLAB
+              </span>
+            )}
             {pick.savantMetrics && (
               <>
                 <span className="text-[10px] text-[oklch(0.50_0.015_255)]">
@@ -113,9 +148,6 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
                 </span>
                 <span className="text-[10px] text-[oklch(0.50_0.015_255)]">
                   EV <span className={`font-stat font-bold ${pick.savantMetrics.exitVelocity >= 90 ? 'text-emerald-400' : 'text-white'}`}>{pick.savantMetrics.exitVelocity.toFixed(1)}</span>
-                </span>
-                <span className="text-[10px] text-[oklch(0.50_0.015_255)]">
-                  HH% <span className={`font-stat font-bold ${pick.savantMetrics.hardHitPct >= 44 ? 'text-emerald-400' : 'text-white'}`}>{pick.savantMetrics.hardHitPct.toFixed(0)}%</span>
                 </span>
               </>
             )}

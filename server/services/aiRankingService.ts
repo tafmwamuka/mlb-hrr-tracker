@@ -1,8 +1,12 @@
 /**
  * AI Ranking Service
  * Integrates all data sources to create comprehensive AI picks
- * Factors: RC, player stats, park factors, HR Targets, pitcher matchup, batting position
+ * Factors: RC, player stats, park factors, HR Targets, pitcher matchup, batting position,
+ *          day/night splits, theLAB edge/streak, dynamic count (quality over quantity)
  */
+
+import type { PlayerDayNightSplits } from "./dayNightSplitService";
+import type { TheLabPlayerData } from "./theLabService";
 
 interface PlayerData {
   playerId: number;
@@ -55,6 +59,7 @@ interface MatchupData {
     windSpeed: number; // MPH
     windDirection: string; // N, S, E, W, etc.
   };
+  gameTime?: string; // ISO string of game start time
 }
 
 interface HRTargetData {
@@ -86,8 +91,47 @@ export interface AIPick {
     hrTargets: number; // HR Targets grade score (0-100)
     pitcherMatchup: number; // Pitcher weakness score (0-100)
     battingPosition: number; // Position weighting (0-100)
+    dayNightSplit?: number; // Day/night split score (0-100)
+    streakBonus?: number; // Streak/hot hand bonus (0-100)
+    theLabEdge?: number; // theLAB edge score (0-100)
   };
   overallScore: number; // Weighted average (0-100)
+  // Day/night split data
+  dayNightSplit?: {
+    gameTimeType: 'day' | 'night';
+    splitAvg: number;
+    splitOPS: number;
+    splitHits: number;
+    splitGames: number;
+    splitBoost: number; // +/- vs season avg (percentage points)
+    favorable: boolean;
+  };
+  // Streak/hot hand data
+  streakInfo?: {
+    isOnStreak: boolean;
+    streakLength: number; // consecutive games with hit
+    streakType: 'hot' | 'cold' | 'neutral';
+    last5HitRate: number; // 0-100
+    last10HitRate: number; // 0-100
+    trendDirection: 'up' | 'down' | 'stable';
+  };
+  // theLAB edge data
+  theLabEdge?: {
+    edgeScore: number; // 0-100
+    strongHitCandidate: boolean;
+    last5HitRate: number;
+    odds?: string; // e.g. "-115"
+    provider?: string; // e.g. "DraftKings"
+    line?: number;
+  };
+  // Odds data
+  odds?: {
+    line: number;
+    overOdds?: string; // e.g. "-115"
+    impliedProbability?: number; // 0-100
+    provider?: string;
+    edge?: number; // model edge vs book (percentage points)
+  };
   // Savant metrics (combined source)
   savantMetrics?: {
     xwOBA: number;
@@ -179,13 +223,126 @@ function pitcherMatchupToScore(confidence: number): number {
 }
 
 /**
+ * Determine if a game time is day or night
+ * Day games: before 5pm local time
+ */
+function getGameTimeType(gameTime?: string): 'day' | 'night' {
+  if (!gameTime) return 'night'; // Default to night if unknown
+  const hour = new Date(gameTime).getUTCHours();
+  // Adjust for ET (UTC-4 or UTC-5): day games typically start before 5pm ET
+  // 5pm ET = 21:00 or 22:00 UTC
+  const etHour = (hour - 4 + 24) % 24; // Approximate ET
+  return etHour < 17 ? 'day' : 'night';
+}
+
+/**
+ * Calculate day/night split score (0-100)
+ * Returns a score and boost based on how well the player performs in this game's time slot
+ */
+function calculateDayNightScore(
+  splits: PlayerDayNightSplits | null,
+  gameTimeType: 'day' | 'night',
+  seasonAvg: number
+): { score: number; boost: number; favorable: boolean; splitAvg: number; splitOPS: number; splitHits: number; splitGames: number } {
+  if (!splits) {
+    return { score: 50, boost: 0, favorable: false, splitAvg: seasonAvg, splitOPS: 0, splitHits: 0, splitGames: 0 };
+  }
+
+  const split = gameTimeType === 'day' ? splits.day : splits.night;
+  if (!split || split.gamesPlayed < 5) {
+    // Not enough data — neutral
+    return { score: 50, boost: 0, favorable: false, splitAvg: seasonAvg, splitOPS: 0, splitHits: 0, splitGames: split?.gamesPlayed || 0 };
+  }
+
+  // How much better/worse is the player in this time slot vs season avg?
+  const splitAvgNum = parseFloat(split.avg) || 0;
+  const boost = seasonAvg > 0 ? ((splitAvgNum - seasonAvg) / seasonAvg) * 100 : 0;
+  const favorable = boost > 5; // 5%+ better = favorable
+
+  // Score: base 50, +/- based on boost magnitude
+  const score = Math.min(100, Math.max(0, 50 + boost * 1.5));
+
+  return {
+    score,
+    boost: Math.round(boost),
+    favorable,
+    splitAvg: splitAvgNum,
+    splitOPS: parseFloat(split.ops) || 0,
+    splitHits: split.hits,
+    splitGames: split.gamesPlayed,
+  };
+}
+
+/**
+ * Calculate streak/hot hand score (0-100)
+ * Players on a streak get a bonus; cold players get a penalty
+ */
+function calculateStreakScore(theLabData: TheLabPlayerData | null): {
+  score: number;
+  isOnStreak: boolean;
+  streakLength: number;
+  streakType: 'hot' | 'cold' | 'neutral';
+  last5HitRate: number;
+  last10HitRate: number;
+  trendDirection: 'up' | 'down' | 'stable';
+} {
+  if (!theLabData) {
+    return { score: 50, isOnStreak: false, streakLength: 0, streakType: 'neutral', last5HitRate: 50, last10HitRate: 50, trendDirection: 'stable' };
+  }
+
+  const last5 = theLabData.last5HitRate ?? 50;
+  const streakLen = theLabData.streakLength ?? 0;
+  const trend = theLabData.trendDirection ?? 'NEUTRAL'; // HOT | COLD | NEUTRAL
+
+  // Streak type
+  let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
+  if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') streakType = 'hot';
+  else if (last5 <= 30 || streakLen <= -3 || trend === 'COLD') streakType = 'cold';
+
+  // Score: base 50, boosted by last5 hit rate and streak
+  let score = 50;
+  score += (last5 - 50) * 0.8; // last5 hit rate carries most weight
+  if (streakLen >= 3) score += 10; // hot streak bonus
+  if (streakLen <= -3) score -= 10; // cold streak penalty
+  if (trend === 'HOT') score += 5;
+  if (trend === 'COLD') score -= 5;
+
+  // Map HOT/COLD/NEUTRAL to up/down/stable for frontend
+  const trendDirection = trend === 'HOT' ? 'up' : trend === 'COLD' ? 'down' : 'stable';
+
+  return {
+    score: Math.min(100, Math.max(0, Math.round(score))),
+    isOnStreak: streakLen >= 3,
+    streakLength: Math.abs(streakLen),
+    streakType,
+    last5HitRate: Math.round(last5),
+    last10HitRate: Math.round(last5), // use last5 as proxy since theLabData only has last5
+    trendDirection,
+  };
+}
+
+/**
+ * Calculate theLAB edge score (0-100)
+ */
+function calculateTheLabScore(theLabData: TheLabPlayerData | null): number {
+  if (!theLabData) return 50;
+  const edgeScore = theLabData.edgeScore ?? 50;
+  const strongHit = theLabData.strongHitCandidate ? 10 : 0;
+  return Math.min(100, Math.max(0, edgeScore + strongHit));
+}
+
+/**
  * Rank AI picks using comprehensive algorithm
+ * Now includes day/night splits, theLAB edge, streak detection, and dynamic count
  */
 export function rankAIPicks(
   matchups: MatchupData[],
   playerDataMap: Map<number, PlayerData>,
   hrTargetsMap: Map<string, HRTargetData>,
-  parkFactors: Map<string, number>
+  parkFactors: Map<string, number>,
+  // New optional enrichment data
+  dayNightSplitsMap?: Map<number, PlayerDayNightSplits>,
+  theLabMismatchMap?: Map<string, TheLabPlayerData>
 ): AIPick[] {
   const picks = matchups
     .map((matchup) => {
@@ -195,7 +352,7 @@ export function rankAIPicks(
 
       if (!playerData) return null;
 
-      // Calculate factor scores
+      // ── Core factor scores ────────────────────────────────────────────────
       const rcScore = rcToScore(matchup.rc);
       const playerStatsScore = playerStatsToScore(playerData.stats);
       const parkFactorScore = parkFactorToScore(parkFactor);
@@ -203,16 +360,32 @@ export function rankAIPicks(
       const battingPositionScore = getBattingPositionWeight(matchup.battingPosition);
       const hrTargetsScore = hrTargets ? gradeToScore(hrTargets.grade) : 50;
 
-      // Calculate weighted overall score
-      const overallScore =
-        rcScore * 0.20 +
-        playerStatsScore * 0.20 +
-        parkFactorScore * 0.15 +
-        hrTargetsScore * 0.20 +
-        pitcherMatchupScore * 0.15 +
-        battingPositionScore * 0.10;
+      // ── Day/night split ───────────────────────────────────────────────────
+      const gameTimeType = getGameTimeType(matchup.gameTime);
+      const splits: PlayerDayNightSplits | null = dayNightSplitsMap?.get(matchup.playerId) ?? null;
+      const dayNightResult = calculateDayNightScore(splits, gameTimeType, playerData.stats.avg);
+      const dayNightScore = dayNightResult.score;
 
-      // Generate reasoning
+      // ── Streak / theLAB data ──────────────────────────────────────────────
+      const theLabData: TheLabPlayerData | null = theLabMismatchMap?.get(matchup.playerName) ?? null;
+      const streakResult = calculateStreakScore(theLabData);
+      const streakScore = streakResult.score;
+      const theLabScore = calculateTheLabScore(theLabData);
+
+      // ── Weighted overall score ────────────────────────────────────────────
+      // Updated weights to include new factors (total = 1.0)
+      const overallScore =
+        rcScore * 0.15 +
+        playerStatsScore * 0.15 +
+        parkFactorScore * 0.12 +
+        hrTargetsScore * 0.15 +
+        pitcherMatchupScore * 0.12 +
+        battingPositionScore * 0.08 +
+        dayNightScore * 0.10 +   // Day/night split
+        streakScore * 0.08 +     // Streak/hot hand
+        theLabScore * 0.05;      // theLAB edge
+
+      // ── Reasoning ────────────────────────────────────────────────────────
       const reasons: string[] = [];
       if (rcScore > 80) reasons.push("High RC vs this pitcher");
       if (playerStatsScore > 80) reasons.push("Strong season stats");
@@ -220,16 +393,18 @@ export function rankAIPicks(
       if (hrTargetsScore > 85) reasons.push("Top HR threat");
       if (pitcherMatchupScore > 75) reasons.push("Favorable matchup");
       if (battingPositionScore > 85) reasons.push("High in lineup");
+      if (dayNightResult.favorable) reasons.push(`Strong ${gameTimeType} performer (+${dayNightResult.boost}%)`);
+      if (streakResult.isOnStreak) reasons.push(`On ${streakResult.streakLength}-game hit streak`);
+      if (streakResult.last5HitRate >= 70) reasons.push(`${streakResult.last5HitRate}% hit rate last 5`);
+      if (theLabData?.strongHitCandidate) reasons.push("theLAB strong hit candidate");
 
-      const reasoning = reasons.join(" • ");
+      const reasoning = reasons.join(" • ") || "Solid matchup";
 
       // Build ballpark-specific reasoning
       const parkFactorValue = parkFactorScore > 70 ? "hitter-friendly" : parkFactorScore < 50 ? "pitcher-friendly" : "neutral";
       const ballparkReasoning = `Playing at ${parkFactorValue} park. RC ranking: ${Math.round(matchup.rc)}/100. ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ""}`;
 
-      // Determine best stat type based on player data (H/R/RBI only - no Slg %)
-      // Priority order: Hits > Runs > RBI (RBI is riskiest)
-      // Apply priority bonus so Hits are strongly preferred unless another stat is significantly better
+      // ── Best stat type ────────────────────────────────────────────────────
       const stats = playerData.stats;
       const STAT_PRIORITY_BONUS = { hits: 25, runs: 10, rbi: 0 };
       const statScores = {
@@ -239,48 +414,27 @@ export function rankAIPicks(
       };
       const bestStat = Object.entries(statScores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as 'hits' | 'runs' | 'rbi';
 
-      // Calculate realistic prop line based on season average and park factor
-      // Standard MLB prop lines are typically: Hits 3.5, Runs 2.5, RBI 3.5
+      // ── Realistic prop line ───────────────────────────────────────────────
       const calculateRealisticLine = (stat: 'hits' | 'runs' | 'rbi', value: number, parkFactor: number): number => {
-        // Calculate per-game average from season totals
-        // Assuming ~40 games played so far in season (early-mid season)
         const gamesPlayed = 40;
         const perGameAvg = value / gamesPlayed;
-        
-        // Real sportsbook lines are set slightly below the player's average
-        // to create balanced action. Common lines:
-        // Hits: 0.5, 1.5, 2.5 (most players 1.5)
-        // Runs: 0.5, 1.5 (most players 0.5)
-        // RBI: 0.5, 1.5 (most players 0.5)
         let line: number;
-        
         if (stat === 'hits') {
-          // Avg hits per game: ~1.0-1.5 for good hitters
-          if (perGameAvg >= 1.5) line = 1.5;
-          else if (perGameAvg >= 1.0) line = 1.5;
-          else line = 0.5;
+          line = perGameAvg >= 1.0 ? 1.5 : 0.5;
         } else if (stat === 'runs') {
-          // Avg runs per game: ~0.5-0.8 for good hitters
-          if (perGameAvg >= 0.9) line = 1.5;
-          else line = 0.5;
+          line = perGameAvg >= 0.9 ? 1.5 : 0.5;
         } else {
-          // RBI: Avg per game ~0.5-0.7 for good hitters, elite ~0.8+
-          if (perGameAvg >= 0.9) line = 1.5;
-          else line = 0.5;
+          line = perGameAvg >= 0.9 ? 1.5 : 0.5;
         }
-        
-        // Park factor can bump up the line for hitter-friendly parks
-        if (parkFactor > 1.1 && line === 0.5) {
-          line = 1.5;
-        }
-        
+        if (parkFactor > 1.1 && line === 0.5) line = 1.5;
         return line;
       };
 
       const adjustedParkFactor = parkFactorScore / 100;
       const line = calculateRealisticLine(bestStat, stats[bestStat], adjustedParkFactor);
 
-      return {
+      // ── Build pick object ─────────────────────────────────────────────────
+      const pick: AIPick = {
         rank: 0,
         playerId: matchup.playerId,
         playerName: matchup.playerName,
@@ -308,9 +462,58 @@ export function rankAIPicks(
           hrTargets: Math.round(hrTargetsScore),
           pitcherMatchup: Math.round(pitcherMatchupScore),
           battingPosition: Math.round(battingPositionScore),
+          dayNightSplit: Math.round(dayNightScore),
+          streakBonus: Math.round(streakScore),
+          theLabEdge: Math.round(theLabScore),
         },
         overallScore: Math.round(overallScore),
-      } as AIPick;
+      };
+
+      // Attach day/night split info if available
+      if (splits || dayNightResult.splitGames > 0) {
+        pick.dayNightSplit = {
+          gameTimeType,
+          splitAvg: dayNightResult.splitAvg,
+          splitOPS: dayNightResult.splitOPS,
+          splitHits: dayNightResult.splitHits,
+          splitGames: dayNightResult.splitGames,
+          splitBoost: dayNightResult.boost,
+          favorable: dayNightResult.favorable,
+        };
+      }
+
+      // Attach streak info
+      pick.streakInfo = {
+        isOnStreak: streakResult.isOnStreak,
+        streakLength: streakResult.streakLength,
+        streakType: streakResult.streakType,
+        last5HitRate: streakResult.last5HitRate,
+        last10HitRate: streakResult.last10HitRate,
+        trendDirection: streakResult.trendDirection,
+      };
+
+      // Attach theLAB edge info
+      if (theLabData) {
+        const oddsStr = theLabData.odds != null ? String(theLabData.odds) : undefined;
+        pick.theLabEdge = {
+          edgeScore: theLabData.edgeScore ?? 50,
+          strongHitCandidate: theLabData.strongHitCandidate ?? false,
+          last5HitRate: theLabData.last5HitRate ?? 50,
+          odds: oddsStr,
+          provider: theLabData.oddsProvider ?? undefined,
+          line: theLabData.mismatch?.line,
+        };
+        // Use theLAB odds if available
+        if (oddsStr) {
+          pick.odds = {
+            line,
+            overOdds: oddsStr,
+            provider: theLabData.oddsProvider ?? undefined,
+          };
+        }
+      }
+
+      return pick;
     })
     .filter((pick): pick is AIPick => pick !== null)
     .sort((a, b) => {
@@ -325,10 +528,18 @@ export function rankAIPicks(
     .map((pick, index) => ({
       ...pick,
       rank: index + 1,
-    }))
-    .slice(0, 20); // Top 20 picks for All Plays variety
+    }));
 
-  return picks;
+  // ── Dynamic count: only return picks that clear 75% threshold ─────────────
+  // Quality over quantity — no fixed 20/35 player cap
+  const qualityPicks = picks.filter(p => p.overallScore >= 75);
+
+  // If fewer than 5 quality picks, include the top 5 regardless (minimum viable slate)
+  if (qualityPicks.length < 5) {
+    return picks.slice(0, Math.min(5, picks.length));
+  }
+
+  return qualityPicks;
 }
 
 /**
@@ -348,16 +559,39 @@ export function getMockHRTargets(): Map<string, HRTargetData> {
  * Mock park factors
  */
 export function getMockParkFactors(): Map<string, number> {
-  const factors = new Map<string, number>();
-  factors.set("NYY", 1.15); // Yankee Stadium - hitter friendly
-  factors.set("BOS", 1.12); // Fenway - hitter friendly
-  factors.set("TB", 0.88); // Tropicana - pitcher friendly
-  factors.set("KC", 0.95); // Kauffman - neutral
-  factors.set("MIN", 1.05); // Target Field - slightly hitter friendly
-  factors.set("CWS", 0.92); // Guaranteed Rate - pitcher friendly
-  factors.set("DET", 1.08); // Comerica - hitter friendly
-  factors.set("SEA", 0.90); // T-Mobile - pitcher friendly
-  factors.set("LAA", 1.02); // Angel Stadium - neutral
-  factors.set("OAK", 0.93); // Oakland Coliseum - pitcher friendly
-  return factors;
+  const data = new Map<string, number>();
+  // Hitter-friendly parks
+  data.set("COL", 1.20); // Coors Field
+  data.set("CIN", 1.12); // Great American Ball Park
+  data.set("TEX", 1.10); // Globe Life Field
+  data.set("PHI", 1.08); // Citizens Bank Park
+  data.set("BOS", 1.07); // Fenway Park
+  data.set("NYY", 1.06); // Yankee Stadium
+  data.set("CHC", 1.05); // Wrigley Field
+  data.set("MIL", 1.04); // American Family Field
+  data.set("BAL", 1.03); // Camden Yards
+  // Neutral parks
+  data.set("LAD", 1.01); // Dodger Stadium
+  data.set("ATL", 1.00); // Truist Park
+  data.set("HOU", 1.00); // Minute Maid Park
+  data.set("STL", 0.99); // Busch Stadium
+  data.set("WSH", 0.99); // Nationals Park
+  data.set("TOR", 0.98); // Rogers Centre
+  data.set("MIN", 0.98); // Target Field
+  data.set("SEA", 0.97); // T-Mobile Park
+  data.set("CLE", 0.97); // Progressive Field
+  data.set("DET", 0.97); // Comerica Park
+  data.set("MIA", 0.96); // LoanDepot Park
+  data.set("TB", 0.96); // Tropicana Field
+  data.set("CHW", 0.96); // Guaranteed Rate Field
+  data.set("KC", 0.96); // Kauffman Stadium
+  data.set("PIT", 0.96); // PNC Park
+  // Pitcher-friendly parks
+  data.set("NYM", 0.95); // Citi Field
+  data.set("ARI", 0.95); // Chase Field
+  data.set("LAA", 0.94); // Angel Stadium
+  data.set("OAK", 0.94); // Oakland Coliseum
+  data.set("SD", 0.93); // Petco Park
+  data.set("SF", 0.92); // Oracle Park
+  return data;
 }
