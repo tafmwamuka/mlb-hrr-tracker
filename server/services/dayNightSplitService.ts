@@ -52,7 +52,7 @@ export function isNightGame(gameTimeUtc: string | null | undefined): "day" | "ni
 async function fetchSplitsForPlayer(mlbPlayerId: number, season: number): Promise<{ day: DayNightSplit | null; night: DayNightSplit | null }> {
   try {
     const url = `https://statsapi.mlb.com/api/v1/people/${mlbPlayerId}/stats?stats=statSplits&group=hitting&season=${season}&sitCodes=d,n`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return { day: null, night: null };
 
     const json = await res.json();

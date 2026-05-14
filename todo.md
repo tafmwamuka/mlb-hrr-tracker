@@ -596,3 +596,12 @@
 - [x] Update scheduled job detail to use VS gate (ballparkpal VS=10/9) as primary filter
 - [x] Update scheduled job to fetch Odds API game totals and include in scoring
 - [x] Resume paused scheduled job so site auto-updates at 10 AM, 1 PM, 4 PM, 8 PM EST
+
+## Quality-Only Picks + Performance (May 14, 2026)
+- [x] Remove minimum pick count floors (no more "at least 15 picks" or "top 20" hard limits)
+- [x] Only surface picks that genuinely pass quality threshold — 1 pick is fine if only 1 qualifies
+- [x] Raise Money Picks threshold: combined score >= 82 AND probability >= 78%
+- [x] Diagnose and fix site slowness (external API calls blocking page load)
+- [x] Add aggressive timeouts to all external API calls (ballparkpal, hrtargets, theLAB, savant)
+- [x] Parallelize independent external fetches instead of sequential awaits
+- [x] Add server-side caching with TTL for expensive data (shared enrichmentCache, 15 min TTL)

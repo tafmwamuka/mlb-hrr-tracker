@@ -218,8 +218,8 @@ export async function batchGetPlayerStreaks(
 ): Promise<Map<number, PlayerStreakData>> {
   const results = new Map<number, PlayerStreakData>();
 
-  // Fetch in batches of 8 to be respectful of MLB API rate limits
-  const BATCH = 8;
+  // Fetch in batches of 20 — MLB Stats API handles this fine and reduces sequential rounds
+  const BATCH = 20;
   for (let i = 0; i < players.length; i += BATCH) {
     const batch = players.slice(i, i + BATCH);
     const fetched = await Promise.all(

@@ -6,17 +6,14 @@
 import { router, publicProcedure } from "../_core/trpc";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import type { AIPick } from "../services/aiRankingService";
-import { batchGetDayNightSplits } from "../services/dayNightSplitService";
-import { batchGetTheLabData } from "../services/theLabService";
-import { batchGetPlayerStreaks } from "../services/mlbStreakService";
 import { getMockSavantData, calculateCombinedScore, type SavantHitter, type SavantPitcher } from "../services/savantService";
 import { generateHRRProjections } from "../services/hrrService";
-import { fetchHRRMarketData, getBestHRRLine, americanToImpliedProbability, removeVig } from "../services/oddsApiService";
+import { americanToImpliedProbability } from "../services/oddsApiService";
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from "../services/poissonModel";
 import { getAdaptedLineupData, getGamesForUI } from "../services/lineupAdapter";
 import { getDataDate, type MLBGame } from "../services/mlbLineupService";
-import { getVSGatedPool, findMatchupForPlayer } from "../services/ballparkMatchupService";
-import { fetchGameTotals } from "../services/gameTotalsService";
+import { findMatchupForPlayer } from "../services/ballparkMatchupService";
+import { getEnrichmentData } from "../services/enrichmentCache";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -663,34 +660,18 @@ export const aiPicksRouter = router({
       const matchups = lineupData.matchups;
       const players = lineupData.playerDataMap;
 
-      // Fetch VS gate data + game totals + enrichment data in parallel
-      const season = new Date().getFullYear();
-      const oddsApiKey = process.env.ODDS_API_KEY;
-      const [vsGateResult, dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
-        getVSGatedPool().catch(() => ({ pool: [], gameTotals: new Map(), allMatchups: [] })),
-        batchGetDayNightSplits(
-          matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
-          'hits',
-          season
-        ).catch(() => new Map()),
-        batchGetTheLabData(
-          matchups.map(m => ({ playerName: m.playerName, teamAbbr: m.team, statType: 'hits' as const })),
-          dataDate
-        ).catch(() => new Map()),
-        batchGetPlayerStreaks(
-          matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName })),
-          season
-        ).catch(() => new Map()),
-      ]);
-
-      // Build VS grade map: playerName -> vsGrade
-      const vsGradeMap = new Map<string, number>();
-      for (const m of vsGateResult.allMatchups) {
-        if (m.vsGrade !== undefined) vsGradeMap.set(m.batter, m.vsGrade);
-      }
-
-      // Fetch game totals (Odds API primary, RC aggregate fallback)
-      const gameTotalsMap = await fetchGameTotals(oddsApiKey, vsGateResult.allMatchups).catch(() => new Map());
+      // Use shared enrichment cache — deduplicates MLB API calls across all three pick procedures
+      const enrichment = await getEnrichmentData(
+        matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName, team: m.team, gameTime: m.gameTime }))
+      ).catch(() => ({
+        vsGradeMap: new Map<string, number>(),
+        gameTotalsMap: new Map(),
+        dayNightSplitsMap: new Map(),
+        theLabDataMap: new Map(),
+        mlbStreakMap: new Map(),
+        fetchedAt: Date.now(),
+      }));
+      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, theLabDataMap, mlbStreakMap } = enrichment;
 
       const allPicks = rankAIPicks(
         matchups,
@@ -762,33 +743,18 @@ export const aiPicksRouter = router({
       const matchups = lineupData.matchups;
       const players = lineupData.playerDataMap;
 
-      // Fetch VS gate data + game totals + enrichment data in parallel (non-blocking)
-      const season = new Date().getFullYear();
-      const oddsApiKey = process.env.ODDS_API_KEY;
-      const [vsGateResult, dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
-        getVSGatedPool().catch(() => ({ pool: [], gameTotals: new Map(), allMatchups: [] })),
-        batchGetDayNightSplits(
-          matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
-          'hits',
-          season
-        ).catch(() => new Map()),
-        batchGetTheLabData(
-          matchups.map(m => ({ playerName: m.playerName, teamAbbr: m.team, statType: 'hits' as const })),
-          dataDate
-        ).catch(() => new Map()),
-        batchGetPlayerStreaks(
-          matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName }))
-        ).catch(() => new Map()),
-      ]);
-
-      // Build VS grade map: playerName -> vsGrade
-      const vsGradeMap = new Map<string, number>();
-      for (const m of vsGateResult.allMatchups) {
-        if (m.vsGrade !== undefined) vsGradeMap.set(m.batter, m.vsGrade);
-      }
-
-      // Fetch game totals (Odds API primary, RC aggregate fallback)
-      const gameTotalsMap = await fetchGameTotals(oddsApiKey, vsGateResult.allMatchups).catch(() => new Map());
+      // Use shared enrichment cache — deduplicates MLB API calls across all three pick procedures
+      const enrichment2 = await getEnrichmentData(
+        matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName, team: m.team, gameTime: m.gameTime }))
+      ).catch(() => ({
+        vsGradeMap: new Map<string, number>(),
+        gameTotalsMap: new Map(),
+        dayNightSplitsMap: new Map(),
+        theLabDataMap: new Map(),
+        mlbStreakMap: new Map(),
+        fetchedAt: Date.now(),
+      }));
+      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, theLabDataMap, mlbStreakMap } = enrichment2;
 
       const picks = rankAIPicks(
         matchups,
@@ -876,33 +842,18 @@ export const aiPicksRouter = router({
         }
       }
       
-      // Fetch VS gate data + enrichment data in parallel
-      const season = new Date().getFullYear();
-      const oddsApiKey = process.env.ODDS_API_KEY;
-      const [vsGateResult, dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
-        getVSGatedPool().catch(() => ({ pool: [], gameTotals: new Map(), allMatchups: [] })),
-        batchGetDayNightSplits(
-          matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
-          'hits',
-          season
-        ).catch(() => new Map()),
-        batchGetTheLabData(
-          matchups.map(m => ({ playerName: m.playerName, teamAbbr: m.team, statType: 'hits' as const })),
-          dataDate
-        ).catch(() => new Map()),
-        batchGetPlayerStreaks(
-          matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName }))
-        ).catch(() => new Map()),
-      ]);
-
-      // Build VS grade map for HRR gate filtering
-      const vsGradeMap = new Map<string, number>();
-      for (const m of vsGateResult.allMatchups) {
-        if (m.vsGrade !== undefined) vsGradeMap.set(m.batter, m.vsGrade);
-      }
-
-      // Fetch game totals (Odds API primary, RC aggregate fallback)
-      const gameTotalsMap = await fetchGameTotals(oddsApiKey, vsGateResult.allMatchups).catch(() => new Map());
+      // Use shared enrichment cache — deduplicates MLB API calls across all three pick procedures
+      const enrichment3 = await getEnrichmentData(
+        matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName, team: m.team, gameTime: m.gameTime }))
+      ).catch(() => ({
+        vsGradeMap: new Map<string, number>(),
+        gameTotalsMap: new Map(),
+        dayNightSplitsMap: new Map(),
+        theLabDataMap: new Map(),
+        mlbStreakMap: new Map(),
+        fetchedAt: Date.now(),
+      }));
+      const { vsGradeMap, gameTotalsMap: _gameTotalsMap3, dayNightSplitsMap, theLabDataMap, mlbStreakMap } = enrichment3;
 
       // Filter matchups through VS gate before HRR projections
       // VS=10: always included; VS=9: included (all go through scoring matrix)

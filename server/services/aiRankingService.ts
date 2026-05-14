@@ -692,14 +692,10 @@ export function rankAIPicks(
       rank: index + 1,
     }));
 
-  // ── Dynamic count: only return picks that clear 78% threshold ──────────────────────
-  // Quality over quantity — raised from 75 to 78 for better pick accuracy
-  const qualityPicks = picks.filter(p => p.overallScore >= 78);
-
-  // If fewer than 5 quality picks, include the top 5 regardless (minimum viable slate)
-  if (qualityPicks.length < 5) {
-    return picks.slice(0, Math.min(5, picks.length));
-  }
+  // ── Quality gate: only return picks that genuinely clear the threshold ────────────────
+  // Quality over quantity — even 1 pick is fine if only 1 qualifies.
+  // Threshold: 82+ overall score (raised from 78 for stricter quality control)
+  const qualityPicks = picks.filter(p => p.overallScore >= 82);
 
   return qualityPicks;
 }
