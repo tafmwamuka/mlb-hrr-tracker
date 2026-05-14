@@ -45,6 +45,26 @@ export interface HRRProjection {
     exitVelocity: number;
     barrelPct: number;
   };
+  // HRR Matrix Score (0-100) using the 6-component formula
+  hrrMatrixScore: number;
+  hrrScoreComponents: {
+    xwOBA: number;        // raw value (e.g. 0.350)
+    xwOBAScore: number;   // 0-100 component score
+    xwOBAWeighted: number; // after ×0.30
+    barrelPct: number;    // raw value (e.g. 8.5)
+    barrelScore: number;  // 0-100 component score
+    barrelWeighted: number; // after ×0.20
+    lineupSpot: number;   // batting order position (1-9)
+    lineupScore: number;  // 0-100 component score
+    lineupWeighted: number; // after ×0.15
+    parkFactor: number;   // raw park factor (e.g. 1.08)
+    parkScore: number;    // 0-100 component score
+    parkWeighted: number; // after ×0.15
+    weatherBoost: number; // 0-100 raw weather score
+    weatherWeighted: number; // after ×0.10
+    pitcherWeakness: number; // 0-100 raw pitcher weakness score
+    pitcherWeighted: number; // after ×0.10
+  };
   // Reasoning
   reasoning: string;
   ballparkReasoning: string;
@@ -329,6 +349,47 @@ export function generateHRRProjections(
       // Step 11: Get Savant metrics if available
       const playerSavant = savantData?.get(matchup.playerName);
 
+      // Step 11b: Compute HRR Matrix Score using the 6-component formula
+      // HRR Score = (xwOBA*0.30) + (Barrel%*0.20) + (Lineup Spot*0.15)
+      //           + (Park Factor*0.15) + (Weather Boost*0.10) + (Pitcher Weakness*0.10)
+
+      // xwOBA component: scale 0.200–0.450 → 0–100
+      const rawXwOBA = playerSavant?.xwOBA ?? 0.310; // league avg fallback
+      const xwOBAScore = Math.round(Math.min(100, Math.max(0, ((rawXwOBA - 0.200) / (0.450 - 0.200)) * 100)));
+      const xwOBAWeighted = Math.round(xwOBAScore * 0.30 * 10) / 10;
+
+      // Barrel% component: scale 0–20% → 0–100
+      const rawBarrelPct = playerSavant?.barrelPct ?? 5.0; // league avg fallback
+      const barrelScore = Math.round(Math.min(100, Math.max(0, (rawBarrelPct / 20) * 100)));
+      const barrelWeighted = Math.round(barrelScore * 0.20 * 10) / 10;
+
+      // Lineup Spot component: position 1–9, best spots are 1–5
+      // Spot 1–2: 90–100 (most PA), 3–5: 70–85 (RBI), 6–9: 30–60
+      const lineupSpotScores: Record<number, number> = { 1: 95, 2: 90, 3: 85, 4: 80, 5: 75, 6: 60, 7: 50, 8: 40, 9: 30 };
+      const lineupScore = lineupSpotScores[matchup.battingPosition] ?? 50;
+      const lineupWeighted = Math.round(lineupScore * 0.15 * 10) / 10;
+
+      // Park Factor component: scale 0.85–1.20 → 0–100
+      const parkScore = Math.round(Math.min(100, Math.max(0, ((parkFactor - 0.85) / (1.20 - 0.85)) * 100)));
+      const parkWeighted = Math.round(parkScore * 0.15 * 10) / 10;
+
+      // Weather Boost component: use day/night split boost as proxy
+      // Favorable split = high weather/condition score; neutral = 50
+      const weatherBoost = dayNightSplitInfo
+        ? Math.round(Math.min(100, Math.max(0, 50 + (dayNightSplitInfo.splitBoost * 2))))
+        : 50;
+      const weatherWeighted = Math.round(weatherBoost * 0.10 * 10) / 10;
+
+      // Pitcher Weakness component: based on ERA (scale 2.00–7.00 → 0–100)
+      const pitcherERAVal = matchup.pitcher.era;
+      const pitcherWeakness = Math.round(Math.min(100, Math.max(0, ((pitcherERAVal - 2.00) / (7.00 - 2.00)) * 100)));
+      const pitcherWeighted = Math.round(pitcherWeakness * 0.10 * 10) / 10;
+
+      // Total HRR Matrix Score (0-100)
+      const hrrMatrixScore = Math.round(
+        xwOBAWeighted + barrelWeighted + lineupWeighted + parkWeighted + weatherWeighted + pitcherWeighted
+      );
+
       // Step 12: Build detailed reasoning with Statcast + Ballpark data
       const parkType = parkFactor > 1.05 ? "hitter-friendly" : parkFactor < 0.95 ? "pitcher-friendly" : "neutral";
       const reasons: string[] = [];
@@ -386,6 +447,25 @@ export function generateHRRProjections(
         combinedScore,
         parkFactor,
         savantMetrics: playerSavant,
+        hrrMatrixScore,
+        hrrScoreComponents: {
+          xwOBA: rawXwOBA,
+          xwOBAScore,
+          xwOBAWeighted,
+          barrelPct: rawBarrelPct,
+          barrelScore,
+          barrelWeighted,
+          lineupSpot: matchup.battingPosition,
+          lineupScore,
+          lineupWeighted,
+          parkFactor,
+          parkScore,
+          parkWeighted,
+          weatherBoost,
+          weatherWeighted,
+          pitcherWeakness,
+          pitcherWeighted,
+        },
         reasoning,
         ballparkReasoning,
         dayNightSplit: dayNightSplitInfo,

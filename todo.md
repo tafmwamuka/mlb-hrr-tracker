@@ -684,3 +684,8 @@
 - [x] VS gate already configured: grade 9 → score 9.5 (STRONG), grade 10 → score 10.0 (STRONG)
 - [x] Add BALLPARK_PHPSESSID and BALLPARK_SYSTEM_ID as env secrets
 - [x] All 168 tests pass
+
+## Phase P: HRR Score Scorecard (2026-05-14)
+- [x] Expose HRR score components (xwOBA, Barrel%, Lineup Spot, Park Factor, Weather Boost, Pitcher Weakness) in the API response for each HRR pick
+- [x] Show total HRR Score inline next to player name in HRR tab
+- [x] Show expandable scorecard breakdown per player card in HRR tab

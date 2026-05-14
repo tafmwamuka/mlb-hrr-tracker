@@ -71,6 +71,26 @@ interface HRRPick {
     dayNightFavorable: boolean;
     favorableCount: number;
   } | null;
+  // HRR Matrix Score
+  hrrMatrixScore?: number;
+  hrrScoreComponents?: {
+    xwOBA: number;
+    xwOBAScore: number;
+    xwOBAWeighted: number;
+    barrelPct: number;
+    barrelScore: number;
+    barrelWeighted: number;
+    lineupSpot: number;
+    lineupScore: number;
+    lineupWeighted: number;
+    parkFactor: number;
+    parkScore: number;
+    parkWeighted: number;
+    weatherBoost: number;
+    weatherWeighted: number;
+    pitcherWeakness: number;
+    pitcherWeighted: number;
+  } | null;
 }
 
 function getQualityConfig(quality: string) {
@@ -127,7 +147,21 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
               {rankBadge.label}
             </div>
             <div>
-              <div className="text-white font-bold text-base">{pick.playerName}</div>
+              <div className="flex items-center gap-2">
+                <span className="text-white font-bold text-base">{pick.playerName}</span>
+                {pick.hrrMatrixScore !== undefined && (
+                  <span
+                    className="px-2 py-0.5 rounded-md text-xs font-bold"
+                    style={{
+                      background: pick.hrrMatrixScore >= 70 ? "oklch(0.72 0.18 165 / 20%)" : pick.hrrMatrixScore >= 55 ? "oklch(0.82 0.17 85 / 20%)" : "oklch(0.20 0.02 255)",
+                      color: pick.hrrMatrixScore >= 70 ? "oklch(0.72 0.18 165)" : pick.hrrMatrixScore >= 55 ? "oklch(0.82 0.17 85)" : "oklch(0.55 0.015 255)",
+                      border: `1px solid ${pick.hrrMatrixScore >= 70 ? "oklch(0.72 0.18 165 / 35%)" : pick.hrrMatrixScore >= 55 ? "oklch(0.82 0.17 85 / 35%)" : "oklch(1 0 0 / 8%)"}`,
+                    }}
+                  >
+                    HRR {pick.hrrMatrixScore}
+                  </span>
+                )}
+              </div>
               <div className="text-[oklch(0.55_0.015_255)] text-xs">
                 {pick.team} · Batting #{pick.battingPosition} · vs {pick.pitcher}
               </div>
@@ -377,6 +411,52 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
                   </div>
                 )}
 
+                {/* HRR Matrix Scorecard */}
+                {pick.hrrScoreComponents && (
+                  <div className="p-3 rounded-xl" style={{ background: "oklch(0.12 0.018 255)" }}>
+                    <div className="flex items-center justify-between mb-2.5">
+                      <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)] uppercase tracking-wide">HRR Matrix Score</span>
+                      {pick.hrrMatrixScore !== undefined && (
+                        <span
+                          className="text-sm font-bold px-2 py-0.5 rounded-lg"
+                          style={{
+                            background: pick.hrrMatrixScore >= 70 ? "oklch(0.72 0.18 165 / 20%)" : "oklch(0.82 0.17 85 / 20%)",
+                            color: pick.hrrMatrixScore >= 70 ? "oklch(0.72 0.18 165)" : "oklch(0.82 0.17 85)",
+                          }}
+                        >
+                          {pick.hrrMatrixScore} / 100
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      {[
+                        { label: "xwOBA", raw: pick.hrrScoreComponents.xwOBA.toFixed(3), score: pick.hrrScoreComponents.xwOBAScore, weighted: pick.hrrScoreComponents.xwOBAWeighted, weight: "×0.30", color: "oklch(0.72 0.18 165)" },
+                        { label: "Barrel%", raw: `${pick.hrrScoreComponents.barrelPct.toFixed(1)}%`, score: pick.hrrScoreComponents.barrelScore, weighted: pick.hrrScoreComponents.barrelWeighted, weight: "×0.20", color: "oklch(0.68 0.22 25)" },
+                        { label: "Lineup Spot", raw: `#${pick.hrrScoreComponents.lineupSpot}`, score: pick.hrrScoreComponents.lineupScore, weighted: pick.hrrScoreComponents.lineupWeighted, weight: "×0.15", color: "oklch(0.82 0.17 85)" },
+                        { label: "Park Factor", raw: pick.hrrScoreComponents.parkFactor.toFixed(2), score: pick.hrrScoreComponents.parkScore, weighted: pick.hrrScoreComponents.parkWeighted, weight: "×0.15", color: "oklch(0.65 0.18 200)" },
+                        { label: "Weather Boost", raw: `${pick.hrrScoreComponents.weatherBoost}`, score: pick.hrrScoreComponents.weatherBoost, weighted: pick.hrrScoreComponents.weatherWeighted, weight: "×0.10", color: "oklch(0.75 0.15 120)" },
+                        { label: "Pitcher Weakness", raw: `ERA ${((pick.hrrScoreComponents.pitcherWeakness / 100) * 5 + 2).toFixed(2)}`, score: pick.hrrScoreComponents.pitcherWeakness, weighted: pick.hrrScoreComponents.pitcherWeighted, weight: "×0.10", color: "oklch(0.70 0.20 15)" },
+                      ].map(({ label, raw, score, weighted, weight, color }) => (
+                        <div key={label} className="flex items-center gap-2">
+                          <span className="text-[10px] font-medium w-28 shrink-0" style={{ color: "oklch(0.60 0.015 255)" }}>{label}</span>
+                          <span className="text-[10px] font-semibold w-12 shrink-0 text-right" style={{ color: "oklch(0.50 0.015 255)" }}>{raw}</span>
+                          <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0.20 0.02 255)" }}>
+                            <div className="h-full rounded-full" style={{ width: `${score}%`, background: color }} />
+                          </div>
+                          <span className="text-[10px] font-bold w-6 text-right" style={{ color }}>{weighted}</span>
+                          <span className="text-[9px] text-[oklch(0.38_0.015_255)] w-8 shrink-0">{weight}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2.5 pt-2 border-t border-[oklch(1_0_0/8%)] flex items-center justify-between">
+                      <span className="text-[10px] text-[oklch(0.45_0.015_255)]">Total HRR Score</span>
+                      <span className="text-sm font-bold" style={{ color: (pick.hrrMatrixScore ?? 0) >= 70 ? "oklch(0.72 0.18 165)" : "oklch(0.82 0.17 85)" }}>
+                        {pick.hrrMatrixScore ?? 0} / 100
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Ballpark reasoning */}
                 <div className="p-2.5 rounded-lg" style={{ background: "oklch(0.12 0.018 255)" }}>
                   <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)]">PROJECTION BASIS</span>
@@ -461,6 +541,8 @@ export function HRRTab() {
     bookImpliedProb: pick.bookImpliedProb ?? null,
     alternateLines: pick.alternateLines ?? [],
     fairLine: pick.fairLine ?? pick.hrrLine,
+    hrrMatrixScore: pick.hrrMatrixScore ?? undefined,
+    hrrScoreComponents: pick.hrrScoreComponents ?? null,
   }));
 
   if (isLoading) {
