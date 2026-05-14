@@ -2,7 +2,10 @@
  * MLB Lineup Service
  * Fetches today's real games, lineups, and player season stats from MLB Stats API.
  * Ensures picks are only generated for players actually playing today on their correct teams.
+ * When confirmed lineups are not yet posted, falls back to projected lineups.
  */
+
+import { buildProjectedLineup, isLineupConfirmed, type LineupSource } from "./projectedLineupService";
 
 const MLB_API_BASE = "https://statsapi.mlb.com/api/v1";
 
@@ -16,6 +19,7 @@ export interface MLBGame {
   dayNight: string;
   venue: string;
   venueId: number;
+  lineupSource: LineupSource; // 'confirmed' | 'projected'
   awayTeam: {
     id: number;
     name: string;
@@ -44,6 +48,7 @@ export interface LineupPlayer {
   teamId: number;
   teamName: string;
   teamAbbreviation: string;
+  source?: LineupSource; // 'confirmed' | 'projected'
 }
 
 export interface PlayerSeasonStats {
@@ -240,7 +245,12 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
       const awayAbbr = getTeamAbbreviation(awayTeamId, awayTeamName);
       const homeAbbr = getTeamAbbreviation(homeTeamId, homeTeamName);
 
-      const awayLineup: LineupPlayer[] = (g.lineups?.awayPlayers || []).map((p: any, i: number) => ({
+      const rawAwayLineup = g.lineups?.awayPlayers || [];
+      const rawHomeLineup = g.lineups?.homePlayers || [];
+      const awayConfirmed = isLineupConfirmed(rawAwayLineup);
+      const homeConfirmed = isLineupConfirmed(rawHomeLineup);
+
+      const awayLineup: LineupPlayer[] = rawAwayLineup.map((p: any, i: number) => ({
         id: p.id,
         fullName: p.fullName,
         firstName: p.firstName || p.fullName.split(" ")[0],
@@ -250,9 +260,10 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
         teamId: awayTeamId,
         teamName: awayTeamName,
         teamAbbreviation: awayAbbr,
+        source: "confirmed" as LineupSource,
       }));
 
-      const homeLineup: LineupPlayer[] = (g.lineups?.homePlayers || []).map((p: any, i: number) => ({
+      const homeLineup: LineupPlayer[] = rawHomeLineup.map((p: any, i: number) => ({
         id: p.id,
         fullName: p.fullName,
         firstName: p.firstName || p.fullName.split(" ")[0],
@@ -262,7 +273,11 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
         teamId: homeTeamId,
         teamName: homeTeamName,
         teamAbbreviation: homeAbbr,
+        source: "confirmed" as LineupSource,
       }));
+
+      // Determine overall lineup source for this game
+      const lineupSource: LineupSource = (awayConfirmed && homeConfirmed) ? "confirmed" : "projected";
 
       return {
         gamePk: g.gamePk,
@@ -272,6 +287,7 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
         dayNight: g.dayNight || "night",
         venue: g.venue?.name || "Unknown",
         venueId: g.venue?.id || 0,
+        lineupSource,
         awayTeam: {
           id: awayTeamId,
           name: awayTeamName,
@@ -294,6 +310,25 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
         homeLineup,
       } as MLBGame;
     });
+
+    // ── Projected lineup fallback ─────────────────────────────────────────────
+    // For games without confirmed lineups, fetch projected lineups in parallel
+    const projectedFills = games
+      .filter(game => game.lineupSource === "projected")
+      .map(async game => {
+        const [awayProj, homeProj] = await Promise.all([
+          game.awayLineup.length < 8 ? buildProjectedLineup(game.awayTeam.id, game.awayTeam.name, game.awayTeam.abbreviation) : Promise.resolve(null),
+          game.homeLineup.length < 8 ? buildProjectedLineup(game.homeTeam.id, game.homeTeam.name, game.homeTeam.abbreviation) : Promise.resolve(null),
+        ]);
+        if (awayProj && awayProj.length > 0) game.awayLineup = awayProj;
+        if (homeProj && homeProj.length > 0) game.homeLineup = homeProj;
+        return game;
+      });
+
+    if (projectedFills.length > 0) {
+      await Promise.all(projectedFills);
+      console.log(`[Lineups] Filled projected lineups for ${projectedFills.length} games`);
+    }
 
     // If we didn't set a fallback date, use today
     if (!gameCache.dataDate) {

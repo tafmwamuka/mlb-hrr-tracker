@@ -667,11 +667,11 @@ export const aiPicksRouter = router({
         vsGradeMap: new Map<string, number>(),
         gameTotalsMap: new Map(),
         dayNightSplitsMap: new Map(),
-        theLabDataMap: new Map(),
         mlbStreakMap: new Map(),
+        statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
         fetchedAt: Date.now(),
       }));
-      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, theLabDataMap, mlbStreakMap } = enrichment;
+      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache } = enrichment;
 
       const allPicks = rankAIPicks(
         matchups,
@@ -679,10 +679,10 @@ export const aiPicksRouter = router({
         getMockHRTargets(),
         getMockParkFactors(),
         dayNightSplitsMap,
-        theLabDataMap,
         mlbStreakMap,
         vsGradeMap,
-        gameTotalsMap
+        gameTotalsMap,
+        statcastCache
       );
       
       // Enrich with Savant data
@@ -706,6 +706,7 @@ export const aiPicksRouter = router({
       return {
         success: true,
         picks: topPicks,
+        lineupSource: lineupData.lineupSource,
         dataDate,
         timestamp: new Date(),
       };
@@ -750,11 +751,11 @@ export const aiPicksRouter = router({
         vsGradeMap: new Map<string, number>(),
         gameTotalsMap: new Map(),
         dayNightSplitsMap: new Map(),
-        theLabDataMap: new Map(),
         mlbStreakMap: new Map(),
+        statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
         fetchedAt: Date.now(),
       }));
-      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, theLabDataMap, mlbStreakMap } = enrichment2;
+      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache2 } = enrichment2;
 
       const picks = rankAIPicks(
         matchups,
@@ -762,10 +763,10 @@ export const aiPicksRouter = router({
         getMockHRTargets(),
         getMockParkFactors(),
         dayNightSplitsMap,
-        theLabDataMap,
         mlbStreakMap,
         vsGradeMap,
-        gameTotalsMap
+        gameTotalsMap,
+        statcastCache2
       );
       
       // Enrich all picks with Savant data
@@ -786,6 +787,7 @@ export const aiPicksRouter = router({
       return {
         success: true,
         picks: sortedPicks,
+        lineupSource: lineupData.lineupSource,
         dataDate,
         timestamp: new Date(),
       };
@@ -849,11 +851,11 @@ export const aiPicksRouter = router({
         vsGradeMap: new Map<string, number>(),
         gameTotalsMap: new Map(),
         dayNightSplitsMap: new Map(),
-        theLabDataMap: new Map(),
         mlbStreakMap: new Map(),
+        statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
         fetchedAt: Date.now(),
       }));
-      const { vsGradeMap, gameTotalsMap: _gameTotalsMap3, dayNightSplitsMap, theLabDataMap, mlbStreakMap } = enrichment3;
+      const { vsGradeMap, gameTotalsMap: _gameTotalsMap3, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache3 } = enrichment3;
 
       // Filter matchups through VS gate before HRR projections
       // VS=10: always included; VS=9: included (all go through scoring matrix)
@@ -877,10 +879,10 @@ export const aiPicksRouter = router({
         getMockHRTargets(),
         parkFactors,
         dayNightSplitsMap,
-        theLabDataMap,
         mlbStreakMap,
         vsGradeMap,
-        gameTotalsMap
+        gameTotalsMap,
+        statcastCache3
       );
 
       console.log(`[HRR] Matrix scored: ${matrixPicks.length} picks`);
@@ -897,7 +899,6 @@ export const aiPicksRouter = router({
         parkFactors,
         savantMap,
         dayNightSplitsMap,
-        theLabDataMap,
         mlbStreakMap
       );
 
@@ -910,19 +911,11 @@ export const aiPicksRouter = router({
         const lambda = proj.expectedTotal;
         const activeLine = proj.hrrLine;
 
-        // Pull theLAB odds for this player if available
-        const theLabData = theLabDataMap.get(proj.playerName);
-        const theLabOdds = theLabData?.odds ?? null;
-        const theLabOddsProvider = theLabData?.oddsProvider ?? null;
-
         // Calculate Poisson probability of going OVER the active line
         const modelOverProb = poissonOverProbability(activeLine, lambda);
 
-        // Edge vs implied probability from theLAB odds (if available)
-        let bookImpliedProb = 0.5;
-        if (theLabOdds !== null) {
-          bookImpliedProb = americanToImpliedProbability(theLabOdds);
-        }
+        // No book odds — use model probability only
+        const bookImpliedProb = 0.5;
         const edge = calculateEdge(modelOverProb, bookImpliedProb);
         const pickQuality = getPickQuality(edge);
 
@@ -935,7 +928,7 @@ export const aiPicksRouter = router({
         return {
           ...proj,
           hrrLine: activeLine,
-          lineSource: theLabOdds !== null ? "thelab" as const : "model" as const,
+          lineSource: "model" as const,
           // Matrix scores (from 10-factor scoring pipeline)
           overallScore: matrixPick?.overallScore ?? proj.hrrConfidence,
           factorBreakdown: matrixPick?.factorBreakdown,
@@ -948,9 +941,9 @@ export const aiPicksRouter = router({
           // Edge vs book
           edge: Math.round(edge * 100), // as percentage points
           pickQuality,
-          bookOdds: theLabOdds,
-          bookOddsProvider: theLabOddsProvider,
-          bookImpliedProb: theLabOdds !== null ? Math.round(bookImpliedProb * 100) : null,
+          bookOdds: null,
+          bookOddsProvider: null,
+          bookImpliedProb: null,
           // Alternate lines
           alternateLines: alternates.map(alt => ({
             line: alt.line,
@@ -979,6 +972,7 @@ export const aiPicksRouter = router({
       return {
         success: true,
         picks: enrichedPicks,
+        lineupSource: lineupData.lineupSource,
         dataDate,
         timestamp: new Date(),
         hasOddsData: enrichedPicks.some(p => p.bookOdds !== null),

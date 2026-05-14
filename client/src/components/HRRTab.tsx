@@ -62,13 +62,7 @@ interface HRRPick {
     favorable: boolean;
     splitGames: number;
   } | null;
-  theLabEdge?: {
-    edgeScore: number;
-    strongHitCandidate: boolean;
-    last5HitRate: number;
-    odds?: string;
-    provider?: string;
-  } | null;
+
   primePosition?: boolean;
   primePositionFactors?: {
     platoonAdvantage: boolean;
@@ -201,12 +195,7 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
               {pick.dayNightSplit.favorable && ` +${pick.dayNightSplit.splitBoost}%`}
             </div>
           )}
-          {/* theLAB strong hit candidate */}
-          {pick.theLabEdge?.strongHitCandidate && (
-            <div className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: "oklch(0.82 0.17 85 / 20%)", color: "oklch(0.82 0.17 85)", border: "1px solid oklch(0.82 0.17 85 / 40%)" }}>
-              ⭐ theLAB Pick
-            </div>
-          )}
+
           {/* Prime Position badge: data-driven 3+ of 4 factors favorable */}
           {pick.primePosition && (
             <div
@@ -485,6 +474,8 @@ export function HRRTab() {
   }
 
   const hasOddsData = (data as any)?.hasOddsData;
+  const lineupSource = (data as any)?.lineupSource ?? 'projected';
+  const isProjected = lineupSource === 'projected';
 
   return (
     <div className="p-4 space-y-4 pb-20">
@@ -500,6 +491,17 @@ export function HRRTab() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
+          {/* Lineup source badge */}
+          <div
+            className="flex items-center gap-1 px-2 py-1 rounded-md border text-[9px] font-bold tracking-wide"
+            style={isProjected
+              ? { background: "oklch(0.20 0.08 60 / 0.3)", border: "1px solid oklch(0.75 0.15 60 / 0.5)", color: "oklch(0.82 0.17 85)" }
+              : { background: "oklch(0.15 0.08 165 / 0.3)", border: "1px solid oklch(0.72 0.18 165 / 0.5)", color: "oklch(0.72 0.18 165)" }
+            }
+          >
+            <div className={`w-1.5 h-1.5 rounded-full ${isProjected ? 'bg-[oklch(0.82_0.17_85)] animate-pulse' : 'bg-[oklch(0.72_0.18_165)]'}`} />
+            {isProjected ? 'PROJECTED' : 'CONFIRMED'}
+          </div>
           <div className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "oklch(0.20 0.03 255)", color: "oklch(0.72 0.18 165)" }}>
             {hrrPicks.length} picks
           </div>

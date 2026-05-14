@@ -2,15 +2,15 @@
  * AI Ranking Service
  * Integrates all data sources to create comprehensive AI picks
  * Factors: VS Gate (ballparkpal), RC, player stats, park factors, HR Targets, pitcher matchup,
- *          batting position, day/night splits, theLAB edge/streak, game totals (O/U)
+ *          batting position, day/night splits, streak (MLB game logs), game totals (O/U), Statcast
  */
 
 import type { PlayerDayNightSplits } from "./dayNightSplitService";
-import type { TheLabPlayerData } from "./theLabService";
 import type { PlayerStreakData } from "./mlbStreakService";
 import { calculateHandednessAdvantage } from "./advancedDataService";
 import type { GameTotal } from "./gameTotalsService";
 import { getGameTotalScoreForTeam } from "./gameTotalsService";
+import { lookupStatcastPlayer, calculateStatcastScore, type StatcastCache } from "./pybaseballService";
 
 interface PlayerData {
   playerId: number;
@@ -97,7 +97,7 @@ export interface AIPick {
     battingPosition: number; // Position weighting (0-100)
     dayNightSplit?: number; // Day/night split score (0-100)
     streakBonus?: number; // Streak/hot hand bonus (0-100)
-    theLabEdge?: number; // theLAB edge score (0-100)
+    statcast?: number; // Statcast quality score (0-100)
     gameTotal?: number; // Game total (O/U) environment score (0-100)
   };
   // VS Gate data (from ballparkpal matchup page)
@@ -124,15 +124,6 @@ export interface AIPick {
     last10HitRate: number; // 0-100
     trendDirection: 'up' | 'down' | 'stable';
     streakLabel?: string; // e.g. "🔥 HOT (5-game hit streak)"
-  };
-  // theLAB edge data
-  theLabEdge?: {
-    edgeScore: number; // 0-100
-    strongHitCandidate: boolean;
-    last5HitRate: number;
-    odds?: string; // e.g. "-115"
-    provider?: string; // e.g. "DraftKings"
-    line?: number;
   };
   // Odds data
   odds?: {
@@ -292,12 +283,11 @@ function calculateDayNightScore(
 }
 
 /**
- * Calculate streak/hot hand score (0-100)
+ * Calculate streak/hot hand score (0-100) using MLB game log data
  * Players on a streak get a bonus; cold players get a penalty
- * Uses theLAB data when available, falls back to real MLB game log streak
  */
 function calculateStreakScore(
-  theLabData: TheLabPlayerData | null,
+  _unused: null,
   mlbStreak?: PlayerStreakData | null
 ): {
   score: number;
@@ -308,82 +298,31 @@ function calculateStreakScore(
   last10HitRate: number;
   trendDirection: 'up' | 'down' | 'stable';
 } {
-  // No theLAB data — try MLB game log streak as free fallback
-  if (!theLabData || !theLabData.hasRealData) {
-    if (mlbStreak && mlbStreak.hasRealData) {
-      const last5 = mlbStreak.last5HitRate;
-      const streakLen = mlbStreak.streakLength;
-      const trend = mlbStreak.trendDirection;
-      let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
-      if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') streakType = 'hot';
-      else if ((last5 <= 30 && (streakLen <= -3 || trend === 'COLD')) || streakLen <= -5) streakType = 'cold';
-      let score = 50;
-      score += (last5 - 50) * 0.8;
-      if (streakLen >= 3) score += 10;
-      if (streakLen <= -3) score -= 10;
-      if (trend === 'HOT') score += 5;
-      if (trend === 'COLD') score -= 5;
-      const trendDirection = trend === 'HOT' ? 'up' : trend === 'COLD' ? 'down' : 'stable';
-      return {
-        score: Math.min(100, Math.max(0, Math.round(score))),
-        isOnStreak: streakLen >= 3,
-        streakLength: Math.abs(streakLen),
-        streakType,
-        last5HitRate: Math.round(last5),
-        last10HitRate: Math.round(last5),
-        trendDirection,
-      };
-    }
-    return { score: 50, isOnStreak: false, streakLength: 0, streakType: 'neutral', last5HitRate: 50, last10HitRate: 50, trendDirection: 'stable' };
+  if (mlbStreak && mlbStreak.hasRealData) {
+    const last5 = mlbStreak.last5HitRate;
+    const streakLen = mlbStreak.streakLength;
+    const trend = mlbStreak.trendDirection;
+    let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
+    if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') streakType = 'hot';
+    else if ((last5 <= 30 && (streakLen <= -3 || trend === 'COLD')) || streakLen <= -5) streakType = 'cold';
+    let score = 50;
+    score += (last5 - 50) * 0.8;
+    if (streakLen >= 3) score += 10;
+    if (streakLen <= -3) score -= 10;
+    if (trend === 'HOT') score += 5;
+    if (trend === 'COLD') score -= 5;
+    const trendDirection = trend === 'HOT' ? 'up' : trend === 'COLD' ? 'down' : 'stable';
+    return {
+      score: Math.min(100, Math.max(0, Math.round(score))),
+      isOnStreak: streakLen >= 3,
+      streakLength: Math.abs(streakLen),
+      streakType,
+      last5HitRate: Math.round(last5),
+      last10HitRate: Math.round(last5),
+      trendDirection,
+    };
   }
-
-  // last5HitRate is null when theLAB has the player but no hit rate data — treat as neutral (50)
-  const last5 = theLabData.last5HitRate ?? 50;
-  const streakLen = theLabData.streakLength ?? 0;
-  const trend = theLabData.trendDirection ?? 'NEUTRAL'; // HOT | COLD | NEUTRAL
-
-  // Streak type: only mark cold if we have real evidence (not just missing data)
-  // Require BOTH a low hit rate AND a cold trend OR negative streak to mark cold
-  let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
-  if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') {
-    streakType = 'hot';
-  } else if ((last5 <= 30 && (streakLen <= -3 || trend === 'COLD')) || (streakLen <= -5) || (trend === 'COLD' && streakLen <= -3)) {
-    // Only cold if multiple signals agree — prevents false cold from single weak signal
-    streakType = 'cold';
-  }
-
-  // Score: base 50, boosted by last5 hit rate and streak
-  let score = 50;
-  if (theLabData.last5HitRate !== null) {
-    score += (last5 - 50) * 0.8; // last5 hit rate carries most weight (only when real data)
-  }
-  if (streakLen >= 3) score += 10; // hot streak bonus
-  if (streakLen <= -3) score -= 10; // cold streak penalty
-  if (trend === 'HOT') score += 5;
-  if (trend === 'COLD') score -= 5;
-
-  // Map HOT/COLD/NEUTRAL to up/down/stable for frontend
-  const trendDirection = trend === 'HOT' ? 'up' : trend === 'COLD' ? 'down' : 'stable';
-
-  return {
-    score: Math.min(100, Math.max(0, Math.round(score))),
-    isOnStreak: streakLen >= 3,
-    streakLength: Math.abs(streakLen),
-    streakType,
-    last5HitRate: Math.round(last5),
-    last10HitRate: Math.round(last5), // use last5 as proxy since theLabData only has last5
-    trendDirection,
-  };
-}
-
-/**
- * Calculate theLAB edge score (0-100)
- */
-function calculateTheLabScore(theLabData: TheLabPlayerData | null): number {
-  if (!theLabData) return 50;
-  const edgeScore = theLabData.edgeScore ?? 50;
-  const strongHit = theLabData.strongHitCandidate ? 10 : 0;
-  return Math.min(100, Math.max(0, edgeScore + strongHit));
+  return { score: 50, isOnStreak: false, streakLength: 0, streakType: 'neutral', last5HitRate: 50, last10HitRate: 50, trendDirection: 'stable' };
 }
 
 /**
@@ -400,12 +339,13 @@ export function rankAIPicks(
   parkFactors: Map<string, number>,
   // Enrichment data
   dayNightSplitsMap?: Map<number, PlayerDayNightSplits>,
-  theLabMismatchMap?: Map<string, TheLabPlayerData>,
   mlbStreakMap?: Map<number, PlayerStreakData>,
   // VS Gate: map from playerName -> vsGrade (-10 to 10)
   vsGradeMap?: Map<string, number>,
   // Game Totals: map from teamAbbr -> GameTotal
-  gameTotalsMap?: Map<string, GameTotal>
+  gameTotalsMap?: Map<string, GameTotal>,
+  // Statcast data from pybaseball
+  statcastCache?: StatcastCache
 ): AIPick[] {
   // ── VS Gate: pre-filter to only batters with strong matchup grades ──────────
   // VS=10: always included
@@ -421,12 +361,10 @@ export function rankAIPicks(
           const playerData = playerDataMap.get(m.playerId);
           const hrTargets = hrTargetsMap.get(m.playerName);
           const mlbStreak = mlbStreakMap?.get(m.playerId);
-          const theLabData = theLabMismatchMap?.get(m.playerName);
           const hasHotStreak = (mlbStreak?.last5HitRate ?? 0) >= 60 || (mlbStreak?.streakLength ?? 0) >= 3;
           const hasStrongStats = (playerData?.stats.avg ?? 0) >= 0.280;
           const hasGoodHRTargets = hrTargets ? ['A+', 'A', 'B+'].includes(hrTargets.grade) : false;
-          const hasLabEdge = theLabData?.strongHitCandidate ?? false;
-          return hasHotStreak || hasStrongStats || hasGoodHRTargets || hasLabEdge;
+          return hasHotStreak || hasStrongStats || hasGoodHRTargets;
         }
         return false; // VS <= 8: excluded
       })
@@ -456,13 +394,16 @@ export function rankAIPicks(
       const dayNightResult = calculateDayNightScore(splits, gameTimeType, playerData.stats.avg);
       const dayNightScore = dayNightResult.score;
 
-      // ── Streak / theLAB data ──────────────────────────────────────────────
-      const theLabData: TheLabPlayerData | null = theLabMismatchMap?.get(matchup.playerName) ?? null;
-      // Use MLB game log streak as fallback when theLAB is unavailable
+      // ── Streak data (MLB game logs) ────────────────────────────────────────
       const mlbStreak = mlbStreakMap?.get(matchup.playerId) ?? null;
-      const streakResult = calculateStreakScore(theLabData, mlbStreak);
+      const streakResult = calculateStreakScore(null, mlbStreak);
       const streakScore = streakResult.score;
-      const theLabScore = calculateTheLabScore(theLabData);
+
+      // ── Statcast score (pybaseball: xwOBA, barrel%, exit velo percentiles) ──
+      const statcastPlayer = statcastCache
+        ? (statcastCache.byId.get(matchup.playerId) ?? lookupStatcastPlayer(statcastCache, matchup.playerName))
+        : null;
+      const statcastScore = calculateStatcastScore(statcastPlayer);
 
       // ── VS Grade from ballparkpal ─────────────────────────────────────────
       // VS grade is the primary gate (already filtered above), but we also use it
@@ -484,16 +425,16 @@ export function rankAIPicks(
       // Total = 1.0
       const overallScore =
         vsScore * 0.15 +             // VS Grade (batter vs pitcher matchup) — PRIMARY
-        rcScore * 0.10 +             // Ballpark.com RC (secondary matchup signal)
-        playerStatsScore * 0.12 +    // Season stats (avg, slg, power)
+        rcScore * 0.08 +             // Ballpark.com RC (secondary matchup signal)
+        playerStatsScore * 0.10 +    // Season stats (avg, slg, power)
+        statcastScore * 0.12 +       // Statcast: xwOBA, barrel%, exit velo (replaces theLAB)
         gameTotalScore * 0.08 +      // Game total O/U environment
         parkFactorScore * 0.06 +     // Park factor (reduced — O/U already prices this in)
         hrTargetsScore * 0.10 +      // HR Targets grade
         pitcherMatchupScore * 0.11 + // Pitcher weakness
         battingPositionScore * 0.08 + // Lineup position
         dayNightScore * 0.10 +       // Day/night split
-        streakScore * 0.10 +         // Streak/hot hand
-        theLabScore * 0.10;          // theLAB edge
+        streakScore * 0.12;          // Streak/hot hand
 
       // ── Reasoning ────────────────────────────────────────────────────────
       const reasons: string[] = [];
@@ -509,7 +450,7 @@ export function rankAIPicks(
       if (dayNightResult.favorable) reasons.push(`Strong ${gameTimeType} performer (+${dayNightResult.boost}%)`);
       if (streakResult.isOnStreak) reasons.push(`On ${streakResult.streakLength}-game hit streak`);
       if (streakResult.last5HitRate >= 70) reasons.push(`${streakResult.last5HitRate}% hit rate last 5`);
-      if (theLabData?.strongHitCandidate) reasons.push("theLAB strong hit candidate");
+      // theLAB removed
 
       const reasoning = reasons.join(" • ") || "Solid matchup";
 
@@ -578,7 +519,7 @@ export function rankAIPicks(
           battingPosition: Math.round(battingPositionScore),
           dayNightSplit: Math.round(dayNightScore),
           streakBonus: Math.round(streakScore),
-          theLabEdge: Math.round(theLabScore),
+          statcast: Math.round(statcastScore), // Real Statcast score from pybaseball
           gameTotal: Math.round(gameTotalScore),
         },
         overallScore: Math.round(overallScore),
@@ -600,10 +541,8 @@ export function rankAIPicks(
         };
       }
 
-      // Attach streak info — prefer theLAB label, fall back to MLB game log label
-      const streakLabel = (theLabData?.hasRealData && theLabData.streakLabel)
-        ? theLabData.streakLabel
-        : (mlbStreak?.hasRealData ? mlbStreak.streakLabel : "");
+      // Streak label from MLB game logs
+      const streakLabel = mlbStreak?.hasRealData ? (mlbStreak.streakLabel ?? "") : "";
       pick.streakInfo = {
         isOnStreak: streakResult.isOnStreak,
         streakLength: streakResult.streakLength,
@@ -654,26 +593,7 @@ export function rankAIPicks(
         favorableCount,
       };
 
-      // Attach theLAB edge info
-      if (theLabData) {
-        const oddsStr = theLabData.odds != null ? String(theLabData.odds) : undefined;
-        pick.theLabEdge = {
-          edgeScore: theLabData.edgeScore ?? 50,
-          strongHitCandidate: theLabData.strongHitCandidate ?? false,
-          last5HitRate: theLabData.last5HitRate ?? 50,
-          odds: oddsStr,
-          provider: theLabData.oddsProvider ?? undefined,
-          line: theLabData.mismatch?.line,
-        };
-        // Use theLAB odds if available
-        if (oddsStr) {
-          pick.odds = {
-            line,
-            overOdds: oddsStr,
-            provider: theLabData.oddsProvider ?? undefined,
-          };
-        }
-      }
+      // theLAB removed — no edge info to attach
 
       return pick;
     })

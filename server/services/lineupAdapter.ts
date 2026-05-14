@@ -58,6 +58,7 @@ interface AdaptedData {
   matchups: MatchupData[];
   playerDataMap: Map<number, PlayerData>;
   games: MLBGame[];
+  lineupSource: 'confirmed' | 'projected';
   timestamp: number;
 }
 
@@ -159,6 +160,11 @@ export async function getAdaptedLineupData(): Promise<AdaptedData> {
       getTodaysGamesSummary(),
     ]);
 
+    // Determine overall lineup source from games
+    const anyProjected = games.some(g => g.lineupSource === 'projected');
+    const allConfirmed = games.length > 0 && games.every(g => g.lineupSource === 'confirmed');
+    const lineupSource: 'confirmed' | 'projected' = allConfirmed ? 'confirmed' : 'projected';
+
     if (players.length === 0) {
       // No lineup data available yet - do NOT cache empty results
       // so next request will try again immediately
@@ -166,6 +172,7 @@ export async function getAdaptedLineupData(): Promise<AdaptedData> {
         matchups: [],
         playerDataMap: new Map(),
         games,
+        lineupSource,
         timestamp: Date.now(),
       };
     }
@@ -183,6 +190,7 @@ export async function getAdaptedLineupData(): Promise<AdaptedData> {
       matchups,
       playerDataMap,
       games,
+      lineupSource,
       timestamp: Date.now(),
     };
 
@@ -193,6 +201,7 @@ export async function getAdaptedLineupData(): Promise<AdaptedData> {
       matchups: [],
       playerDataMap: new Map(),
       games: [],
+      lineupSource: 'projected',
       timestamp: Date.now(),
     };
   }

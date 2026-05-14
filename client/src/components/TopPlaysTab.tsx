@@ -180,12 +180,7 @@ function HeroPickCard({ pick, index }: { pick: any; index: number }) {
                 </span>
               </div>
             )}
-            {/* theLAB strong hit candidate */}
-            {pick.theLabEdge?.strongHitCandidate && (
-              <div className="flex items-center gap-1 px-2.5 py-1 rounded-md" style={{ background: "oklch(0.82 0.17 85 / 20%)", border: "1px solid oklch(0.82 0.17 85 / 40%)" }}>
-                <span className="text-[11px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>⭐ theLAB Pick</span>
-              </div>
-            )}
+
             {/* Prime Position badge: data-driven 3+ of 4 factors favorable */}
             {pick.primePosition && (
               <div
@@ -255,9 +250,9 @@ function HeroPickCard({ pick, index }: { pick: any; index: number }) {
                       <FactorBar label="HR Targets" value={pick.factorBreakdown?.hrTargets ?? Math.round(pick.confidence * 0.90)} max={100} color={statConfig.color} delay={0.25} />
                       <FactorBar label="Pitcher" value={pick.factorBreakdown?.pitcherMatchup ?? Math.round(pick.confidence * 0.80)} max={100} color={statConfig.color} delay={0.3} />
                       <FactorBar label="Bat Position" value={pick.factorBreakdown?.battingPosition ?? Math.round(pick.confidence * 0.75)} max={100} color={statConfig.color} delay={0.35} />
-                      {/* theLAB edge score */}
-                      {pick.theLabEdge && (
-                        <FactorBar label="theLAB Edge" value={pick.theLabEdge.edgeScore ?? 0} max={100} color="oklch(0.82 0.17 85)" delay={0.4} />
+                      {/* Statcast quality score */}
+                      {pick.factorBreakdown?.statcast !== undefined && (
+                        <FactorBar label="Statcast" value={pick.factorBreakdown.statcast} max={100} color="oklch(0.82 0.17 85)" delay={0.4} />
                       )}
                       {/* Day/Night split score */}
                       {pick.dayNightSplit && (
@@ -491,18 +486,33 @@ export function TopPlaysTab() {
       <div className="flex-1 flex items-center justify-center px-4 py-16">
         <div className="text-center">
           <AlertCircle size={40} className="text-[oklch(0.40_0.015_255)] mx-auto mb-3" />
-          <p className="text-white font-semibold mb-1">No picks available</p>
-          <p className="text-sm text-[oklch(0.45_0.015_255)]">Check back closer to game time</p>
+          <p className="text-white font-semibold mb-1">No qualifying picks today</p>
+          <p className="text-sm text-[oklch(0.45_0.015_255)]">Only high-quality VS=10/9 matchups surface here</p>
         </div>
       </div>
     );
   }
 
+  const lineupSource = (data as any)?.lineupSource ?? 'projected';
+  const isProjected = lineupSource === 'projected';
   const heroPicks = data.picks.slice(0, 3);
   const remainingPicks = data.picks.slice(3, 5);
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      {/* Lineup source badge */}
+      <div className="flex justify-end">
+        <div
+          className="flex items-center gap-1 px-2 py-1 rounded-md border text-[9px] font-bold tracking-wide"
+          style={isProjected
+            ? { background: "oklch(0.20 0.08 60 / 0.3)", border: "1px solid oklch(0.75 0.15 60 / 0.5)", color: "oklch(0.82 0.17 85)" }
+            : { background: "oklch(0.15 0.08 165 / 0.3)", border: "1px solid oklch(0.72 0.18 165 / 0.5)", color: "oklch(0.72 0.18 165)" }
+          }
+        >
+          <div className={`w-1.5 h-1.5 rounded-full ${isProjected ? 'bg-[oklch(0.82_0.17_85)] animate-pulse' : 'bg-[oklch(0.72_0.18_165)]'}`} />
+          {isProjected ? 'PROJECTED LINEUP' : 'CONFIRMED LINEUP'}
+        </div>
+      </div>
       {/* Hero section - Top 3 */}
       <div className="space-y-4">
         {heroPicks.map((pick: any, index: number) => (

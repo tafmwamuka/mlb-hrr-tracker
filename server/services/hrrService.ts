@@ -14,7 +14,6 @@
  * combined Hits + Runs + RBI total for a single game.
  */
 import type { PlayerDayNightSplits } from "./dayNightSplitService";
-import type { TheLabPlayerData } from "./theLabService";
 
 export interface HRRProjection {
   playerId: number;
@@ -64,14 +63,6 @@ export interface HRRProjection {
     last5HitRate: number;
     trendDirection: 'up' | 'down' | 'stable';
     streakLabel?: string;
-  };
-  // theLAB edge
-  theLabEdge?: {
-    edgeScore: number;
-    strongHitCandidate: boolean;
-    last5HitRate: number;
-    odds?: string;
-    provider?: string;
   };
 }
 
@@ -230,7 +221,6 @@ export function generateHRRProjections(
   parkFactors: Map<string, number>,
   savantData?: Map<string, { xwOBA: number; hardHitPct: number; exitVelocity: number; barrelPct: number }>,
   dayNightSplitsMap?: Map<number, PlayerDayNightSplits>,
-  theLabMismatchMap?: Map<string, TheLabPlayerData>,
   mlbStreakMap?: Map<number, import('./mlbStreakService').PlayerStreakData>
 ): HRRProjection[] {
   const projections: HRRProjection[] = matchups
@@ -288,54 +278,28 @@ export function generateHRRProjections(
         }
       }
 
-      // Step 4c: Apply streak adjustment (theLAB preferred, MLB game log as fallback)
-      const theLabData: TheLabPlayerData | null = theLabMismatchMap?.get(matchup.playerName) ?? null;
+      // Step 4c: Apply streak adjustment (MLB game log)
       const mlbStreak = mlbStreakMap?.get(matchup.playerId) ?? null;
       let streakInfo: HRRProjection['streakInfo'] | undefined;
-      let theLabEdgeInfo: HRRProjection['theLabEdge'] | undefined;
 
-      // Determine streak source: prefer theLAB, fall back to MLB game log
-      const streakSource = (theLabData?.hasRealData) ? 'thelab' : (mlbStreak?.hasRealData ? 'mlb' : null);
-      if (streakSource) {
-        let last5: number, streakLen: number, trend: string;
-        if (streakSource === 'thelab' && theLabData) {
-          last5 = theLabData.last5HitRate ?? 50;
-          streakLen = theLabData.streakLength ?? 0;
-          trend = theLabData.trendDirection ?? 'NEUTRAL';
-        } else if (mlbStreak) {
-          last5 = mlbStreak.last5HitRate;
-          streakLen = mlbStreak.streakLength;
-          trend = mlbStreak.trendDirection;
-        } else {
-          last5 = 50; streakLen = 0; trend = 'NEUTRAL';
-        }
+      if (mlbStreak?.hasRealData) {
+        const last5 = mlbStreak.last5HitRate;
+        const streakLen = mlbStreak.streakLength;
+        const trend = mlbStreak.trendDirection;
         let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
         if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') streakType = 'hot';
         else if ((last5 <= 30 && (streakLen <= -3 || trend === 'COLD')) || streakLen <= -5) streakType = 'cold';
-        // Apply streak multiplier to projections
         const streakMultiplier = streakType === 'hot' ? 1.10 : streakType === 'cold' ? 0.90 : 1.0;
         expectedHits *= streakMultiplier;
         expectedRuns *= streakMultiplier;
         expectedRBI *= streakMultiplier;
-        const streakLabel = streakSource === 'thelab'
-          ? (theLabData?.streakLabel ?? '')
-          : (mlbStreak?.streakLabel ?? '');
         streakInfo = {
           streakType,
           streakLength: Math.abs(streakLen),
           last5HitRate: Math.round(last5),
           trendDirection: trend === 'HOT' ? 'up' : trend === 'COLD' ? 'down' : 'stable',
-          streakLabel,
+          streakLabel: mlbStreak.streakLabel ?? '',
         };
-        if (theLabData && streakSource === 'thelab') {
-          theLabEdgeInfo = {
-            edgeScore: theLabData.edgeScore ?? 50,
-            strongHitCandidate: theLabData.strongHitCandidate ?? false,
-            last5HitRate: Math.round(last5),
-            odds: theLabData.odds != null ? String(theLabData.odds) : undefined,
-            provider: theLabData.oddsProvider ?? undefined,
-          };
-        }
       }
 
       // Step 5: Calculate expected total
@@ -397,8 +361,6 @@ export function generateHRRProjections(
       if (streakInfo?.streakType === 'hot') reasons.push(`🔥 HOT — ${streakInfo.last5HitRate}% hit rate last 5`);
       else if (streakInfo?.streakType === 'cold') reasons.push(`❄️ COLD — ${streakInfo.last5HitRate}% hit rate last 5`);
       if (dayNightSplitInfo?.favorable) reasons.push(`Strong ${dayNightSplitInfo.gameTimeType} performer (+${dayNightSplitInfo.splitBoost}%)`);
-      if (theLabEdgeInfo?.strongHitCandidate) reasons.push(`theLAB strong hit candidate`);
-
       // Edge reasoning
       if (expectedTotal > hrrLine + 0.5) reasons.push(`Model projects ${expectedTotal.toFixed(1)} total vs ${hrrLine} line`);
 
@@ -428,7 +390,6 @@ export function generateHRRProjections(
         ballparkReasoning,
         dayNightSplit: dayNightSplitInfo,
         streakInfo,
-        theLabEdge: theLabEdgeInfo,
       };
     })
     .filter((p): p is NonNullable<typeof p> => p !== null) as HRRProjection[];

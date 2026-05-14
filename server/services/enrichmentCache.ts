@@ -7,24 +7,31 @@
  *
  * Cache TTL: 15 minutes (data doesn't change mid-session)
  * Hard timeout: 6 seconds per fetch (never block the page)
+ *
+ * Data sources:
+ * - ballparkpal.com VS grade map (batter vs pitcher matchup)
+ * - Odds API game totals (Vegas O/U lines)
+ * - MLB Stats API day/night splits per player
+ * - MLB Stats API streak data per player
+ * - Pybaseball Statcast data (xwOBA, barrel%, exit velocity) — cached 6h separately
  */
 
 import { batchGetDayNightSplits, type PlayerDayNightSplits } from "./dayNightSplitService";
-import { batchGetTheLabData, type TheLabPlayerData } from "./theLabService";
 import { batchGetPlayerStreaks, type PlayerStreakData } from "./mlbStreakService";
 import { getVSGatedPool } from "./ballparkMatchupService";
 import { fetchGameTotals } from "./gameTotalsService";
+import { getStatcastData, type StatcastCache } from "./pybaseballService";
 import type { GameTotal } from "./gameTotalsService";
 
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 const FETCH_TIMEOUT = 6_000; // 6 seconds hard timeout per enrichment source
 
-interface EnrichmentData {
+export interface EnrichmentData {
   vsGradeMap: Map<string, number>;
   gameTotalsMap: Map<string, GameTotal>;
   dayNightSplitsMap: Map<number, PlayerDayNightSplits>;
-  theLabDataMap: Map<string, TheLabPlayerData>;
   mlbStreakMap: Map<number, PlayerStreakData>;
+  statcastCache: StatcastCache;
   fetchedAt: number;
 }
 
@@ -72,7 +79,8 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
     const oddsApiKey = process.env.ODDS_API_KEY;
 
     // Fetch all enrichment sources in parallel with hard timeouts
-    const [vsGateResult, dayNightSplitsMap, theLabDataMap, mlbStreakMap] = await Promise.all([
+    // Statcast data is fetched separately (6h cache, slow Python subprocess)
+    const [vsGateResult, dayNightSplitsMap, mlbStreakMap, statcastCache] = await Promise.all([
       withTimeout(
         getVSGatedPool(),
         FETCH_TIMEOUT,
@@ -88,17 +96,20 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
         new Map<number, PlayerDayNightSplits>()
       ),
       withTimeout(
-        batchGetTheLabData(
-          players.map(p => ({ playerName: p.playerName, teamAbbr: p.team, statType: 'hits' as const })),
-          new Date().toISOString().split('T')[0]
-        ),
-        FETCH_TIMEOUT,
-        new Map<string, TheLabPlayerData>()
-      ),
-      withTimeout(
         batchGetPlayerStreaks(players.map(p => ({ playerId: p.playerId, playerName: p.playerName }))),
         FETCH_TIMEOUT,
         new Map<number, PlayerStreakData>()
+      ),
+      // Statcast has its own 6h cache — this is usually instant after first load
+      withTimeout(
+        getStatcastData(season),
+        30_000, // 30s timeout for initial Python subprocess
+        {
+          data: new Map<string, import('./pybaseballService').StatcastPlayer>(),
+          byId: new Map<number, import('./pybaseballService').StatcastPlayer>(),
+          fetchedAt: Date.now(),
+          year: season,
+        }
       ),
     ]);
 
@@ -119,8 +130,8 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
       vsGradeMap,
       gameTotalsMap,
       dayNightSplitsMap,
-      theLabDataMap,
       mlbStreakMap,
+      statcastCache,
       fetchedAt: Date.now(),
     };
 

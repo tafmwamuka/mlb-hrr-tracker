@@ -611,3 +611,30 @@
 - [x] Money Picks tab: show matrix-scored picks with Poisson probability as confidence overlay
 - [x] HRR tab: show matrix-scored picks with HRR Poisson model on combined H+R+RBI line
 - [x] All four tabs (Money Picks, All Plays, Top Plays, HRR) use VS gate → matrix → quality threshold pipeline
+
+## Pybaseball + TheLAB Removal + Projected Lineups (May 14, 2026)
+- [ ] Audit pybaseball: test statcast_batter_exitvelo_percentiles, statcast_batter, pitching_stats, batting_stats
+- [ ] Remove theLabService.ts and all theLAB imports/references from server code
+- [ ] Remove theLAB weight from aiRankingService scoring matrix (redistribute weight to other factors)
+- [ ] Remove theLAB badges and UI elements from AllPlaysTab, TopPlaysTab, HRRTab, MoneyPicksTab
+- [ ] Remove theLAB from enrichmentCache and aiPicks router
+- [ ] Build pybaseballService.ts: Python subprocess that fetches real Statcast data (xwOBA, barrel%, exit velo, hard hit%)
+- [ ] Replace mock Savant data with real pybaseball Statcast data in all pick procedures
+- [ ] Build projectedLineupService.ts: use probable pitchers + historical batting order (last 10 games)
+- [ ] Wire projected lineups into getTopPicks, getComprehensivePicks, getHRRPicks
+- [ ] Show PROJECTED badge on pick cards when lineup is not yet confirmed
+- [ ] Auto-transition from PROJECTED to CONFIRMED when real lineups post (re-fetch on 5-min interval)
+- [ ] Update scheduled job to use projected lineups for morning runs
+
+## Pybaseball + TheLAB Removal + Projected Lineups (May 14, 2026)
+- [x] Install pybaseball and audit what real Statcast data it provides (617 players, xwOBA/barrel%/exit velo)
+- [x] Build pybaseballService.ts: fetch real xwOBA, barrel%, exit velocity, percentile ranks
+- [x] Wire real Statcast score into aiRankingService (replace mock statcast: 50)
+- [x] Remove all theLAB code: theLabService.ts, enrichmentCache theLAB fetch, aiRankingService theLAB scoring
+- [x] Remove theLAB badge from all 4 UI tabs (TopPlays, AllPlays, HRR, MoneyPicks)
+- [x] Build projectedLineupService.ts: use probable pitchers + historical batting order
+- [x] Wire projected lineups into mlbLineupService as fallback when confirmed lineups not posted
+- [x] Add lineupSource field to all pick procedure return values
+- [x] Add PROJECTED/CONFIRMED badge to all 4 UI tabs
+- [x] TypeScript 0 errors after all changes
+- [ ] Save checkpoint

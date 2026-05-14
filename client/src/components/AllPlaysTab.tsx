@@ -107,12 +107,12 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
           {/* Quick stats row */}
           <div className="flex items-center gap-3 mt-2 pl-10 flex-wrap">
             {/* Odds badge */}
-            {(pick.odds?.overOdds || pick.theLabEdge?.odds) && (
+            {pick.odds?.overOdds && (
               <span className="text-[10px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
-                {pick.odds?.overOdds || pick.theLabEdge?.odds}
-                {(pick.odds?.provider || pick.theLabEdge?.provider) && (
+                {pick.odds.overOdds}
+                {pick.odds.provider && (
                   <span className="text-[9px] text-[oklch(0.45_0.015_255)] ml-0.5">
-                    {pick.odds?.provider || pick.theLabEdge?.provider}
+                    {pick.odds.provider}
                   </span>
                 )}
               </span>
@@ -135,12 +135,7 @@ function PlayCard({ pick, index }: { pick: any; index: number }) {
                 ❄️ Cold
               </span>
             )}
-            {/* theLAB strong hit */}
-            {pick.theLabEdge?.strongHitCandidate && (
-              <span className="text-[10px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
-                ⭐ theLAB
-              </span>
-            )}
+
             {/* Prime Position badge */}
             {pick.primePosition && (
               <span
@@ -324,16 +319,19 @@ export function AllPlaysTab() {
 
   const picks = aiPicksData?.picks || [];
 
-  // Handle lineups pending state
-  if ((aiPicksData as any)?.lineupsPending || picks.length === 0) {
+  const lineupSource = (aiPicksData as any)?.lineupSource ?? 'projected';
+  const isProjected = lineupSource === 'projected';
+
+  // Handle truly empty state (no data at all)
+  if ((aiPicksData as any)?.lineupsPending) {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4">
         <div className="w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "oklch(0.18 0.03 255)" }}>
           <TrendingUp size={24} style={{ color: "oklch(0.82 0.17 85)" }} />
         </div>
-        <p className="text-white font-semibold mb-1">Lineups Posting Soon</p>
+        <p className="text-white font-semibold mb-1">Loading Projected Lineups...</p>
         <p className="text-sm text-[oklch(0.45_0.015_255)] text-center max-w-xs">
-          Today's plays will appear once MLB lineups are confirmed.
+          Building picks from today's probable pitchers and historical batting orders.
         </p>
         <p className="text-[oklch(0.40_0.015_255)] text-xs mt-2">{todayDate}</p>
         <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
@@ -352,9 +350,22 @@ export function AllPlaysTab() {
           <h3 className="text-sm font-bold text-white">{picks.length} Plays Available</h3>
           <p className="text-[10px] text-[oklch(0.45_0.015_255)]">{todayDate} · Tap any play for full analysis</p>
         </div>
-        <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[oklch(1_0_0/4%)] border border-[oklch(1_0_0/8%)]">
-          <Flame size={10} className="text-orange-400" />
-          <span className="text-[9px] text-[oklch(0.55_0.015_255)]">Savant + RC</span>
+        <div className="flex items-center gap-2">
+          {/* Lineup source badge */}
+          <div
+            className="flex items-center gap-1 px-2 py-1 rounded-md border text-[9px] font-bold tracking-wide"
+            style={isProjected
+              ? { background: "oklch(0.20 0.08 60 / 0.3)", border: "1px solid oklch(0.75 0.15 60 / 0.5)", color: "oklch(0.82 0.17 85)" }
+              : { background: "oklch(0.15 0.08 165 / 0.3)", border: "1px solid oklch(0.72 0.18 165 / 0.5)", color: "oklch(0.72 0.18 165)" }
+            }
+          >
+            <div className={`w-1.5 h-1.5 rounded-full ${isProjected ? 'bg-[oklch(0.82_0.17_85)] animate-pulse' : 'bg-[oklch(0.72_0.18_165)]'}`} />
+            {isProjected ? 'PROJECTED' : 'CONFIRMED'}
+          </div>
+          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[oklch(1_0_0/4%)] border border-[oklch(1_0_0/8%)]">
+            <Flame size={10} className="text-orange-400" />
+            <span className="text-[9px] text-[oklch(0.55_0.015_255)]">Savant + RC</span>
+          </div>
         </div>
       </div>
 

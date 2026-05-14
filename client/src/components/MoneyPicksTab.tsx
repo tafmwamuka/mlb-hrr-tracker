@@ -65,13 +65,7 @@ interface MoneyPick {
     splitBoost: number;
     favorable: boolean;
   } | null;
-  theLabEdge?: {
-    edgeScore: number;
-    strongHitCandidate: boolean;
-    last5HitRate: number;
-    odds?: string;
-    provider?: string;
-  } | null;
+
   primePosition?: boolean;
   primePositionFactors?: {
     platoonAdvantage: boolean;
@@ -249,12 +243,7 @@ function MoneyPickCard({
               +{pick.edge}% edge
             </div>
           )}
-          {/* theLAB strong hit candidate badge */}
-          {pick.theLabEdge?.strongHitCandidate && (
-            <div className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: "oklch(0.82 0.17 85 / 20%)", color: "oklch(0.82 0.17 85)", border: "1px solid oklch(0.82 0.17 85 / 40%)" }}>
-              ⭐ theLAB Pick
-            </div>
-          )}
+
           {/* Prime Position badge: data-driven 3+ of 4 factors favorable */}
           {pick.primePosition && (
             <div
@@ -449,11 +438,10 @@ export function MoneyPicksTab() {
         const recommended = qualifyingLines[0];
         // Use real streak from backend if available, otherwise generate from probability
         const streakInfo = pick.streakInfo ?? null;
-        const theLabEdge = pick.theLabEdge ?? null;
         const dayNightSplit = pick.dayNightSplit ?? null;
-        // Real odds from theLAB or bookOdds
-        const realOdds = theLabEdge?.odds ?? (pick.bookOdds ? String(pick.bookOdds) : null);
-        const oddsProvider = theLabEdge?.provider ?? pick.lineSource ?? null;
+        // Real odds from bookOdds
+        const realOdds = pick.bookOdds ? String(pick.bookOdds) : null;
+        const oddsProvider = pick.lineSource ?? null;
         // Streak label: use real data if available
         const streak = streakInfo
           ? (streakInfo.isOnStreak && streakInfo.streakLength >= 3
@@ -493,7 +481,6 @@ export function MoneyPicksTab() {
           oddsProvider,
           streakInfo,
           dayNightSplit,
-          theLabEdge,
           primePosition: pick.primePosition ?? false,
           primePositionFactors: pick.primePositionFactors ?? null,
           overallScore: pick.overallScore ?? pick.hrrConfidence,
@@ -556,8 +543,11 @@ export function MoneyPicksTab() {
     );
   }
 
-  // Handle lineups pending state
-  if (data?.lineupsPending || (!isLoading && moneyPicks.length === 0 && !data?.picks?.length)) {
+  const lineupSource = (data as any)?.lineupSource ?? 'projected';
+  const isProjected = lineupSource === 'projected';
+
+  // Handle lineups pending state (no picks at all)
+  if (data?.lineupsPending) {
     return (
       <div className="p-4 space-y-4">
         <div className="text-center">
@@ -567,9 +557,9 @@ export function MoneyPicksTab() {
           <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "oklch(0.18 0.03 255)" }}>
             <Target size={28} style={{ color: "oklch(0.72 0.18 165)" }} />
           </div>
-          <h3 className="text-white font-bold text-lg mb-2">Lineups Posting Soon</h3>
+          <h3 className="text-white font-bold text-lg mb-2">Building Projected Picks...</h3>
           <p className="text-[oklch(0.50_0.015_255)] text-sm max-w-xs mx-auto leading-relaxed">
-            Today's picks will appear once MLB lineups are confirmed. Check back closer to game time.
+            Using today's probable pitchers and historical batting orders to generate picks.
           </p>
           <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
             <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />
@@ -593,8 +583,21 @@ export function MoneyPicksTab() {
             {todayDate} · 75%+ probability plays
           </p>
         </div>
-        <div className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "oklch(0.20 0.03 255)", color: "oklch(0.72 0.18 165)" }}>
-          {filteredPicks.length} plays
+        <div className="flex items-center gap-2">
+          {/* Lineup source badge */}
+          <div
+            className="flex items-center gap-1 px-2 py-1 rounded-md border text-[9px] font-bold tracking-wide"
+            style={isProjected
+              ? { background: "oklch(0.20 0.08 60 / 0.3)", border: "1px solid oklch(0.75 0.15 60 / 0.5)", color: "oklch(0.82 0.17 85)" }
+              : { background: "oklch(0.15 0.08 165 / 0.3)", border: "1px solid oklch(0.72 0.18 165 / 0.5)", color: "oklch(0.72 0.18 165)" }
+            }
+          >
+            <div className={`w-1.5 h-1.5 rounded-full ${isProjected ? 'bg-[oklch(0.82_0.17_85)] animate-pulse' : 'bg-[oklch(0.72_0.18_165)]'}`} />
+            {isProjected ? 'PROJECTED' : 'CONFIRMED'}
+          </div>
+          <div className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "oklch(0.20 0.03 255)", color: "oklch(0.72 0.18 165)" }}>
+            {filteredPicks.length} plays
+          </div>
         </div>
       </div>
 
