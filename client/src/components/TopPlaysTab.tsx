@@ -158,6 +158,34 @@ function HeroPickCard({ pick, index }: { pick: any; index: number }) {
               <span className="text-[11px] text-[oklch(0.55_0.015_255)]">Matchup</span>
               <span className="text-[11px] font-stat font-bold text-white">{pick.factorBreakdown?.pitcherMatchup ?? Math.round(pick.confidence * 0.80)}</span>
             </div>
+            {/* Streak badge */}
+            {pick.streakInfo?.streakType === 'hot' && (
+              <div className="flex items-center gap-1 px-2.5 py-1 rounded-md" style={{ background: "oklch(0.68 0.22 25 / 15%)", border: "1px solid oklch(0.68 0.22 25 / 35%)" }}>
+                <Flame size={12} style={{ color: "oklch(0.82 0.17 85)" }} />
+                <span className="text-[11px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
+                  {pick.streakInfo.streakLength >= 3 ? `🔥 ${pick.streakInfo.streakLength}-game streak` : `HOT ${pick.streakInfo.last5HitRate}%`}
+                </span>
+              </div>
+            )}
+            {pick.streakInfo?.streakType === 'cold' && (
+              <div className="flex items-center gap-1 px-2.5 py-1 rounded-md" style={{ background: "oklch(0.55 0.15 240 / 15%)", border: "1px solid oklch(0.55 0.15 240 / 35%)" }}>
+                <span className="text-[11px] font-bold" style={{ color: "oklch(0.65 0.12 240)" }}>❄️ COLD {pick.streakInfo.last5HitRate}%</span>
+              </div>
+            )}
+            {/* Day/Night split badge */}
+            {pick.dayNightSplit?.favorable && (
+              <div className="flex items-center gap-1 px-2.5 py-1 rounded-md" style={{ background: "oklch(0.72 0.18 165 / 12%)", border: "1px solid oklch(0.72 0.18 165 / 30%)" }}>
+                <span className="text-[11px] font-bold" style={{ color: "oklch(0.72 0.18 165)" }}>
+                  {pick.dayNightSplit.gameTimeType === 'day' ? '☀️' : '🌙'} +{pick.dayNightSplit.splitBoost}% split
+                </span>
+              </div>
+            )}
+            {/* theLAB strong hit candidate */}
+            {pick.theLabEdge?.strongHitCandidate && (
+              <div className="flex items-center gap-1 px-2.5 py-1 rounded-md" style={{ background: "oklch(0.82 0.17 85 / 20%)", border: "1px solid oklch(0.82 0.17 85 / 40%)" }}>
+                <span className="text-[11px] font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>⭐ theLAB Pick</span>
+              </div>
+            )}
           </div>
 
           {/* Reasoning */}
@@ -210,6 +238,30 @@ function HeroPickCard({ pick, index }: { pick: any; index: number }) {
                       <FactorBar label="HR Targets" value={pick.factorBreakdown?.hrTargets ?? Math.round(pick.confidence * 0.90)} max={100} color={statConfig.color} delay={0.25} />
                       <FactorBar label="Pitcher" value={pick.factorBreakdown?.pitcherMatchup ?? Math.round(pick.confidence * 0.80)} max={100} color={statConfig.color} delay={0.3} />
                       <FactorBar label="Bat Position" value={pick.factorBreakdown?.battingPosition ?? Math.round(pick.confidence * 0.75)} max={100} color={statConfig.color} delay={0.35} />
+                      {/* theLAB edge score */}
+                      {pick.theLabEdge && (
+                        <FactorBar label="theLAB Edge" value={pick.theLabEdge.edgeScore ?? 0} max={100} color="oklch(0.82 0.17 85)" delay={0.4} />
+                      )}
+                      {/* Day/Night split score */}
+                      {pick.dayNightSplit && (
+                        <FactorBar
+                          label={pick.dayNightSplit.gameTimeType === 'day' ? '☀️ Day Split' : '🌙 Night Split'}
+                          value={Math.round(Math.max(0, 50 + pick.dayNightSplit.splitBoost * 100))}
+                          max={100}
+                          color={pick.dayNightSplit.favorable ? "oklch(0.72 0.18 165)" : "oklch(0.50 0.015 255)"}
+                          delay={0.45}
+                        />
+                      )}
+                      {/* Streak score */}
+                      {pick.streakInfo && (
+                        <FactorBar
+                          label={pick.streakInfo.streakType === 'hot' ? '🔥 Streak' : pick.streakInfo.streakType === 'cold' ? '❄️ Streak' : 'Streak'}
+                          value={pick.streakInfo.last5HitRate ?? 50}
+                          max={100}
+                          color={pick.streakInfo.streakType === 'hot' ? "oklch(0.82 0.17 85)" : pick.streakInfo.streakType === 'cold' ? "oklch(0.55 0.15 240)" : "oklch(0.50 0.015 255)"}
+                          delay={0.5}
+                        />
+                      )}
                     </div>
                   </div>
 

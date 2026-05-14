@@ -373,17 +373,18 @@ export function rankAIPicks(
       const theLabScore = calculateTheLabScore(theLabData);
 
       // ── Weighted overall score ────────────────────────────────────────────
-      // Updated weights to include new factors (total = 1.0)
+      // Rebalanced weights: real-time signals (theLAB, streak, day/night) get more weight
+      // Total = 1.0
       const overallScore =
-        rcScore * 0.15 +
-        playerStatsScore * 0.15 +
-        parkFactorScore * 0.12 +
-        hrTargetsScore * 0.15 +
-        pitcherMatchupScore * 0.12 +
-        battingPositionScore * 0.08 +
-        dayNightScore * 0.10 +   // Day/night split
-        streakScore * 0.08 +     // Streak/hot hand
-        theLabScore * 0.05;      // theLAB edge
+        rcScore * 0.14 +           // Ballpark.com RC matchup
+        playerStatsScore * 0.12 +  // Season stats (avg, slg, power)
+        parkFactorScore * 0.10 +   // Park factor
+        hrTargetsScore * 0.10 +    // HR Targets grade
+        pitcherMatchupScore * 0.12 + // Pitcher weakness
+        battingPositionScore * 0.08 + // Lineup position
+        dayNightScore * 0.12 +     // Day/night split (was 0.10)
+        streakScore * 0.12 +       // Streak/hot hand (was 0.08)
+        theLabScore * 0.10;        // theLAB edge (was 0.05)
 
       // ── Reasoning ────────────────────────────────────────────────────────
       const reasons: string[] = [];
@@ -530,9 +531,9 @@ export function rankAIPicks(
       rank: index + 1,
     }));
 
-  // ── Dynamic count: only return picks that clear 75% threshold ─────────────
-  // Quality over quantity — no fixed 20/35 player cap
-  const qualityPicks = picks.filter(p => p.overallScore >= 75);
+  // ── Dynamic count: only return picks that clear 78% threshold ──────────────────────
+  // Quality over quantity — raised from 75 to 78 for better pick accuracy
+  const qualityPicks = picks.filter(p => p.overallScore >= 78);
 
   // If fewer than 5 quality picks, include the top 5 regardless (minimum viable slate)
   if (qualityPicks.length < 5) {

@@ -660,11 +660,27 @@ export const aiPicksRouter = router({
       const matchups = lineupData.matchups;
       const players = lineupData.playerDataMap;
 
+      // Fetch day/night splits and theLAB data in parallel (same as getComprehensivePicks)
+      const season = new Date().getFullYear();
+      const [dayNightSplitsMap, theLabDataMap] = await Promise.all([
+        batchGetDayNightSplits(
+          matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
+          'hits',
+          season
+        ).catch(() => new Map()),
+        batchGetTheLabData(
+          matchups.map(m => ({ playerName: m.playerName, teamAbbr: m.team, statType: 'hits' as const })),
+          dataDate
+        ).catch(() => new Map()),
+      ]);
+
       const allPicks = rankAIPicks(
         matchups,
         players,
         getMockHRTargets(),
-        getMockParkFactors()
+        getMockParkFactors(),
+        dayNightSplitsMap,
+        theLabDataMap
       );
       
       // Enrich with Savant data
@@ -822,12 +838,28 @@ export const aiPicksRouter = router({
         }
       }
       
-      // Generate HRR projections using real player stats
+      // Fetch day/night splits and theLAB data in parallel
+      const season = new Date().getFullYear();
+      const [dayNightSplitsMap, theLabDataMap] = await Promise.all([
+        batchGetDayNightSplits(
+          matchups.map(m => ({ playerId: m.playerId, gameTimeUtc: m.gameTime })),
+          'hits',
+          season
+        ).catch(() => new Map()),
+        batchGetTheLabData(
+          matchups.map(m => ({ playerName: m.playerName, teamAbbr: m.team, statType: 'hits' as const })),
+          dataDate
+        ).catch(() => new Map()),
+      ]);
+
+      // Generate HRR projections using real player stats + splits + streak
       const projections = generateHRRProjections(
         matchups,
         players,
         parkFactors,
-        savantMap
+        savantMap,
+        dayNightSplitsMap,
+        theLabDataMap
       );
 
       // Fetch real sportsbook lines from The Odds API (non-blocking, falls back gracefully)

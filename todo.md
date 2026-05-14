@@ -481,3 +481,24 @@
 - [x] Show odds on All Plays cards
 - [ ] Show odds on Results cards (future enhancement)
 - [x] Source: theLAB mismatch board, fallback to Odds API
+
+## Pick Quality Overhaul (May 13, 2026 - User Request)
+
+### Problem Identified
+- `getTopPicks` (Money Picks tab) does NOT use theLAB or day/night splits — missing 23% of scoring
+- `getHRRPicks` (Money Picks HRR tab) does NOT use theLAB or day/night splits at all
+- `getComprehensivePicks` (All Plays) DOES use theLAB + day/night ✅
+- Streak/split badges not showing on MoneyPicksTab cards
+- theLAB weight is only 5% — too low given it has the best real-time data
+- Scoring weights need rebalancing toward real-time signals
+
+### Fixes
+- [x] Wire batchGetDayNightSplits + batchGetTheLabData into getTopPicks procedure
+- [x] Wire batchGetDayNightSplits + batchGetTheLabData into getHRRPicks procedure (pass to generateHRRProjections)
+- [x] Update generateHRRProjections signature to accept dayNightSplitsMap + theLabMismatchMap
+- [x] Apply streak/split adjustments inside generateHRRProjections (boost/penalty)
+- [x] Rebalance aiRankingService weights: increase theLAB to 12%, streak to 12%, dayNight to 12%, reduce hrTargets to 10%
+- [x] Raise quality threshold: require overallScore >= 78 (was 75) for Money Picks
+- [x] Add streak/split badges to MoneyPicksTab pick cards (visible on card face, not just expanded)
+- [x] Ensure AllPlaysTab streak/split badges are visible
+- [x] Add "Why this pick?" score breakdown tooltip/section to Money Picks cards

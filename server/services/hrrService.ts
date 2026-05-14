@@ -7,10 +7,14 @@
  * - Savant metrics (xwOBA, Hard Hit%, etc.)
  * - Ballpark.com RC data
  * - Batting position weighting
+ * - Day/night splits (MLB Stats API)
+ * - theLAB streak & edge data
  * 
  * HRR is a popular sportsbook prop where you bet on a player's
  * combined Hits + Runs + RBI total for a single game.
  */
+import type { PlayerDayNightSplits } from "./dayNightSplitService";
+import type { TheLabPlayerData } from "./theLabService";
 
 export interface HRRProjection {
   playerId: number;
@@ -45,6 +49,29 @@ export interface HRRProjection {
   // Reasoning
   reasoning: string;
   ballparkReasoning: string;
+  // Day/night split info
+  dayNightSplit?: {
+    gameTimeType: 'day' | 'night';
+    splitAvg: number;
+    splitBoost: number;
+    favorable: boolean;
+    splitGames: number;
+  };
+  // Streak info from theLAB
+  streakInfo?: {
+    streakType: 'hot' | 'cold' | 'neutral';
+    streakLength: number;
+    last5HitRate: number;
+    trendDirection: 'up' | 'down' | 'stable';
+  };
+  // theLAB edge
+  theLabEdge?: {
+    edgeScore: number;
+    strongHitCandidate: boolean;
+    last5HitRate: number;
+    odds?: string;
+    provider?: string;
+  };
 }
 
 interface PlayerStats {
@@ -90,6 +117,7 @@ interface MatchupData {
   };
   rc: number;
   confidence: number;
+  gameTime?: string; // ISO string of game start time (for day/night split)
 }
 
 /**
@@ -199,7 +227,9 @@ export function generateHRRProjections(
   matchups: MatchupData[],
   playerDataMap: Map<number, PlayerData>,
   parkFactors: Map<string, number>,
-  savantData?: Map<string, { xwOBA: number; hardHitPct: number; exitVelocity: number; barrelPct: number }>
+  savantData?: Map<string, { xwOBA: number; hardHitPct: number; exitVelocity: number; barrelPct: number }>,
+  dayNightSplitsMap?: Map<number, PlayerDayNightSplits>,
+  theLabMismatchMap?: Map<string, TheLabPlayerData>
 ): HRRProjection[] {
   const projections: HRRProjection[] = matchups
     .map((matchup) => {
@@ -225,9 +255,67 @@ export function generateHRRProjections(
       const posAdjRBI = applyBattingPositionBoost('rbi', parkAdjRBI, matchup.battingPosition);
 
       // Step 4: Apply recent form adjustment
-      const expectedHits = applyRecentFormAdjustment(posAdjHits, playerData.recentForm);
-      const expectedRuns = applyRecentFormAdjustment(posAdjRuns, playerData.recentForm);
-      const expectedRBI = applyRecentFormAdjustment(posAdjRBI, playerData.recentForm);
+      let expectedHits = applyRecentFormAdjustment(posAdjHits, playerData.recentForm);
+      let expectedRuns = applyRecentFormAdjustment(posAdjRuns, playerData.recentForm);
+      let expectedRBI = applyRecentFormAdjustment(posAdjRBI, playerData.recentForm);
+
+      // Step 4b: Apply day/night split adjustment
+      const splits: PlayerDayNightSplits | null = dayNightSplitsMap?.get(matchup.playerId) ?? null;
+      let dayNightSplitInfo: HRRProjection['dayNightSplit'] | undefined;
+      if (splits) {
+        // Determine game time type (day = before 5pm ET)
+        const gameHourUTC = matchup.gameTime ? new Date(matchup.gameTime).getUTCHours() : 22;
+        const etHour = (gameHourUTC - 4 + 24) % 24;
+        const gameTimeType: 'day' | 'night' = etHour < 17 ? 'day' : 'night';
+        const split = gameTimeType === 'day' ? splits.day : splits.night;
+        if (split && split.gamesPlayed >= 5) {
+          const splitAvgNum = parseFloat(split.avg) || 0;
+          const seasonAvg = playerData.stats.avg;
+          const boost = seasonAvg > 0 ? ((splitAvgNum - seasonAvg) / seasonAvg) : 0;
+          const multiplier = 1 + (boost * 0.5); // Apply 50% of the split boost
+          expectedHits *= multiplier;
+          expectedRuns *= multiplier;
+          expectedRBI *= multiplier;
+          dayNightSplitInfo = {
+            gameTimeType,
+            splitAvg: splitAvgNum,
+            splitBoost: Math.round(boost * 100),
+            favorable: boost > 0.05,
+            splitGames: split.gamesPlayed,
+          };
+        }
+      }
+
+      // Step 4c: Apply theLAB streak adjustment
+      const theLabData: TheLabPlayerData | null = theLabMismatchMap?.get(matchup.playerName) ?? null;
+      let streakInfo: HRRProjection['streakInfo'] | undefined;
+      let theLabEdgeInfo: HRRProjection['theLabEdge'] | undefined;
+      if (theLabData) {
+        const last5 = theLabData.last5HitRate ?? 50;
+        const streakLen = theLabData.streakLength ?? 0;
+        const trend = theLabData.trendDirection ?? 'NEUTRAL';
+        let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
+        if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') streakType = 'hot';
+        else if (last5 <= 30 || streakLen <= -3 || trend === 'COLD') streakType = 'cold';
+        // Apply streak multiplier to projections
+        const streakMultiplier = streakType === 'hot' ? 1.10 : streakType === 'cold' ? 0.90 : 1.0;
+        expectedHits *= streakMultiplier;
+        expectedRuns *= streakMultiplier;
+        expectedRBI *= streakMultiplier;
+        streakInfo = {
+          streakType,
+          streakLength: Math.abs(streakLen),
+          last5HitRate: Math.round(last5),
+          trendDirection: trend === 'HOT' ? 'up' : trend === 'COLD' ? 'down' : 'stable',
+        };
+        theLabEdgeInfo = {
+          edgeScore: theLabData.edgeScore ?? 50,
+          strongHitCandidate: theLabData.strongHitCandidate ?? false,
+          last5HitRate: Math.round(last5),
+          odds: theLabData.odds != null ? String(theLabData.odds) : undefined,
+          provider: theLabData.oddsProvider ?? undefined,
+        };
+      }
 
       // Step 5: Calculate expected total
       const expectedTotal = expectedHits + expectedRuns + expectedRBI;
@@ -284,6 +372,12 @@ export function generateHRRProjections(
         reasons.push(`Hot streak — .${Math.round(last15Avg * 1000)} over last 15 games`);
       }
       
+      // Streak/split reasoning
+      if (streakInfo?.streakType === 'hot') reasons.push(`🔥 HOT — ${streakInfo.last5HitRate}% hit rate last 5`);
+      else if (streakInfo?.streakType === 'cold') reasons.push(`❄️ COLD — ${streakInfo.last5HitRate}% hit rate last 5`);
+      if (dayNightSplitInfo?.favorable) reasons.push(`Strong ${dayNightSplitInfo.gameTimeType} performer (+${dayNightSplitInfo.splitBoost}%)`);
+      if (theLabEdgeInfo?.strongHitCandidate) reasons.push(`theLAB strong hit candidate`);
+
       // Edge reasoning
       if (expectedTotal > hrrLine + 0.5) reasons.push(`Model projects ${expectedTotal.toFixed(1)} total vs ${hrrLine} line`);
 
@@ -311,6 +405,9 @@ export function generateHRRProjections(
         savantMetrics: playerSavant,
         reasoning,
         ballparkReasoning,
+        dayNightSplit: dayNightSplitInfo,
+        streakInfo,
+        theLabEdge: theLabEdgeInfo,
       };
     })
     .filter((p): p is NonNullable<typeof p> => p !== null) as HRRProjection[];

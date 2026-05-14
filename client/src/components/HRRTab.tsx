@@ -48,6 +48,27 @@ interface HRRPick {
   bookImpliedProb: number | null;
   alternateLines: AlternateLine[];
   fairLine: number;
+  // theLAB + streak + day/night (now wired from backend)
+  streakInfo?: {
+    streakType: 'hot' | 'cold' | 'neutral';
+    streakLength: number;
+    last5HitRate: number;
+    trendDirection: 'up' | 'down' | 'stable';
+  } | null;
+  dayNightSplit?: {
+    gameTimeType: 'day' | 'night';
+    splitAvg: number;
+    splitBoost: number;
+    favorable: boolean;
+    splitGames: number;
+  } | null;
+  theLabEdge?: {
+    edgeScore: number;
+    strongHitCandidate: boolean;
+    last5HitRate: number;
+    odds?: string;
+    provider?: string;
+  } | null;
 }
 
 function getQualityConfig(quality: string) {
@@ -129,8 +150,8 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
           </div>
         </div>
 
-        {/* Pick Quality + Edge Badge */}
-        <div className="flex items-center gap-2 mb-3">
+        {/* Pick Quality + Edge Badge + Streak + Day/Night */}
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
           <div
             className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
             style={{ background: `${qualityCfg.bg}20`, color: qualityCfg.color, border: `1px solid ${qualityCfg.bg}30` }}
@@ -145,6 +166,37 @@ function HRRCard({ pick, rank }: { pick: HRRPick; rank: number }) {
           {pick.bookOdds && (
             <div className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "oklch(0.20 0.02 255)", color: "oklch(0.60 0.15 200)" }}>
               <DollarSign size={9} className="inline" />{pick.bookOdds > 0 ? `+${pick.bookOdds}` : pick.bookOdds}
+            </div>
+          )}
+          {/* Streak badge from theLAB */}
+          {pick.streakInfo?.streakType === 'hot' && (
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded" style={{ background: "oklch(0.68 0.22 25 / 15%)", border: "1px solid oklch(0.68 0.22 25 / 35%)", color: "oklch(0.82 0.17 85)" }}>
+              <Flame size={9} />
+              <span className="text-[10px] font-bold">
+                {pick.streakInfo.streakLength >= 3 ? `🔥 ${pick.streakInfo.streakLength}-game streak` : `HOT ${pick.streakInfo.last5HitRate}%`}
+              </span>
+            </div>
+          )}
+          {pick.streakInfo?.streakType === 'cold' && (
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded" style={{ background: "oklch(0.55 0.15 240 / 15%)", border: "1px solid oklch(0.55 0.15 240 / 35%)", color: "oklch(0.65 0.12 240)" }}>
+              <span className="text-[10px] font-bold">❄️ COLD {pick.streakInfo.last5HitRate}%</span>
+            </div>
+          )}
+          {/* Day/Night split badge */}
+          {pick.dayNightSplit && (
+            <div className="px-2 py-0.5 rounded text-[10px] font-bold" style={{
+              background: pick.dayNightSplit.favorable ? "oklch(0.72 0.18 165 / 12%)" : "oklch(0.18 0.02 255)",
+              border: `1px solid ${pick.dayNightSplit.favorable ? "oklch(0.72 0.18 165 / 30%)" : "oklch(1 0 0 / 8%)"}`,
+              color: pick.dayNightSplit.favorable ? "oklch(0.72 0.18 165)" : "oklch(0.50 0.015 255)",
+            }}>
+              {pick.dayNightSplit.gameTimeType === 'day' ? '☀️' : '🌙'} {pick.dayNightSplit.gameTimeType}
+              {pick.dayNightSplit.favorable && ` +${pick.dayNightSplit.splitBoost}%`}
+            </div>
+          )}
+          {/* theLAB strong hit candidate */}
+          {pick.theLabEdge?.strongHitCandidate && (
+            <div className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: "oklch(0.82 0.17 85 / 20%)", color: "oklch(0.82 0.17 85)", border: "1px solid oklch(0.82 0.17 85 / 40%)" }}>
+              ⭐ theLAB Pick
             </div>
           )}
           <div className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: "oklch(0.20 0.02 255)", color: "oklch(0.50 0.015 255)" }}>
