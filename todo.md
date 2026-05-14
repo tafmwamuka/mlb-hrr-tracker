@@ -591,3 +591,8 @@
 - [x] Wire game total score into aiRankingService as new factor (replaces RC weight partially)
 - [ ] Wire game total score into hrrService for HRR projections (uses VS gate filter instead)
 - [ ] Display game O/U line on pick cards (e.g. "O/U 9.5")
+
+## Scheduled Job Update (May 14, 2026)
+- [x] Update scheduled job detail to use VS gate (ballparkpal VS=10/9) as primary filter
+- [x] Update scheduled job to fetch Odds API game totals and include in scoring
+- [x] Resume paused scheduled job so site auto-updates at 10 AM, 1 PM, 4 PM, 8 PM EST
