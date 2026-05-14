@@ -666,9 +666,13 @@
 - [ ] TypeScript 0 errors
 - [ ] Save checkpoint
 
-## Phase N: VS Gate Adaptive Thresholds & Schedule Fix (2026-05-14)
+## Phase N: Autonomous Operation Fixes (2026-05-14)
 - [x] Fix VS gate to use adaptive thresholds: ballparkpal mode (9.5/8.5) vs mlbMatchup fallback mode (7.0/5.5)
 - [x] Fix quality gate to use adaptive threshold: 75 for ballparkpal, 65 for mlbMatchup fallback
 - [x] Fix HRR inline VS gate to also use adaptive thresholds based on bpMatchups3.length
 - [x] Add warmEnrichmentCacheOnStartup() to server startup so first request gets real data
 - [x] Add 7 AM EST early morning run to scheduled job (was 10,13,16,20 → now 7,10,13,16,20)
+- [x] Add midnight ET rollover check to enrichmentCache so it auto-invalidates at midnight each day
+- [x] Track cacheDataDate in enrichmentCache to detect day changes
+- [x] Add 7 AM EST early morning run to scheduled job (cron: 0 0 7,10,13,16,20 * * *)
+- [x] Note: scheduled job runMode (ask_user vs auto) must be changed in Manus UI Settings → Schedules

@@ -66,6 +66,21 @@ let cachedEnrichment: EnrichmentData | null = null;
 // Background warming in progress
 let warmingInProgress = false;
 
+// Track the ET date when the cache was last warmed (for midnight rollover)
+let cacheDataDate: string | null = null;
+
+/**
+ * Get today's date in Eastern Time (MLB operates on ET).
+ */
+function getETDate(): string {
+  const now = new Date();
+  const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const year = etDate.getFullYear();
+  const month = String(etDate.getMonth() + 1).padStart(2, '0');
+  const day = String(etDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 /**
  * Wraps a promise with a hard timeout.
  * On timeout, returns the fallback value instead of throwing.
@@ -248,6 +263,7 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
       fetchedAt: Date.now(),
       isWarm: true,
     };
+    cacheDataDate = getETDate(); // Track which day this cache belongs to
 
     console.log(`[EnrichmentCache] Background warm complete. ` +
       `BallparkPal: ${ballparkMatchups.length > 0 ? 'YES' : 'NO (fallback)'}, ` +
@@ -269,6 +285,15 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
  * On warm cache: returns cached data instantly.
  */
 export async function getEnrichmentData(players: PlayerRef[]): Promise<EnrichmentData> {
+  // Invalidate cache if we've crossed midnight ET (new day)
+  const todayET = getETDate();
+  if (cachedEnrichment && cacheDataDate && cacheDataDate !== todayET) {
+    console.log(`[EnrichmentCache] New day detected (was ${cacheDataDate}, now ${todayET}). Clearing cache.`);
+    cachedEnrichment = null;
+    cacheDataDate = null;
+    warmingInProgress = false;
+  }
+
   // Return cached data if fresh and warm
   if (cachedEnrichment && cachedEnrichment.isWarm && Date.now() - cachedEnrichment.fetchedAt < CACHE_TTL) {
     return cachedEnrichment;
@@ -323,6 +348,7 @@ export async function warmEnrichmentCacheOnStartup(): Promise<void> {
  * Invalidate the enrichment cache (e.g., after a scheduled refresh or new day).
  */
 export function invalidateEnrichmentCache(): void {
+  cacheDataDate = null;
   cachedEnrichment = null;
   warmingInProgress = false;
 }
