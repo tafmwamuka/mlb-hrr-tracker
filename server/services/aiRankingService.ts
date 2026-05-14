@@ -46,6 +46,7 @@ interface MatchupData {
   position: string;
   battingPosition: number;
   pitcher: {
+    id?: number | null;       // MLB pitcher ID (for mlbMatchupService)
     name: string;
     team: string;
     handedness: 'R' | 'L'; // RHP or LHP
@@ -327,10 +328,13 @@ function calculateStreakScore(
 
 /**
  * Rank AI picks using comprehensive algorithm
- * VS Gate: only batters with vsGrade >= 9 (or 8+ with strong secondary signals) enter.
+ * VS Gate: MLB-native matchup quality score (0-10 float scale from mlbMatchupService).
+ *   - Score >= 7.0: always included (strong matchup)
+ *   - Score >= 5.5: included if secondary signals are strong (hot streak, strong stats, good HR Targets)
+ *   - Score < 5.5: excluded (unfavorable matchup)
  * Game Totals: Odds API O/U line boosts picks in high-scoring game environments.
  * Remaining factors: RC, player stats, park factors, HR Targets, pitcher matchup,
- *                    batting position, day/night splits, theLAB edge/streak.
+ *                    batting position, day/night splits, streak.
  */
 export function rankAIPicks(
   matchups: MatchupData[],
@@ -347,17 +351,18 @@ export function rankAIPicks(
   // Statcast data from pybaseball
   statcastCache?: StatcastCache
 ): AIPick[] {
-  // ── VS Gate: pre-filter to only batters with strong matchup grades ──────────
-  // VS=10: always included
-  // VS=9: included if at least one strong secondary signal (hot streak, strong stats, or high HR Targets)
-  // VS=8 or below: excluded unless vsGradeMap is not provided (fallback: include all)
+  // ── VS Gate: pre-filter using MLB-native matchup quality scores (0-10 float scale) ──────
+  // Score >= 7.0: always included (strong matchup — equivalent to old VS=10)
+  // Score >= 5.5: included if secondary signals are strong (equivalent to old VS=9)
+  // Score < 5.5: excluded (unfavorable matchup)
+  // No data (score = null): include (don't penalize missing data)
   const gatedMatchups = vsGradeMap && vsGradeMap.size > 0
     ? matchups.filter(m => {
-        const vsGrade = vsGradeMap.get(m.playerName) ?? vsGradeMap.get(m.playerName.split(' ').pop() || '') ?? null;
-        if (vsGrade === null) return true; // No data: include (don't penalize missing data)
-        if (vsGrade >= 10) return true; // VS=10: always in
-        if (vsGrade >= 9) {
-          // VS=9: include if secondary signals are strong
+        const vsScore = vsGradeMap.get(m.playerName) ?? vsGradeMap.get(m.playerName.split(' ').pop() || '') ?? null;
+        if (vsScore === null) return true; // No data: include
+        if (vsScore >= 7.0) return true; // Strong matchup: always in
+        if (vsScore >= 5.5) {
+          // Moderate matchup: include if secondary signals are strong
           const playerData = playerDataMap.get(m.playerId);
           const hrTargets = hrTargetsMap.get(m.playerName);
           const mlbStreak = mlbStreakMap?.get(m.playerId);
@@ -366,7 +371,7 @@ export function rankAIPicks(
           const hasGoodHRTargets = hrTargets ? ['A+', 'A', 'B+'].includes(hrTargets.grade) : false;
           return hasHotStreak || hasStrongStats || hasGoodHRTargets;
         }
-        return false; // VS <= 8: excluded
+        return false; // Score < 5.5: excluded
       })
     : matchups; // No VS data: use all matchups (graceful degradation)
 
@@ -405,13 +410,13 @@ export function rankAIPicks(
         : null;
       const statcastScore = calculateStatcastScore(statcastPlayer);
 
-      // ── VS Grade from ballparkpal ─────────────────────────────────────────
-      // VS grade is the primary gate (already filtered above), but we also use it
-      // as a scoring signal — VS=10 gets a meaningful boost over VS=9.
+      // ── VS Score from MLB-native matchup service (0-10 float scale) ─────────────────────
+      // VS score is the primary gate (already filtered above), but we also use it
+      // as a scoring signal — score=10 gets a meaningful boost over score=7.
       const vsGrade = vsGradeMap?.get(matchup.playerName) ?? null;
-      // Convert VS grade (-10 to 10) to 0-100 score
-      // VS=10 → 100, VS=9 → 85, VS=8 → 70, etc.
-      const vsScore = vsGrade !== null ? Math.round(((vsGrade + 10) / 20) * 100) : 50;
+      // Convert 0-10 float score to 0-100 scoring scale
+      // score=10 → 100, score=7 → 70, score=5 → 50, score=0 → 0
+      const vsScore = vsGrade !== null ? Math.round((vsGrade / 10) * 100) : 50;
 
       // ── Game Total (O/U) environment score ───────────────────────────────
       const gameTotalData = gameTotalsMap ? getGameTotalScoreForTeam(matchup.team, gameTotalsMap) : null;
@@ -438,8 +443,8 @@ export function rankAIPicks(
 
       // ── Reasoning ────────────────────────────────────────────────────────
       const reasons: string[] = [];
-      if (vsGrade !== null && vsGrade >= 10) reasons.push("VS=10 elite matchup");
-      else if (vsGrade !== null && vsGrade >= 9) reasons.push("VS=9 strong matchup");
+      if (vsGrade !== null && vsGrade >= 7.0) reasons.push(`Strong matchup (VS ${vsGrade.toFixed(1)})`);
+      else if (vsGrade !== null && vsGrade >= 5.5) reasons.push(`Moderate matchup (VS ${vsGrade.toFixed(1)})`);
       if (gameTotalOU !== null && gameTotalOU >= 9.5) reasons.push(`High-scoring game (O/U ${gameTotalOU})`);
       if (rcScore > 80) reasons.push("High RC vs this pitcher");
       if (playerStatsScore > 80) reasons.push("Strong season stats");
@@ -614,8 +619,13 @@ export function rankAIPicks(
 
   // ── Quality gate: only return picks that genuinely clear the threshold ────────────────
   // Quality over quantity — even 1 pick is fine if only 1 qualifies.
-  // Threshold: 82+ overall score (raised from 78 for stricter quality control)
-  const qualityPicks = picks.filter(p => p.overallScore >= 82);
+  // Threshold calibrated to real score distribution (weights sum to 1.0, neutral = 50):
+  //   Neutral player (all factors = 50): scores exactly 50
+  //   VS=10, decent stats: scores ~62-68
+  //   VS=10, hot streak, strong Statcast: scores ~70-80
+  //   Elite (VS=10, top Statcast, hot streak, weak pitcher): scores ~82-90
+  // 68 ensures multiple strong signals required — not just VS=10 alone.
+  const qualityPicks = picks.filter(p => p.overallScore >= 68);
 
   return qualityPicks;
 }

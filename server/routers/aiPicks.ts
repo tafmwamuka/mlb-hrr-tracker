@@ -661,8 +661,16 @@ export const aiPicksRouter = router({
       const players = lineupData.playerDataMap;
 
       // Use shared enrichment cache — deduplicates MLB API calls across all three pick procedures
+      // Pass pitcherId and pitcherHand for hrtargets-style matchup scoring
       const enrichment = await getEnrichmentData(
-        matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName, team: m.team, gameTime: m.gameTime }))
+        matchups.map(m => ({
+          playerId: m.playerId,
+          playerName: m.playerName,
+          team: m.team,
+          gameTime: m.gameTime,
+          pitcherId: m.pitcher.id ?? null,
+          pitcherHand: m.pitcher.handedness ?? null,
+        }))
       ).catch(() => ({
         vsGradeMap: new Map<string, number>(),
         gameTotalsMap: new Map(),
@@ -745,8 +753,16 @@ export const aiPicksRouter = router({
       const players = lineupData.playerDataMap;
 
       // Use shared enrichment cache — deduplicates MLB API calls across all three pick procedures
+      // Pass pitcherId and pitcherHand for hrtargets-style matchup scoring
       const enrichment2 = await getEnrichmentData(
-        matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName, team: m.team, gameTime: m.gameTime }))
+        matchups.map(m => ({
+          playerId: m.playerId,
+          playerName: m.playerName,
+          team: m.team,
+          gameTime: m.gameTime,
+          pitcherId: m.pitcher.id ?? null,
+          pitcherHand: m.pitcher.handedness ?? null,
+        }))
       ).catch(() => ({
         vsGradeMap: new Map<string, number>(),
         gameTotalsMap: new Map(),

@@ -103,10 +103,23 @@ try:
 except Exception as e:
     sys.stderr.write(f"[pybaseball] percentile_ranks error: {e}\n")
 
+import math
+
+def sanitize(v):
+    """Replace NaN/Inf with None so JSON is valid."""
+    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+        return None
+    return v
+
+clean_players = [
+    {k: sanitize(v) for k, v in p.items()}
+    for p in players.values()
+]
+
 result = {
     "year": year,
-    "players": list(players.values()),
-    "count": len(players)
+    "players": clean_players,
+    "count": len(clean_players)
 }
 
 print(json.dumps(result))

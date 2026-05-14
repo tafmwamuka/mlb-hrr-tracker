@@ -43,6 +43,7 @@ interface MatchupData {
   position: string;
   battingPosition: number;
   pitcher: {
+    id: number | null;       // MLB pitcher ID (for mlbMatchupService)
     name: string;
     team: string;
     handedness: 'R' | 'L';
@@ -130,12 +131,13 @@ function toMatchupData(player: PlayerWithContext): MatchupData {
     position: "DH",
     battingPosition: player.battingPosition,
     pitcher: {
+      id: pitcher?.id ?? null,  // MLB pitcher ID for matchup scoring
       name: pitcher?.fullName || "TBD",
       team: player.isHome 
         ? player.game.awayTeam.abbreviation 
         : player.game.homeTeam.abbreviation,
-      handedness: 'R', // Default; we'd need pitcher stats to know this
-      era: 4.00, // Default; we'd need pitcher stats endpoint
+      handedness: 'R', // Default; mlbMatchupService fetches real handedness
+      era: 4.00, // Default; mlbMatchupService fetches real ERA
     },
     rc: rcEstimate,
     confidence: baseConfidence,

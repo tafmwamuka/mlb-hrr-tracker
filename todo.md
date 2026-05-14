@@ -638,3 +638,13 @@
 - [x] Add PROJECTED/CONFIRMED badge to all 4 UI tabs
 - [x] TypeScript 0 errors after all changes
 - [ ] Save checkpoint
+
+## MLB-Native VS Matchup Score (May 14, 2026)
+- [ ] Build mlbMatchupService.ts: compute batter vs pitcher matchup score (0-10) from MLB Stats API
+- [ ] Use batter platoon splits (vs LHP/RHP avg) vs pitcher handedness
+- [ ] Use pitcher ERA, WHIP, opponent batting avg as vulnerability score
+- [ ] Combine into 0-10 matchup quality score (replaces ballparkpal VS grade)
+- [ ] Wire new matchup score into VS gate in aiRankingService
+- [ ] Wire into enrichmentCache replacing ballparkMatchupService
+- [ ] TypeScript 0 errors
+- [ ] Save checkpoint

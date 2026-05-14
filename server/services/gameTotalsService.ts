@@ -8,7 +8,7 @@
  * This directly boosts the probability of hits/runs/RBI for players in that game.
  */
 
-import type { BallparkMatchup } from "./ballparkMatchupService";
+// BallparkMatchup no longer needed — ballparkpal removed
 
 export interface GameTotal {
   /** e.g. "Giants @ Dodgers" or "SF @ LAD" */
@@ -128,42 +128,7 @@ async function fetchOddsApiTotals(apiKey: string): Promise<Map<string, { overUnd
   }
 }
 
-// ─── RC Aggregate Fallback ────────────────────────────────────────────────────
-
-/**
- * Build game total proxies from ballparkpal RC aggregate sums.
- * Groups starters by game, sums RC values.
- * Higher RC sum = more projected offense = higher game total.
- */
-function buildRCAggregateTotals(matchups: BallparkMatchup[]): Map<string, { rcSum: number; awayTeam: string; homeTeam: string }> {
-  const gameMap = new Map<string, { rcSum: number; awayTeam: string; homeTeam: string; teams: Set<string> }>();
-
-  for (const m of matchups) {
-    if (!m.starter) continue;
-    const game = m.game.trim(); // e.g. "Giants @ Dodgers"
-    if (!gameMap.has(game)) {
-      // Parse away @ home from game string
-      const parts = game.split(" @ ");
-      const awayName = parts[0]?.trim() || "";
-      const homeName = parts[1]?.trim() || "";
-      gameMap.set(game, {
-        rcSum: 0,
-        awayTeam: toAbbr(awayName),
-        homeTeam: toAbbr(homeName),
-        teams: new Set(),
-      });
-    }
-    const entry = gameMap.get(game)!;
-    entry.rcSum += m.rc;
-    entry.teams.add(m.team);
-  }
-
-  const result = new Map<string, { rcSum: number; awayTeam: string; homeTeam: string }>();
-  for (const [game, data] of Array.from(gameMap.entries())) {
-    result.set(game, { rcSum: data.rcSum, awayTeam: data.awayTeam, homeTeam: data.homeTeam });
-  }
-  return result;
-}
+// RC Aggregate Fallback removed — ballparkpal no longer available
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
@@ -181,15 +146,25 @@ function normalizeToScore(values: number[]): number[] {
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
 /**
+ * Simple team-based input for game totals (replaces BallparkMatchup[]).
+ * Used when ballparkpal RC data is unavailable.
+ */
+export interface TeamMatchupRef {
+  batter: string;
+  team: string;
+  vsGrade?: number;
+}
+
+/**
  * Fetch today's game totals.
  * Primary: The Odds API (consensus O/U line from multiple books).
- * Fallback: RC aggregate from ballparkpal matchup data.
+ * Fallback: Default neutral score (50) when Odds API is unavailable.
  *
- * Returns a map keyed by game string (e.g. "Giants @ Dodgers" or "SF@LAD").
+ * Returns a map keyed by team abbreviation for easy lookup.
  */
 export async function fetchGameTotals(
   apiKey: string | undefined,
-  matchups: BallparkMatchup[]
+  matchups: TeamMatchupRef[]
 ): Promise<Map<string, GameTotal>> {
   // Check cache
   if (cachedTotals && Date.now() - cacheTimestamp < CACHE_TTL) {
@@ -203,10 +178,7 @@ export async function fetchGameTotals(
     oddsData = await fetchOddsApiTotals(apiKey);
   }
 
-  // Build RC aggregate fallback
-  const rcData = buildRCAggregateTotals(matchups);
-
-  // Merge: prefer Odds API, fall back to RC aggregate
+  // Merge: prefer Odds API, fall back to default neutral scores
   const result = new Map<string, GameTotal>();
 
   if (oddsData.size > 0) {
@@ -230,36 +202,27 @@ export async function fetchGameTotals(
     }
   }
 
-  // Fill in any games not covered by Odds API using RC aggregate
-  if (rcData.size > 0) {
-    const rcValues = Array.from(rcData.values()).map(d => d.rcSum);
-    const rcScores = normalizeToScore(rcValues);
-    let i = 0;
-    for (const [game, data] of Array.from(rcData.entries())) {
-      const awayKey = data.awayTeam;
-      const homeKey = data.homeTeam;
-      // Only add if not already covered by Odds API
-      if (!result.has(awayKey) && !result.has(homeKey)) {
-        const gameTotal: GameTotal = {
-          game,
-          awayTeam: data.awayTeam,
-          homeTeam: data.homeTeam,
-          overUnder: null,
-          source: "rc_aggregate",
-          gameTotalScore: rcScores[i],
-          rcAggregate: data.rcSum,
-        };
-        result.set(game, gameTotal);
-        result.set(awayKey, gameTotal);
-        result.set(homeKey, gameTotal);
-      }
-      i++;
+  // Fill in any teams not covered by Odds API with a neutral default score
+  // (ballparkpal RC aggregate removed — no longer available)
+  const coveredTeams = new Set(Array.from(result.keys()));
+  for (const m of matchups) {
+    if (!coveredTeams.has(m.team)) {
+      const defaultTotal: GameTotal = {
+        game: m.team,
+        awayTeam: m.team,
+        homeTeam: m.team,
+        overUnder: null,
+        source: "default",
+        gameTotalScore: 50, // neutral
+      };
+      result.set(m.team, defaultTotal);
+      coveredTeams.add(m.team);
     }
   }
 
   cachedTotals = result;
   cacheTimestamp = Date.now();
-  console.log(`[GameTotals] Built ${result.size} game total entries (${oddsData.size} from Odds API, ${rcData.size} from RC aggregate)`);
+  console.log(`[GameTotals] Built ${result.size} game total entries (${oddsData.size} from Odds API, ${result.size - oddsData.size} default neutral)`);
   return result;
 }
 

@@ -46,8 +46,13 @@ const SCRIPT_PATH = path.resolve(
 
 async function fetchStatcastData(year: number): Promise<StatcastCache> {
   return new Promise((resolve, reject) => {
-    const python = spawn("python3", [SCRIPT_PATH, String(year)], {
+    // Unset PYTHONHOME/PYTHONPATH to avoid uv Python 3.13 env contamination
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.PYTHONHOME;
+    delete cleanEnv.PYTHONPATH;
+    const python = spawn("/usr/bin/python3.11", [SCRIPT_PATH, String(year)], {
       timeout: 120_000, // 2 minutes max
+      env: cleanEnv,
     });
 
     let stdout = "";

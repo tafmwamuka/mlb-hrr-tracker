@@ -192,7 +192,7 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
   let url = `${MLB_API_BASE}/schedule?sportId=1&date=${today}&hydrate=lineups,probablePitcher`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!response.ok) {
       throw new Error(`MLB API error: ${response.status}`);
     }
@@ -214,7 +214,7 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
       for (const fallbackDate of fallbackDates) {
         try {
           const fbUrl = `${MLB_API_BASE}/schedule?sportId=1&date=${fallbackDate}&hydrate=lineups,probablePitcher`;
-          const fbResp = await fetch(fbUrl);
+          const fbResp = await fetch(fbUrl, { signal: AbortSignal.timeout(8000) });
           if (fbResp.ok) {
             const fbJson = await fbResp.json() as any;
             const fbDates = fbJson.dates || [];
@@ -356,7 +356,7 @@ export async function fetchPlayerStats(playerId: number, playerName: string, tea
   const url = `${MLB_API_BASE}/people/${playerId}/stats?stats=season&group=hitting&season=${season}`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
     if (!response.ok) return null;
 
     const json = await response.json() as any;
@@ -420,33 +420,30 @@ export async function getTodaysPlayersWithStats(): Promise<PlayerWithContext[]> 
     }
   }
 
-  // Batch fetch stats (10 at a time to be respectful of rate limits)
-  const BATCH_SIZE = 10;
-  for (let i = 0; i < allLineupPlayers.length; i += BATCH_SIZE) {
-    const batch = allLineupPlayers.slice(i, i + BATCH_SIZE);
-    const results = await Promise.all(
-      batch.map(({ player }) =>
-        fetchPlayerStats(player.id, player.fullName, player.teamId, player.teamName, player.teamAbbreviation)
-      )
-    );
+  // Fetch all player stats in parallel — each call has a 5s timeout so this
+  // completes in ~5s even if the MLB API is slow, instead of 27 × 5s = 135s sequentially.
+  const allResults = await Promise.all(
+    allLineupPlayers.map(({ player }) =>
+      fetchPlayerStats(player.id, player.fullName, player.teamId, player.teamName, player.teamAbbreviation)
+    )
+  );
 
-    for (let j = 0; j < batch.length; j++) {
-      const stats = results[j];
-      if (!stats || stats.gamesPlayed < 5) continue; // Skip players with too few games
+  for (let j = 0; j < allLineupPlayers.length; j++) {
+    const stats = allResults[j];
+    if (!stats || stats.gamesPlayed < 5) continue; // Skip players with too few games
 
-      const { player, game, isHome } = batch[j];
-      const opposingPitcher = isHome
-        ? game.awayTeam.probablePitcher
-        : game.homeTeam.probablePitcher;
+    const { player, game, isHome } = allLineupPlayers[j];
+    const opposingPitcher = isHome
+      ? game.awayTeam.probablePitcher
+      : game.homeTeam.probablePitcher;
 
-      players.push({
-        ...stats,
-        game,
-        battingPosition: player.battingOrder,
-        opposingPitcher,
-        isHome,
-      });
-    }
+    players.push({
+      ...stats,
+      game,
+      battingPosition: player.battingOrder,
+      opposingPitcher,
+      isHome,
+    });
   }
 
   return players;

@@ -6,10 +6,15 @@
  * fetched data instead of tripling the MLB API load.
  *
  * Cache TTL: 15 minutes (data doesn't change mid-session)
- * Hard timeout: 6 seconds per fetch (never block the page)
+ *
+ * Cold-cache strategy:
+ * - On first request, return IMMEDIATELY with neutral/empty data
+ * - Populate the real data in the background (async, non-blocking)
+ * - Subsequent requests within the TTL get the real cached data
+ * - This prevents the first page load from timing out due to ~500 MLB API calls
  *
  * Data sources:
- * - ballparkpal.com VS grade map (batter vs pitcher matchup)
+ * - MLB Stats API matchup scores (hrtargets-style: ERA + park factor + barrel% + hard-hit%)
  * - Odds API game totals (Vegas O/U lines)
  * - MLB Stats API day/night splits per player
  * - MLB Stats API streak data per player
@@ -18,9 +23,9 @@
 
 import { batchGetDayNightSplits, type PlayerDayNightSplits } from "./dayNightSplitService";
 import { batchGetPlayerStreaks, type PlayerStreakData } from "./mlbStreakService";
-import { getVSGatedPool } from "./ballparkMatchupService";
+import { batchComputeMatchupScores } from "./mlbMatchupService";
 import { fetchGameTotals } from "./gameTotalsService";
-import { getStatcastData, type StatcastCache } from "./pybaseballService";
+import { getStatcastData, lookupStatcastPlayer, type StatcastCache } from "./pybaseballService";
 import type { GameTotal } from "./gameTotalsService";
 
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
@@ -33,6 +38,7 @@ export interface EnrichmentData {
   mlbStreakMap: Map<number, PlayerStreakData>;
   statcastCache: StatcastCache;
   fetchedAt: number;
+  isWarm: boolean; // true = real data, false = neutral placeholder
 }
 
 interface PlayerRef {
@@ -40,13 +46,15 @@ interface PlayerRef {
   playerName: string;
   team: string;
   gameTime?: string | null;
+  pitcherId?: number | null;
+  pitcherHand?: string | null;
 }
 
 // Shared cache entry
 let cachedEnrichment: EnrichmentData | null = null;
 
-// In-flight promise deduplication — prevents stampede on cold cache
-let inFlightPromise: Promise<EnrichmentData> | null = null;
+// Background warming in progress
+let warmingInProgress = false;
 
 /**
  * Wraps a promise with a hard timeout.
@@ -60,31 +68,48 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 }
 
 /**
- * Fetch all enrichment data for a set of players.
- * Results are cached for 15 minutes and shared across all callers.
+ * Build a neutral/empty enrichment data object for immediate return.
  */
-export async function getEnrichmentData(players: PlayerRef[]): Promise<EnrichmentData> {
-  // Return cached data if fresh
-  if (cachedEnrichment && Date.now() - cachedEnrichment.fetchedAt < CACHE_TTL) {
-    return cachedEnrichment;
-  }
+function buildNeutralEnrichment(): EnrichmentData {
+  return {
+    vsGradeMap: new Map<string, number>(),
+    gameTotalsMap: new Map<string, GameTotal>(),
+    dayNightSplitsMap: new Map<number, PlayerDayNightSplits>(),
+    mlbStreakMap: new Map<number, PlayerStreakData>(),
+    statcastCache: {
+      data: new Map(),
+      byId: new Map(),
+      fetchedAt: Date.now(),
+      year: new Date().getFullYear(),
+    },
+    fetchedAt: 0, // 0 = never fetched, will trigger background warm
+    isWarm: false,
+  };
+}
 
-  // Deduplicate in-flight requests — if another caller is already fetching, wait for it
-  if (inFlightPromise) {
-    return inFlightPromise;
-  }
+/**
+ * Populate the enrichment cache in the background.
+ * Does not block the caller — fires and forgets.
+ */
+async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
+  if (warmingInProgress) return;
+  warmingInProgress = true;
 
-  inFlightPromise = (async (): Promise<EnrichmentData> => {
+  try {
     const season = new Date().getFullYear();
     const oddsApiKey = process.env.ODDS_API_KEY;
 
-    // Fetch all enrichment sources in parallel with hard timeouts
-    // Statcast data is fetched separately (6h cache, slow Python subprocess)
-    const [vsGateResult, dayNightSplitsMap, mlbStreakMap, statcastCache] = await Promise.all([
+    // Stage 1: Fetch Statcast, day/night splits, and streaks in parallel
+    const [statcastCache, dayNightSplitsMap, mlbStreakMap] = await Promise.all([
       withTimeout(
-        getVSGatedPool(),
-        FETCH_TIMEOUT,
-        { pool: [], gameTotals: new Map(), allMatchups: [] }
+        getStatcastData(season),
+        30_000,
+        {
+          data: new Map<string, import('./pybaseballService').StatcastPlayer>(),
+          byId: new Map<number, import('./pybaseballService').StatcastPlayer>(),
+          fetchedAt: Date.now(),
+          year: season,
+        } as StatcastCache
       ),
       withTimeout(
         batchGetDayNightSplits(
@@ -100,52 +125,100 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
         FETCH_TIMEOUT,
         new Map<number, PlayerStreakData>()
       ),
-      // Statcast has its own 6h cache — this is usually instant after first load
-      withTimeout(
-        getStatcastData(season),
-        30_000, // 30s timeout for initial Python subprocess
-        {
-          data: new Map<string, import('./pybaseballService').StatcastPlayer>(),
-          byId: new Map<number, import('./pybaseballService').StatcastPlayer>(),
-          fetchedAt: Date.now(),
-          year: season,
-        }
-      ),
     ]);
 
-    // Build VS grade map
-    const vsGradeMap = new Map<string, number>();
-    for (const m of vsGateResult.allMatchups) {
-      if (m.vsGrade !== undefined) vsGradeMap.set(m.batter, m.vsGrade);
-    }
+    // Stage 2: Compute hrtargets-style matchup scores with Statcast + streak enrichment
+    const enrichedPlayers = players.map(p => {
+      const statcast = lookupStatcastPlayer(statcastCache, p.playerName);
+      const streak = mlbStreakMap.get(p.playerId);
 
-    // Fetch game totals with timeout
+      // Streak bonus: +5 if hot streak, -4 if cold (mirrors hrtargets mq() function)
+      let streakBonus = 0;
+      if (streak) {
+        if (streak.trendDirection === 'HOT') streakBonus = 5;
+        else if (streak.trendDirection === 'COLD') streakBonus = -4;
+      }
+
+      return {
+        playerId: p.playerId,
+        playerName: p.playerName,
+        pitcherId: p.pitcherId ?? null,
+        pitcherHand: p.pitcherHand ?? null,
+        barrelPct: statcast?.barrelPct ?? null,
+        hardHitPct: statcast?.hardHitPct ?? null,
+        seasonHr: null,
+        streakBonus,
+      };
+    });
+
+    const mlbMatchupScores = await withTimeout(
+      batchComputeMatchupScores(enrichedPlayers, season),
+      60_000, // 60s timeout for background warming — no rush
+      new Map<string, number>()
+    );
+
+    // Stage 3: Fetch game totals
+    const teamMatchups = players.map(p => ({
+      batter: p.playerName,
+      team: p.team,
+      vsGrade: mlbMatchupScores.get(p.playerName) ?? 5,
+    }));
+
     const gameTotalsMap = await withTimeout(
-      fetchGameTotals(oddsApiKey, vsGateResult.allMatchups),
+      fetchGameTotals(oddsApiKey, teamMatchups),
       FETCH_TIMEOUT,
       new Map<string, GameTotal>()
     );
 
-    const result: EnrichmentData = {
-      vsGradeMap,
+    cachedEnrichment = {
+      vsGradeMap: mlbMatchupScores,
       gameTotalsMap,
       dayNightSplitsMap,
       mlbStreakMap,
       statcastCache,
       fetchedAt: Date.now(),
+      isWarm: true,
     };
 
-    cachedEnrichment = result;
-    inFlightPromise = null;
-    return result;
-  })();
+    const allScores = Array.from(mlbMatchupScores.values());
+    console.log(`[EnrichmentCache] Background warm complete. ` +
+      `${mlbMatchupScores.size} matchup scores, ` +
+      `STRONG(>=7): ${allScores.filter(v => v >= 7).length}, ` +
+      `MODERATE(5.5-7): ${allScores.filter(v => v >= 5.5 && v < 7).length}`);
+  } catch (err) {
+    console.error('[EnrichmentCache] Background warm failed:', err);
+  } finally {
+    warmingInProgress = false;
+  }
+}
 
-  // If the in-flight fetch itself errors, clear it so the next call retries
-  inFlightPromise.catch(() => {
-    inFlightPromise = null;
+/**
+ * Fetch all enrichment data for a set of players.
+ * Results are cached for 15 minutes and shared across all callers.
+ *
+ * On cold cache: returns neutral data immediately and warms the cache in background.
+ * On warm cache: returns cached data instantly.
+ */
+export async function getEnrichmentData(players: PlayerRef[]): Promise<EnrichmentData> {
+  // Return cached data if fresh and warm
+  if (cachedEnrichment && cachedEnrichment.isWarm && Date.now() - cachedEnrichment.fetchedAt < CACHE_TTL) {
+    return cachedEnrichment;
+  }
+
+  // If cache is stale or cold, start background warming and return neutral immediately
+  // This ensures the first page load is fast even if MLB API is slow
+  warmCacheInBackground(players).catch(err => {
+    console.error('[EnrichmentCache] Background warm error:', err);
   });
 
-  return inFlightPromise;
+  // If we have stale-but-warm data, return it while re-warming
+  if (cachedEnrichment && cachedEnrichment.isWarm) {
+    return cachedEnrichment;
+  }
+
+  // Truly cold cache: return neutral data immediately
+  // The background warm will populate the cache for subsequent requests
+  return buildNeutralEnrichment();
 }
 
 /**
@@ -153,5 +226,5 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
  */
 export function invalidateEnrichmentCache(): void {
   cachedEnrichment = null;
-  inFlightPromise = null;
+  warmingInProgress = false;
 }
