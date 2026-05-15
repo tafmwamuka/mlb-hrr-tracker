@@ -126,8 +126,18 @@ function isCacheStaleForNewDay(): boolean {
 // ─── Fetch today's games with lineups ─────────────────────────────────────────
 
 /**
+ * Get the current hour in Eastern Time (0-23).
+ */
+function getETHour(): number {
+  const now = new Date();
+  const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  return etDate.getHours();
+}
+
+/**
  * Get the best date to query for games with lineups.
  * Uses today's date in Eastern time (MLB operates on ET).
+ * After 5 AM ET, always returns today — never yesterday.
  */
 function getQueryDate(): string {
   const now = new Date();
@@ -136,6 +146,14 @@ function getQueryDate(): string {
   const month = String(etDate.getMonth() + 1).padStart(2, '0');
   const day = String(etDate.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Returns true if it's after 5 AM ET — the "active slate" window.
+ * After 5 AM ET, the site must always show today's games, never yesterday's.
+ */
+function isActiveSlatePeriod(): boolean {
+  return getETHour() >= 5;
 }
 
 /**
@@ -207,9 +225,12 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
       (g.lineups?.awayPlayers?.length > 0) || (g.lineups?.homePlayers?.length > 0)
     );
 
-    // If no lineups for today (e.g., future season, early morning), try recent past dates
-    if (!hasLineups && gamesData.length > 0) {
-      console.log(`No lineups for ${today}, trying recent dates...`);
+    // CRITICAL SLATE RULE: After 5 AM ET, NEVER fall back to yesterday's slate.
+    // Today's games will use projected lineups if official lineups aren't posted yet.
+    // Only fall back to past dates before 5 AM ET (overnight window).
+    if (!hasLineups && gamesData.length === 0 && !isActiveSlatePeriod()) {
+      // Before 5 AM ET and no games at all — try recent past dates
+      console.log(`No games for ${today} (pre-5AM ET), trying recent dates...`);
       const fallbackDates = getRecentDatesWithGames();
       for (const fallbackDate of fallbackDates) {
         try {
@@ -224,7 +245,7 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
                 (g.lineups?.awayPlayers?.length > 0) || (g.lineups?.homePlayers?.length > 0)
               );
               if (fbHasLineups) {
-                console.log(`Found lineups for ${fallbackDate}, using as data source`);
+                console.log(`[Slate] Pre-5AM fallback: using ${fallbackDate} lineup data`);
                 gamesData = fbGames;
                 gameCache.dataDate = fallbackDate;
                 break;
@@ -235,6 +256,14 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
           // Skip this fallback date
         }
       }
+    } else if (!hasLineups && gamesData.length > 0 && isActiveSlatePeriod()) {
+      // After 5 AM ET: today has games but no lineups yet — stay on today, use projected lineups
+      console.log(`[Slate] Active slate period (${getETHour()}h ET): ${today} has ${gamesData.length} games, lineups pending. Using projected lineups.`);
+      gameCache.dataDate = today;
+    } else if (!hasLineups && gamesData.length === 0 && isActiveSlatePeriod()) {
+      // After 5 AM ET: no games today at all (off day or API issue) — stay on today, show empty
+      console.log(`[Slate] Active slate period: no games found for ${today} (off day or API issue)`);
+      gameCache.dataDate = today;
     }
 
     const games: MLBGame[] = gamesData.map((g: any) => {

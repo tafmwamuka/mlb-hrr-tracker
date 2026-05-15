@@ -8,7 +8,8 @@ import { trpc } from "@/lib/trpc";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronDown, Flame, Shield, TrendingUp, Target, Zap, DollarSign,
-  CheckCircle2, Plus, Minus, ShoppingCart, X
+  CheckCircle2, Plus, Minus, ShoppingCart, X, Clock, RefreshCw,
+  TrendingDown, CalendarDays
 } from "lucide-react";
 import { SaferPlayTip } from "@/components/SaferPlayTip";
 import { PerformanceGraph } from "@/components/PerformanceGraph";
@@ -507,6 +508,10 @@ export function MoneyPicksTab() {
     staleTime: 10 * 60 * 1000, // Serve cached data for 10 min before background refetch
     gcTime: 30 * 60 * 1000, // Keep in React Query cache for 30 min (instant tab switching)
   });
+  const { data: yesterdayData } = trpc.results.getYesterdayResults.useQuery(undefined, {
+    staleTime: 30 * 60 * 1000, // Yesterday's results don't change
+    gcTime: 60 * 60 * 1000,
+  });
   const [activeFilter, setActiveFilter] = useState<FilterTier>("all");
   const [selectedPicks, setSelectedPicks] = useState<Set<number>>(new Set());
   const [showParlayBuilder, setShowParlayBuilder] = useState(false);
@@ -621,13 +626,40 @@ export function MoneyPicksTab() {
 
   // Format the data date from API response (actual date of lineup data)
   const todayDate = (() => {
-    const dateStr = data?.dataDate;
+    const dateStr = (data as any)?.slateDate ?? data?.dataDate;
     if (dateStr) {
       const d = new Date(dateStr + 'T12:00:00');
-      return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+      return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
     }
-    return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   })();
+
+  // Format first pitch time from slate metadata
+  const firstPitchLabel = (() => {
+    const fp = (data as any)?.firstPitchTime;
+    if (!fp) return null;
+    try {
+      const d = new Date(fp);
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+    } catch { return null; }
+  })();
+
+  // Format odds updated time
+  const oddsUpdatedLabel = (() => {
+    const ts = (data as any)?.oddsUpdatedAt;
+    if (!ts) return null;
+    try {
+      const d = new Date(ts);
+      const now = Date.now();
+      const diffMin = Math.round((now - d.getTime()) / 60000);
+      if (diffMin < 2) return 'Just now';
+      if (diffMin < 60) return `${diffMin}m ago`;
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    } catch { return null; }
+  })();
+
+  // Stale slate warning
+  const isStaleSlate = (data as any)?.isStale === true;
 
   if (isLoading) {
     return (
@@ -693,32 +725,60 @@ export function MoneyPicksTab() {
 
   return (
     <div className="p-4 space-y-4 pb-32">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-white font-bold text-lg flex items-center gap-2">
-            <DollarSign size={20} style={{ color: "oklch(0.72 0.18 165)" }} />
-            Money Picks
-          </h2>
-          <p className="text-[oklch(0.50_0.015_255)] text-xs mt-0.5">
-            {todayDate} · 75%+ probability plays
-          </p>
+      {/* Stale slate warning */}
+      {isStaleSlate && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "oklch(0.20 0.08 60 / 0.25)", border: "1px solid oklch(0.75 0.15 60 / 0.4)" }}>
+          <RefreshCw size={12} style={{ color: "oklch(0.82 0.17 85)" }} className="animate-spin" />
+          <span className="text-xs" style={{ color: "oklch(0.82 0.17 85)" }}>Refreshing slate — today's games loading…</span>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Lineup source badge */}
-          <div
-            className="flex items-center gap-1 px-2 py-1 rounded-md border text-[9px] font-bold tracking-wide"
-            style={isProjected
-              ? { background: "oklch(0.20 0.08 60 / 0.3)", border: "1px solid oklch(0.75 0.15 60 / 0.5)", color: "oklch(0.82 0.17 85)" }
-              : { background: "oklch(0.15 0.08 165 / 0.3)", border: "1px solid oklch(0.72 0.18 165 / 0.5)", color: "oklch(0.72 0.18 165)" }
-            }
-          >
-            <div className={`w-1.5 h-1.5 rounded-full ${isProjected ? 'bg-[oklch(0.82_0.17_85)] animate-pulse' : 'bg-[oklch(0.72_0.18_165)]'}`} />
-            {isProjected ? 'PROJECTED' : 'CONFIRMED'}
+      )}
+
+      {/* Slate Header */}
+      <div className="rounded-2xl p-3.5" style={{ background: "oklch(0.13 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <CalendarDays size={13} style={{ color: "oklch(0.72 0.18 165)" }} />
+              <span className="text-white font-bold text-sm">{todayDate}</span>
+            </div>
+            {firstPitchLabel && (
+              <div className="flex items-center gap-1 mt-0.5">
+                <Clock size={11} style={{ color: "oklch(0.55 0.015 255)" }} />
+                <span className="text-[10px] text-[oklch(0.55_0.015_255)]">First pitch {firstPitchLabel}</span>
+              </div>
+            )}
           </div>
-          <div className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "oklch(0.20 0.03 255)", color: "oklch(0.72 0.18 165)" }}>
-            {filteredPicks.length} plays
+          <div className="flex flex-col items-end gap-1">
+            {/* Lineup source badge */}
+            <div
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-bold tracking-wide"
+              style={isProjected
+                ? { background: "oklch(0.20 0.08 60 / 0.3)", border: "1px solid oklch(0.75 0.15 60 / 0.5)", color: "oklch(0.82 0.17 85)" }
+                : { background: "oklch(0.15 0.08 165 / 0.3)", border: "1px solid oklch(0.72 0.18 165 / 0.5)", color: "oklch(0.72 0.18 165)" }
+              }
+            >
+              <div className={`w-1.5 h-1.5 rounded-full ${isProjected ? 'bg-[oklch(0.82_0.17_85)] animate-pulse' : 'bg-[oklch(0.72_0.18_165)]'}`} />
+              {isProjected ? 'PROJECTED' : 'CONFIRMED'}
+            </div>
+            {oddsUpdatedLabel && (
+              <div className="flex items-center gap-1">
+                <RefreshCw size={9} style={{ color: "oklch(0.40 0.015 255)" }} />
+                <span className="text-[9px] text-[oklch(0.40_0.015_255)]">Odds {oddsUpdatedLabel}</span>
+              </div>
+            )}
           </div>
+        </div>
+        {/* Pick count summary */}
+        <div className="flex items-center gap-2 mt-1.5">
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-md" style={{ background: "oklch(0.18 0.03 255)" }}>
+            <DollarSign size={10} style={{ color: "oklch(0.72 0.18 165)" }} />
+            <span className="text-[10px] font-semibold text-white">{moneyPicks.filter(p => p.grade === 'elite').length} Elite</span>
+          </div>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-md" style={{ background: "oklch(0.18 0.03 255)" }}>
+            <TrendingUp size={10} style={{ color: "oklch(0.82 0.17 85)" }} />
+            <span className="text-[10px] font-semibold text-white">{moneyPicks.filter(p => p.grade === 'strong').length} Strong</span>
+          </div>
+          <div className="ml-auto text-[10px] text-[oklch(0.45_0.015_255)]">{filteredPicks.length} total plays</div>
         </div>
       </div>
 
@@ -753,6 +813,50 @@ export function MoneyPicksTab() {
           </p>
         </div>
       </div>
+
+      {/* Yesterday's Results */}
+      {yesterdayData?.hasActuals && yesterdayData.totalPlays > 0 && (
+        <div className="rounded-xl p-3" style={{ background: "oklch(0.13 0.022 255)", border: "1px solid oklch(1 0 0 / 6%)" }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <CalendarDays size={11} style={{ color: "oklch(0.55 0.015 255)" }} />
+              <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Yesterday's Results</span>
+            </div>
+            <span className="text-[9px] text-[oklch(0.38_0.015_255)]">{yesterdayData.date}</span>
+          </div>
+          <div className="flex items-center gap-3 mt-2">
+            <div className="flex-1 flex items-center gap-2">
+              <div
+                className="text-2xl font-bold"
+                style={{ color: (yesterdayData.hitRate ?? 0) >= 60 ? "oklch(0.72 0.18 165)" : (yesterdayData.hitRate ?? 0) >= 40 ? "oklch(0.82 0.17 85)" : "oklch(0.68 0.22 25)" }}
+              >
+                {yesterdayData.hitRate}%
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold text-white">Hit Rate</div>
+                <div className="text-[9px] text-[oklch(0.45_0.015_255)]">{yesterdayData.totalHits}/{yesterdayData.totalWithActuals ?? yesterdayData.totalPlays} plays hit</div>
+              </div>
+            </div>
+            {/* Mini hit-rate bar */}
+            <div className="flex-1">
+              <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0.20 0.02 255)" }}>
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${yesterdayData.hitRate}%`,
+                    background: (yesterdayData.hitRate ?? 0) >= 60
+                      ? "oklch(0.72 0.18 165)"
+                      : (yesterdayData.hitRate ?? 0) >= 40
+                      ? "oklch(0.82 0.17 85)"
+                      : "oklch(0.68 0.22 25)",
+                  }}
+                />
+              </div>
+              <div className="text-[9px] text-[oklch(0.38_0.015_255)] mt-0.5 text-right">{yesterdayData.totalPlays} total plays</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SaferPlayTip />
 

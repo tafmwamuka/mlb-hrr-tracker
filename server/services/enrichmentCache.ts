@@ -35,6 +35,7 @@ import {
   type BallparkMatchup,
 } from "./ballparkMatchupService";
 import type { GameTotal } from "./gameTotalsService";
+import { getBullpenFatigue, type BullpenFatigue } from "./bullpenFatigueService";
 
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes — picks don't change mid-session
 const FETCH_TIMEOUT = 4_000; // 4 seconds hard timeout per enrichment source (fail fast)
@@ -47,6 +48,8 @@ export interface EnrichmentData {
   statcastCache: StatcastCache;
   // Real ballparkpal data per player (for matrix RC and HR% factors)
   ballparkMatchups: BallparkMatchup[];       // raw ballparkpal matchup data
+  // S3: Bullpen fatigue per opposing team (teamId -> BullpenFatigue)
+  bullpenFatigueMap: Map<number, BullpenFatigue>;
   fetchedAt: number;
   isWarm: boolean; // true = real data, false = neutral placeholder
 }
@@ -70,11 +73,18 @@ let warmingInProgress = false;
 let cacheDataDate: string | null = null;
 
 /**
- * Get today's date in Eastern Time (MLB operates on ET).
+ * Get the active slate date in Eastern Time.
+ * After 5 AM ET, returns today's date.
+ * Before 5 AM ET, returns yesterday's date (overnight window — yesterday's late games may still be live).
+ * This matches the mlbLineupService slate logic.
  */
 function getETDate(): string {
   const now = new Date();
   const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  // Before 5 AM ET: treat as previous day (overnight window)
+  if (etDate.getHours() < 5) {
+    etDate.setDate(etDate.getDate() - 1);
+  }
   const year = etDate.getFullYear();
   const month = String(etDate.getMonth() + 1).padStart(2, '0');
   const day = String(etDate.getDate()).padStart(2, '0');
@@ -108,6 +118,7 @@ function buildNeutralEnrichment(): EnrichmentData {
       year: new Date().getFullYear(),
     },
     ballparkMatchups: [],
+    bullpenFatigueMap: new Map<number, BullpenFatigue>(),
     fetchedAt: 0, // 0 = never fetched, will trigger background warm
     isWarm: false,
   };
@@ -253,6 +264,32 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
       );
     }
 
+    // Stage 4: Fetch bullpen fatigue for all 30 MLB teams (S3)
+    // Cached for 15 min — fast after first call. Covers all possible opponent teams.
+    const MLB_TEAM_IDS = [
+      { teamId: 133, teamAbbr: 'OAK' }, { teamId: 134, teamAbbr: 'PIT' },
+      { teamId: 135, teamAbbr: 'SD' },  { teamId: 136, teamAbbr: 'SEA' },
+      { teamId: 137, teamAbbr: 'SF' },  { teamId: 138, teamAbbr: 'STL' },
+      { teamId: 139, teamAbbr: 'TB' },  { teamId: 140, teamAbbr: 'TEX' },
+      { teamId: 141, teamAbbr: 'TOR' }, { teamId: 142, teamAbbr: 'MIN' },
+      { teamId: 143, teamAbbr: 'PHI' }, { teamId: 144, teamAbbr: 'ATL' },
+      { teamId: 145, teamAbbr: 'CWS' }, { teamId: 146, teamAbbr: 'MIA' },
+      { teamId: 147, teamAbbr: 'NYY' }, { teamId: 158, teamAbbr: 'MIL' },
+      { teamId: 108, teamAbbr: 'LAA' }, { teamId: 109, teamAbbr: 'ARI' },
+      { teamId: 110, teamAbbr: 'BAL' }, { teamId: 111, teamAbbr: 'BOS' },
+      { teamId: 112, teamAbbr: 'CHC' }, { teamId: 113, teamAbbr: 'CIN' },
+      { teamId: 114, teamAbbr: 'CLE' }, { teamId: 115, teamAbbr: 'COL' },
+      { teamId: 116, teamAbbr: 'DET' }, { teamId: 117, teamAbbr: 'HOU' },
+      { teamId: 118, teamAbbr: 'KC' },  { teamId: 119, teamAbbr: 'LAD' },
+      { teamId: 120, teamAbbr: 'WSH' }, { teamId: 121, teamAbbr: 'NYM' },
+    ];
+
+    const bullpenFatigueMap = await withTimeout(
+      getBullpenFatigue(MLB_TEAM_IDS),
+      20_000, // 20s timeout — fetches 30 teams' last 3 days
+      new Map<number, BullpenFatigue>()
+    );
+
     cachedEnrichment = {
       vsGradeMap,
       gameTotalsMap,
@@ -260,6 +297,7 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
       mlbStreakMap,
       statcastCache,
       ballparkMatchups,
+      bullpenFatigueMap,
       fetchedAt: Date.now(),
       isWarm: true,
     };

@@ -724,3 +724,81 @@
 ### Speed Improvements
 - [x] Progressive load: improved skeleton with "Running 10-factor scoring model" status
 - [x] Fix cache TTLs: enrichment 30min, BallparkPal 20min, lineupAdapter 10min, frontend staleTime 10min, gcTime 30min
+
+## Phase S: Predictive Engine Upgrades & Slate Management (2026-05-15)
+
+### Critical Slate & Date Management Fix
+- [x] Add getActiveSlateDateET() helper: after 5 AM ET always return today's date, never yesterday's
+- [x] Update enrichmentCache midnight rollover to use 5 AM ET cutoff instead of midnight
+- [x] Update lineupAdapter to force today's date when current ET time >= 5:00 AM
+- [x] Add stale slate failsafe: if displayed slate date != today ET AND upcoming games exist → force rollover
+- [x] Add slate header to MoneyPicksTab: date, First Pitch time, Odds Updated, Lineup status
+- [x] Add Yesterday's Results compact section to MoneyPicksTab
+- [x] Never show yesterday's slate as homepage default after 5 AM ET
+
+### Early-Day Workflow (5 AM – First Pitch)
+- [ ] Show today's schedule, probable pitchers, opening odds, projected lineups, early picks before first pitch
+- [ ] Show "PROJECTED" badge on picks generated from projected (not confirmed) lineups
+- [ ] Auto-rerun scoring model and remove PROJECTED tags when official lineups post
+- [ ] Morning refresh cycle: every 5 min check lineup confirmations, refresh odds, refresh projected picks
+
+### S1 — Predictive Contact Upgrade
+- [x] Add rolling xwOBA (last 30 days) to scoring model — replace raw recent form
+- [x] Add rolling Hard-Hit% (last 30 days) to scoring model
+- [x] Add rolling Exit Velocity (last 30 days) to scoring model
+- [x] Add rolling Barrel% (last 30 days) to scoring model
+- [x] Use rolling metrics to reduce overreaction to short-term luck in Recent Form factor
+
+### S2 — Plate Appearance Projection Engine
+- [x] Build projectedPA() function: lineup spot + team implied runs + home/away + game environment
+- [x] Leadoff = ~5.1 PA, 2nd = ~4.9, 3rd = ~4.8, 4th = ~4.6, 5th = ~4.4, 6th = ~4.2, 7th = ~4.0, 8th = ~3.8, 9th = ~3.7
+- [x] Adjust PA projection by team implied runs (higher total = more PA opportunity)
+- [x] Add projectedPA as a factor in scoring model (replaces raw batting position weight)
+- [x] Show projected PA on each pick card
+
+### S3 — Bullpen Fatigue Engine
+- [x] Fetch bullpen usage data from MLB Stats API (pitches/innings last 3 days per team)
+- [x] Track high-leverage reliever availability per team
+- [x] Calculate bullpenFatigueScore per game: tired bullpen = scoring opportunity boost
+- [x] Add bullpen fatigue as a soft scoring factor (replaces proxy ERA bullpen factor)
+
+### S4 — Edge-Based Ranking System
+- [x] Reorder final pick ranking by: (1) betting edge, (2) team implied runs, (3) projected PA, (4) lineup spot, (5) pitcher weakness, (6) odds value
+- [x] Calculate betting edge = model probability - sportsbook implied probability
+- [x] Positive edge required for official picks (negative edge = auto-fail)
+- [x] Show edge % on each pick card
+
+### S5 — Correlation Engine
+- [x] Detect consecutive hitters in lineup (1-2, 2-3, 3-4, etc.) for RBI chain opportunities
+- [x] Detect high implied-run team stacks (3+ hitters from same team in picks)
+- [x] Add correlation tag to pick cards: "STACK PLAY" / "RBI CHAIN"
+- [x] Use correlation data to improve 2-man HRR parlay suggestions in Parlays tab
+
+### Day/Night Split Sample-Size Protection
+- [x] Under 50 PA: reduce day/night split weight by 50%
+- [x] Under 30 PA: use as informational only (weight = 10% of normal)
+- [x] Under 20 PA: ignore completely (weight = 0)
+- [x] Apply same protection to platoon split (vs RHP/LHP)
+
+### Quality-Over-Quantity Rules
+- [x] Maximum official picks: 4 (score 85+, Elite tier)
+- [x] Maximum strong plays: 6 (score 78-84, Strong tier)
+- [x] Total cap: 10 picks maximum shown (4 Elite + 6 Strong)
+- [x] If none qualify: show "No Official HRR Play Today"
+- [x] Never force picks below quality threshold
+
+### Cache TTL Alignment
+- [ ] Season stats cache: 12 hours (currently 30 min in some places)
+- [ ] Savant/Statcast cache: 12-24 hours (already 6h, extend to 12h)
+- [ ] Ballpark factors cache: 24 hours
+- [ ] Weather cache: 15-30 minutes
+- [ ] Odds cache: 2-5 minutes
+- [ ] Lineups cache: 5 minutes (revert lineupAdapter from 10 min to 5 min)
+
+### Page Load Order
+- [x] Step 1: Display today's games immediately (from cached lineup data)
+- [x] Step 2: Display lineup status (Confirmed/Projected count) via slate header badge
+- [x] Step 3: Display preliminary pick candidates (skeleton with "Running 10-factor scoring model")
+- [x] Step 4: Load odds and edge (shown in pick cards)
+- [x] Step 5: Load final scores and grades (Elite/Strong badges)
+- [x] Step 6: Load detailed reasoning and performance graphs (expanded card section)

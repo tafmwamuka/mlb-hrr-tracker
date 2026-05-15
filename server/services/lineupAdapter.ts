@@ -52,6 +52,11 @@ export interface MatchupData {
   rc: number;
   confidence: number;
   gameTime?: string; // ISO string of game start time (UTC)
+  // S3/S5: Team identifiers for bullpen fatigue and correlation engine
+  teamId?: number;           // MLB team ID for this batter's team
+  opponentTeamId?: number;   // MLB team ID for the opposing pitcher's team
+  gamePk?: number;           // MLB game ID for correlation grouping
+  isHome?: boolean;          // True if batter is playing at home
 }
 
 // Cache for adapted data
@@ -142,6 +147,11 @@ function toMatchupData(player: PlayerWithContext): MatchupData {
     rc: rcEstimate,
     confidence: baseConfidence,
     gameTime: player.game.gameDate ?? undefined,
+    // S3/S5: Team identifiers for bullpen fatigue and correlation engine
+    teamId: player.isHome ? player.game.homeTeam.id : player.game.awayTeam.id,
+    opponentTeamId: player.isHome ? player.game.awayTeam.id : player.game.homeTeam.id,
+    gamePk: player.game.gamePk,
+    isHome: player.isHome,
   };
 }
 

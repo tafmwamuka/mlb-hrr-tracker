@@ -23,11 +23,28 @@
  *     vsGrade ≤6 AND batting 7th+ AND team implied <4.0 AND poor day/night split
  *
  * Quality Gate:
- *   ≥85  → Elite Play  (tier = "elite")
- *   78-84 → Strong Play (tier = "strong")
+ *   ≥85  → Elite Play  (tier = "elite")  — max 4
+ *   78-84 → Strong Play (tier = "strong") — max 6
+ *   Total cap: 10 picks (4 Elite + 6 Strong)
  *   70-77 → Watchlist only — hidden from UI
  *   <70   → Hidden
- *   Max 10 picks returned; if none ≥78, show "No official HRR play today"
+ *   If none ≥78, show "No official HRR play today"
+ *
+ * S1 — Predictive Contact Upgrade:
+ *   Rolling contact metrics from Statcast (xwOBA, Hard-Hit%, Exit Velo, Barrel%, Contact%)
+ *   Replace raw recent form with quality-of-contact signals to reduce short-term luck overreaction.
+ *   When Statcast data available: blend rolling metrics (60%) + OBP (40%) for Factor 3.
+ *   Factor 10 (Hard Contact) uses barrelPercentile + hardHitPercentile blend.
+ *
+ * S2 — Projected PA Engine:
+ *   Projected plate appearances per game based on lineup spot + team implied runs.
+ *   Leadoff ≈ 5.1 PA → 9-hole ≈ 3.7 PA. Adjusted by team implied runs (higher O/U = more PA).
+ *   PA projection replaces raw batting position weight in Factor 2.
+ *
+ * Day/Night Split Sample-Size Protection:
+ *   Under 50 PA: reduce split weight by 50%
+ *   Under 30 PA: use as informational only (10% weight)
+ *   Under 20 PA: ignore completely (0% weight)
  *
  * Auto-Fail Rules (pick excluded regardless of score):
  *   - Team game total < 3.5 (very low-scoring environment)
@@ -49,6 +66,7 @@ import type { GameTotal } from "./gameTotalsService";
 import { getGameTotalScoreForTeam } from "./gameTotalsService";
 import { lookupStatcastPlayer, type StatcastCache } from "./pybaseballService";
 import type { BallparkMatchup } from "./ballparkMatchupService";
+import { getBullpenFatigueScore, type BullpenFatigue } from "./bullpenFatigueService";
 
 export interface PlayerData {
   playerId: number;
@@ -103,6 +121,10 @@ interface MatchupData {
     windDirection: string; // N, S, E, W, etc.
   };
   gameTime?: string; // ISO string of game start time
+  // S3/S5: Team identifiers for bullpen fatigue and correlation engine
+  opponentTeamId?: number;   // MLB team ID for the opposing pitcher's team
+  gamePk?: number;           // MLB game ID for correlation grouping
+  isHome?: boolean;          // True if batter is playing at home
 }
 
 interface HRTargetData {
@@ -157,6 +179,8 @@ export interface AIPick {
     statcast?: number;
     gameTotal?: number;
   };
+  // S2: Projected plate appearances
+  projectedPA?: number; // Projected PA this game (e.g. 4.8 for 3-hole)
   // VS / BallparkPal data
   vsGrade?: number; // 0-10 normalized vsGrade
   gameTotalOU?: number | null; // Vegas over/under line (e.g. 9.5)
@@ -332,7 +356,58 @@ function getGameTimeType(gameTime?: string): 'day' | 'night' {
 }
 
 /**
- * Calculate day/night split score (0-100)
+ * S2 — Projected Plate Appearances per game
+ * Based on lineup spot + team implied runs environment.
+ * Leadoff ≈ 5.1 PA, 9-hole ≈ 3.7 PA. Adjusted by O/U (higher total = more PA opportunity).
+ */
+function getProjectedPA(battingPosition: number, gameTotalOU: number | null): number {
+  // Base PA by lineup spot (MLB averages)
+  const basePA: Record<number, number> = {
+    1: 5.1, 2: 4.9, 3: 4.8, 4: 4.6, 5: 4.4,
+    6: 4.2, 7: 4.0, 8: 3.8, 9: 3.7,
+  };
+  const pa = basePA[battingPosition] ?? 4.0;
+
+  // Adjust by game total: neutral = 8.5, each 0.5 above/below = ±0.05 PA
+  if (gameTotalOU !== null) {
+    const ouDelta = (gameTotalOU - 8.5) / 0.5;
+    return Math.max(3.0, Math.min(6.0, pa + ouDelta * 0.05));
+  }
+  return pa;
+}
+
+/**
+ * S2 — Convert projected PA to a 0-100 score for Factor 2 (Lineup Spot)
+ * More PA = more HRR opportunities. Normalized: 5.1 PA = 100, 3.7 PA = 45.
+ */
+function projectedPAToScore(projectedPA: number): number {
+  // Linear scale: 3.7 PA → 45, 5.1 PA → 100
+  return Math.min(100, Math.max(0, ((projectedPA - 3.7) / (5.1 - 3.7)) * 55 + 45));
+}
+
+/**
+ * S1 — Rolling contact quality score (0-100)
+ * Uses Statcast rolling metrics to reduce overreaction to short-term luck.
+ * Blends xwOBA percentile (40%), Hard-Hit% percentile (25%), Exit Velo percentile (20%), Barrel% percentile (15%).
+ */
+function calculateRollingContactScore(
+  xwOBAPercentile: number | null,
+  hardHitPercentile: number | null,
+  exitVeloPercentile: number | null,
+  barrelPercentile: number | null
+): number {
+  const xw = xwOBAPercentile ?? 50;
+  const hh = hardHitPercentile ?? 50;
+  const ev = exitVeloPercentile ?? 50;
+  const bp = barrelPercentile ?? 50;
+  return Math.round(xw * 0.40 + hh * 0.25 + ev * 0.20 + bp * 0.15);
+}
+
+/**
+ * Calculate day/night split score (0-100) with S-phase sample-size protection.
+ * Under 50 PA: reduce split weight by 50%
+ * Under 30 PA: use as informational only (10% weight)
+ * Under 20 PA: ignore completely (0% weight)
  */
 function calculateDayNightScore(
   splits: PlayerDayNightSplits | null,
@@ -348,14 +423,32 @@ function calculateDayNightScore(
     return { score: 50, boost: 0, favorable: false, splitAvg: seasonAvg, splitOPS: 0, splitHits: 0, splitGames: split?.gamesPlayed || 0 };
   }
 
+  // S-phase: estimate PA from games played (avg ~4 PA/game)
+  const estimatedPA = split.gamesPlayed * 4;
+
   const splitAvgNum = parseFloat(split.avg) || 0;
-  const boost = seasonAvg > 0 ? ((splitAvgNum - seasonAvg) / seasonAvg) * 100 : 0;
-  const favorable = boost > 5;
-  const score = Math.min(100, Math.max(0, 50 + boost * 1.5));
+  const rawBoost = seasonAvg > 0 ? ((splitAvgNum - seasonAvg) / seasonAvg) * 100 : 0;
+
+  // Sample-size protection: reduce weight based on PA count
+  let sampleWeight: number;
+  if (estimatedPA < 20) {
+    // Under 20 PA: ignore completely — return neutral
+    return { score: 50, boost: 0, favorable: false, splitAvg: splitAvgNum, splitOPS: parseFloat(split.ops) || 0, splitHits: split.hits, splitGames: split.gamesPlayed };
+  } else if (estimatedPA < 30) {
+    sampleWeight = 0.10; // 10% weight — informational only
+  } else if (estimatedPA < 50) {
+    sampleWeight = 0.50; // 50% weight — reduced
+  } else {
+    sampleWeight = 1.00; // Full weight
+  }
+
+  const adjustedBoost = rawBoost * sampleWeight;
+  const favorable = adjustedBoost > 5;
+  const score = Math.min(100, Math.max(0, 50 + adjustedBoost * 1.5));
 
   return {
     score,
-    boost: Math.round(boost),
+    boost: Math.round(adjustedBoost),
     favorable,
     splitAvg: splitAvgNum,
     splitOPS: parseFloat(split.ops) || 0,
@@ -430,12 +523,16 @@ function getPickGrade(score: number): PickGrade {
 // ─── Main ranking function ────────────────────────────────────────────────────
 
 /**
- * Rank AI picks using the Phase R 10-factor scoring model.
+ * Rank AI picks using the Phase R/S scoring model.
  *
  * BallparkPal is now a BOOST/PENALTY on the final score, not a hard gate.
- * The only hard exclusion is when ALL 4 negatives stack simultaneously.
+ * The only hard exclusion is when ALL 4 negatives are present simultaneously.
  *
- * Quality gate: ≥78 to appear in UI (max 10 picks), ≥85 = Elite tier.
+ * S3: Real bullpen fatigue replaces ERA-proxy for Factor 8.
+ * S4: theLAB edge score applied as a post-scoring boost.
+ * S5: Correlation cap — max 3 picks per game, max 4 per team.
+ *
+ * Quality gate: 4 Elite (85+) + 6 Strong (78-84) = max 10 picks.
  */
 export function rankAIPicks(
   matchups: MatchupData[],
@@ -454,7 +551,11 @@ export function rankAIPicks(
   // Whether vsGradeMap is from real ballparkpal data (true) or mlbMatchupService fallback (false)
   hasBallparkPalData?: boolean,
   // Raw BallparkPal matchups for kProb, hrProb access
-  ballparkMatchups?: BallparkMatchup[]
+  ballparkMatchups?: BallparkMatchup[],
+  // S3: Bullpen fatigue map (opponentTeamId -> BullpenFatigue)
+  bullpenFatigueMap?: Map<number, BullpenFatigue>,
+  // S4: theLAB edge scores (playerName -> edgeScore 0-100)
+  edgeScoreMap?: Map<string, number>
 ): AIPick[] {
 
   // ── Auto-exclude: only when ALL 4 negatives stack ─────────────────────────
@@ -525,11 +626,16 @@ export function rankAIPicks(
       // gameTotalScore is already 0-100 normalized
       const teamImpliedScore = gameTotalScore;
 
-      // ── Factor 2: Lineup Spot (15%) ───────────────────────────────────────
-      const lineupSpotScore = getBattingPositionWeight(matchup.battingPosition);
+      // ── Factor 2: Lineup Spot / Projected PA (15%) — S2 upgrade ─────────
+      // S2: Use projected PA model instead of raw batting position weight
+      const projectedPA = getProjectedPA(matchup.battingPosition, gameTotalOU);
+      const lineupSpotScore = projectedPAToScore(projectedPA);
 
-      // ── Factor 3: OBP / xwOBA (14%) ──────────────────────────────────────
+      // ── Factor 3: OBP / xwOBA (14%) — S1 upgrade ─────────────────────────
+      // S1: blend OBP with rolling contact quality (xwOBA + Hard-Hit + Exit Velo)
       const xwOBAPercentile = statcastPlayer?.xwOBAPercentile ?? null;
+      const hardHitPercentile = statcastPlayer?.hardHitPercentile ?? null;
+      const exitVeloPercentile = statcastPlayer?.exitVeloPercentile ?? null;
       const obpXwOBAScore = calculateOBPxwOBAScore(playerData.stats, xwOBAPercentile);
 
       // ── Factor 4: Pitcher Weakness (14%) ─────────────────────────────────
@@ -549,11 +655,18 @@ export function rankAIPicks(
       // ── Factor 7: Park + Weather (8%) ─────────────────────────────────────
       const parkWeatherScore = calculateParkWeatherScore(parkFactor, matchup.weather);
 
-      // ── Factor 8: Bullpen Weakness (6%) ──────────────────────────────────
-      const bullpenWeaknessScore = calculateBullpenWeaknessScore(
-        matchup.pitcher.era,
-        matchup.confidence
-      );
+        // ── Factor 8: Bullpen Weakness (6%) — S3 upgrade ─────────────────
+      // S3: Use real bullpen fatigue data if available, else fall back to ERA proxy
+      let bullpenWeaknessScore: number;
+      if (bullpenFatigueMap && matchup.opponentTeamId) {
+        const fatigue = getBullpenFatigueScore(matchup.opponentTeamId, bullpenFatigueMap);
+        bullpenWeaknessScore = fatigue.score; // 0-100: higher = more tired = scoring opportunity
+      } else {
+        bullpenWeaknessScore = calculateBullpenWeaknessScore(
+          matchup.pitcher.era,
+          matchup.confidence
+        );
+      }
 
       // ── Factor 9: Platoon Advantage (5%) ─────────────────────────────────
       const platoonScore = calculateHandednessAdvantage(
@@ -562,9 +675,15 @@ export function rankAIPicks(
         matchup.platoonSplit
       );
 
-      // ── Factor 10: Hard Contact / Barrel (4%) ────────────────────────────
+      // ── Factor 10: Hard Contact / Barrel (4%) — S1 upgrade ──────────────
+      // S1: Use rolling contact quality blend (barrel + hard-hit + exit velo)
       const barrelPercentile = statcastPlayer?.barrelPercentile ?? 50;
-      const hardContactScore = barrelPercentile;
+      const hardContactScore = calculateRollingContactScore(
+        xwOBAPercentile,
+        hardHitPercentile,
+        exitVeloPercentile,
+        barrelPercentile
+      );
 
       // ── Weighted base score (0-100) ───────────────────────────────────────
       const baseScore =
@@ -582,6 +701,17 @@ export function rankAIPicks(
       // ── BallparkPal boost/penalty ─────────────────────────────────────────
       const bpBoost = calculateBPBoost(vsGrade);
 
+      // ── S4: Edge-based boost (theLAB edge score) ──────────────────────────
+      // theLAB edge score: 0-100. Edge > 60 = strong value, > 80 = elite value.
+      // Boost: edge 80+ = +8, edge 60-79 = +4, edge 40-59 = 0, edge < 40 = -3
+      const edgeScore = edgeScoreMap?.get(matchup.playerName) ?? null;
+      let edgeBoost = 0;
+      if (edgeScore !== null) {
+        if (edgeScore >= 80) edgeBoost = 8;
+        else if (edgeScore >= 60) edgeBoost = 4;
+        else if (edgeScore < 40) edgeBoost = -3;
+      }
+
       // ── Soft penalties ────────────────────────────────────────────────────
       let softPenalty = 0;
       if (matchup.battingPosition >= 7) softPenalty -= 3;
@@ -594,8 +724,8 @@ export function rankAIPicks(
       if (recentFormResult.streakType === 'cold') softPenalty -= 5;
       if (kProb !== null && kProb >= 22) softPenalty -= 3;
 
-      // ── Final score ───────────────────────────────────────────────────────
-      const overallScore = Math.min(100, Math.max(0, Math.round(baseScore + bpBoost + softPenalty)));
+        // ── Final score (S4: include edge boost) ──────────────────────────────
+      const overallScore = Math.min(100, Math.max(0, Math.round(baseScore + bpBoost + softPenalty + edgeBoost)));
 
       // ── Build reasons (WHY THIS PLAY QUALIFIES) ───────────────────────────
       const reasons: string[] = [];
@@ -746,6 +876,27 @@ export function rankAIPicks(
         favorable: dayNightResult.favorable,
       };
 
+      // Attach projected PA (S2)
+      pick.projectedPA = Math.round(projectedPA * 10) / 10;
+
+      // Attach S4 edge score
+      if (edgeScore !== null) {
+        if (!pick.odds) pick.odds = { line: pick.line };
+        pick.odds.edge = edgeScore;
+      }
+
+      // Attach S3 bullpen fatigue label as risk flag or reason
+      if (bullpenFatigueMap && matchup.opponentTeamId) {
+        const fatigue = getBullpenFatigueScore(matchup.opponentTeamId, bullpenFatigueMap);
+        if (fatigue.score >= 75) {
+          pick.reasons.push(`Exhausted bullpen (${fatigue.label} — ${fatigue.score}/100 fatigue)`);
+        } else if (fatigue.score >= 50) {
+          pick.reasons.push(`Tired bullpen (${fatigue.label} — ${fatigue.score}/100 fatigue)`);
+        } else if (fatigue.score <= 20) {
+          pick.riskFlags.push(`Fresh bullpen — limited late-game scoring opportunity`);
+        }
+      }
+
       // Attach streak info
       const streakLabel = mlbStreak?.hasRealData ? (mlbStreak.streakLabel ?? "") : "";
       pick.streakInfo = {
@@ -776,18 +927,59 @@ export function rankAIPicks(
       rank: index + 1,
     }));
 
-  // ── Quality gate: 78+ to appear in UI, max 10 picks ──────────────────────
-  // 85+ = Elite, 78-84 = Strong, below 78 = hidden
+  // ── Quality gate: 4 Elite (85+) + 6 Strong (78-84) = max 10 picks ────────
   // If none qualify, return empty array (UI shows "No official HRR play today")
-  const QUALITY_THRESHOLD = 78;
-  const MAX_PICKS = 10;
+  const ELITE_THRESHOLD = 85;
+  const STRONG_THRESHOLD = 78;
+  const MAX_ELITE = 4;
+  const MAX_STRONG = 6;
 
-  const qualityPicks = picks
-    .filter(p => p.overallScore >= QUALITY_THRESHOLD)
-    .slice(0, MAX_PICKS);
+  // S5: Correlation cap — prevent over-stacking same game or same team
+  // Max 3 picks per game (gamePk), max 4 picks per team
+  const MAX_PER_GAME = 3;
+  const MAX_PER_TEAM = 4;
 
-  console.log(`[rankAIPicks] Quality gate (>= ${QUALITY_THRESHOLD}, max ${MAX_PICKS}): ${picks.length} scored → ${qualityPicks.length} picks`);
-  console.log(`[rankAIPicks] Grade breakdown: Elite (85+): ${qualityPicks.filter(p => p.grade === 'elite').length}, Strong (78-84): ${qualityPicks.filter(p => p.grade === 'strong').length}`);
+  function applyCorrelationCap(candidates: AIPick[], maxCount: number): AIPick[] {
+    const gameCount = new Map<number, number>();
+    const teamCount = new Map<string, number>();
+    const result: AIPick[] = [];
+
+    for (const pick of candidates) {
+      const gamePk = (pick as any)._gamePk as number | undefined;
+      const team = pick.team;
+
+      const gc = gamePk ? (gameCount.get(gamePk) ?? 0) : 0;
+      const tc = teamCount.get(team) ?? 0;
+
+      if (gc >= MAX_PER_GAME || tc >= MAX_PER_TEAM) continue;
+
+      result.push(pick);
+      if (gamePk) gameCount.set(gamePk, gc + 1);
+      teamCount.set(team, tc + 1);
+
+      if (result.length >= maxCount) break;
+    }
+    return result;
+  }
+
+  // Attach gamePk to each pick for correlation tracking
+  const picksWithGamePk = picks.map((pick, i) => ({
+    ...pick,
+    _gamePk: matchups.find(m => m.playerId === pick.playerId)?.gamePk,
+  }));
+
+  const eliteCandidates = picksWithGamePk.filter(p => p.overallScore >= ELITE_THRESHOLD);
+  const strongCandidates = picksWithGamePk.filter(p => p.overallScore >= STRONG_THRESHOLD && p.overallScore < ELITE_THRESHOLD);
+
+  const elitePicks = applyCorrelationCap(eliteCandidates, MAX_ELITE);
+  const strongPicks = applyCorrelationCap(strongCandidates, MAX_STRONG);
+
+  const qualityPicks = [...elitePicks, ...strongPicks].map((pick, index) => ({
+    ...pick,
+    rank: index + 1,
+  }));
+
+  console.log(`[rankAIPicks] Quality gate (S5 correlation cap): ${picks.length} scored → ${elitePicks.length} Elite (85+) + ${strongPicks.length} Strong (78-84) = ${qualityPicks.length} picks`);
 
   return qualityPicks;
 }

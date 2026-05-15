@@ -785,7 +785,7 @@ export const aiPicksRouter = router({
         fetchedAt: Date.now(),
         isWarm: false,
       }));
-      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache, ballparkMatchups } = enrichment;
+      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache, ballparkMatchups, bullpenFatigueMap } = enrichment as any;
 
       // If official lineup is sparse (<50 players) but ballparkpal has starters, use ballparkpal
       let matchups = lineupData.matchups;
@@ -835,7 +835,8 @@ export const aiPicksRouter = router({
         gameTotalsMap,
         statcastCache,
         ballparkMatchups.length > 0, // hasBallparkPalData
-        ballparkMatchups // raw BP matchups for kProb/hrProb
+        ballparkMatchups, // raw BP matchups for kProb/hrProb
+        bullpenFatigueMap ?? new Map() // S3: bullpen fatigue
       );
       
       // Enrich with Savant data
@@ -906,7 +907,7 @@ export const aiPicksRouter = router({
         fetchedAt: Date.now(),
         isWarm: false,
       }));
-      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache2, ballparkMatchups: bpMatchups2 } = enrichment2;
+      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache2, ballparkMatchups: bpMatchups2, bullpenFatigueMap: bullpenFatigueMap2 } = enrichment2 as any;
 
       // If official lineup is sparse (<50 players) but ballparkpal has starters, supplement
       let matchups = lineupData.matchups;
@@ -953,7 +954,8 @@ export const aiPicksRouter = router({
         gameTotalsMap,
         statcastCache2,
         bpMatchups2.length > 0, // hasBallparkPalData
-        bpMatchups2 // raw BP matchups for kProb/hrProb
+        bpMatchups2, // raw BP matchups for kProb/hrProb
+        bullpenFatigueMap2 ?? new Map() // S3: bullpen fatigue
       );
       
       // Enrich all picks with Savant data
@@ -1015,7 +1017,7 @@ export const aiPicksRouter = router({
         fetchedAt: Date.now(),
         isWarm: false,
       }));
-      const { vsGradeMap, gameTotalsMap: _gameTotalsMap3, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache3, ballparkMatchups: bpMatchups3 } = enrichment3;
+      const { vsGradeMap, gameTotalsMap: _gameTotalsMap3, dayNightSplitsMap, mlbStreakMap, statcastCache: statcastCache3, ballparkMatchups: bpMatchups3, bullpenFatigueMap: bullpenFatigueMap3 } = enrichment3 as any;
 
       // If official lineup is sparse (<50 players) but ballparkpal has starters, supplement
       let matchups = lineupData.matchups;
@@ -1114,7 +1116,8 @@ export const aiPicksRouter = router({
         gameTotalsMap,
         statcastCache3,
         bpMatchups3.length > 0, // hasBallparkPalData
-        bpMatchups3 // raw BP matchups for kProb/hrProb
+        bpMatchups3, // raw BP matchups for kProb/hrProb
+        bullpenFatigueMap3 ?? new Map() // S3: bullpen fatigue
       );
 
       console.log(`[HRR] Matrix scored: ${matrixPicks.length} picks`);
@@ -1207,6 +1210,21 @@ export const aiPicksRouter = router({
         return b.overProbability - a.overProbability;
       });
 
+      // Build slate metadata for UI display
+      const now = new Date();
+      const todayET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const todayETDate = `${todayET.getFullYear()}-${String(todayET.getMonth() + 1).padStart(2, '0')}-${String(todayET.getDate()).padStart(2, '0')}`;
+      const isStaleSlate = dataDate !== todayETDate && todayET.getHours() >= 5;
+
+      // Find first pitch time from games
+      const games3 = await getGamesForUI();
+      const upcomingGames = games3.filter(g => g.status === 'Preview' || g.status === 'Scheduled');
+      const firstPitchTime = upcomingGames.length > 0
+        ? upcomingGames.sort((a, b) => new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime())[0]?.gameTime ?? null
+        : null;
+      const confirmedCount = games3.filter(g => g.lineupSource === 'confirmed').length;
+      const projectedCount = games3.filter(g => g.lineupSource === 'projected').length;
+
       return {
         success: true,
         picks: enrichedPicks,
@@ -1214,6 +1232,14 @@ export const aiPicksRouter = router({
         dataDate,
         timestamp: new Date(),
         hasOddsData: enrichedPicks.some(p => p.bookOdds !== null),
+        // Slate metadata
+        slateDate: todayETDate,
+        isStaleSlate,
+        firstPitchTime,
+        oddsUpdatedAt: new Date(),
+        confirmedGames: confirmedCount,
+        projectedGames: projectedCount,
+        totalGames: games3.length,
       };
     } catch (error) {
       console.error("Error generating HRR picks:", error);
