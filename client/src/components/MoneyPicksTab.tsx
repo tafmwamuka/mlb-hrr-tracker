@@ -11,6 +11,7 @@ import {
   CheckCircle2, Plus, Minus, ShoppingCart, X
 } from "lucide-react";
 import { SaferPlayTip } from "@/components/SaferPlayTip";
+import { PerformanceGraph } from "@/components/PerformanceGraph";
 
 interface AlternateLine {
   line: number;
@@ -58,6 +59,7 @@ interface MoneyPick {
     streakType: 'hot' | 'cold' | 'neutral';
     last5HitRate: number;
     trendDirection: 'up' | 'down' | 'stable';
+    last5Games?: Array<{ date: string; hits: number; runs: number; rbi: number; atBats: number; homeRuns: number }>;
   } | null;
   dayNightSplit?: {
     gameTimeType: 'day' | 'night';
@@ -74,9 +76,15 @@ interface MoneyPick {
     dayNightFavorable: boolean;
     favorableCount: number;
   } | null;
-  overallScore?: number; // Matrix score (0-100) — same ranking as All Plays / Top Plays
-  vsGrade?: number; // Ballparkpal VS grade (-10 to 10)
+  overallScore?: number; // Matrix score (0-100)
+  vsGrade?: number; // BallparkPal VS grade (0-10)
   gameTotalOU?: number | null; // Vegas over/under line
+  // Phase R new fields
+  grade?: 'elite' | 'strong' | 'watchlist';
+  reasons?: string[];    // WHY THIS PLAY QUALIFIES
+  riskFlags?: string[];  // RISK FLAGS
+  bpBoost?: number;      // BallparkPal boost/penalty
+  baseScore?: number;    // Score before BP boost
 }
 
 function getProbColor(prob: number): string {
@@ -322,10 +330,73 @@ function MoneyPickCard({
           </div>
         </div>
 
-        {/* Quick reasoning */}
-        <p className="text-[11px] text-[oklch(0.55_0.015_255)] leading-relaxed mb-2">
-          {pick.reasoning}
-        </p>
+        {/* Grade badge row */}
+        {pick.grade && (
+          <div className="flex items-center gap-2 mb-3">
+            {pick.grade === 'elite' ? (
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest"
+                style={{ background: "oklch(0.82 0.17 85 / 15%)", border: "1px solid oklch(0.82 0.17 85 / 40%)", color: "oklch(0.82 0.17 85)" }}
+              >
+                ⚡ ELITE PLAY
+              </div>
+            ) : (
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest"
+                style={{ background: "oklch(0.72 0.18 165 / 12%)", border: "1px solid oklch(0.72 0.18 165 / 35%)", color: "oklch(0.72 0.18 165)" }}
+              >
+                ✅ STRONG PLAY
+              </div>
+            )}
+            {pick.overallScore !== undefined && (
+              <div className="text-[10px] text-[oklch(0.45_0.015_255)]">
+                Score: <span className="font-bold text-white">{pick.overallScore}</span>
+                {pick.bpBoost !== undefined && pick.bpBoost !== 0 && (
+                  <span style={{ color: pick.bpBoost > 0 ? "oklch(0.72 0.18 165)" : "oklch(0.68 0.22 25)" }}>
+                    {' '}({pick.bpBoost > 0 ? '+' : ''}{pick.bpBoost} BP)
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* WHY THIS PLAY QUALIFIES */}
+        {pick.reasons && pick.reasons.length > 0 && (
+          <div className="mb-3 p-2.5 rounded-xl" style={{ background: "oklch(0.72 0.18 165 / 6%)", border: "1px solid oklch(0.72 0.18 165 / 15%)" }}>
+            <div className="text-[9px] font-bold tracking-widest uppercase mb-1.5" style={{ color: "oklch(0.72 0.18 165)" }}>Why This Play Qualifies</div>
+            <div className="space-y-0.5">
+              {pick.reasons.slice(0, 4).map((reason, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  <span className="text-[oklch(0.72_0.18_165)] text-[10px] mt-0.5">✓</span>
+                  <span className="text-[10px] text-[oklch(0.65_0.015_255)] leading-tight">{reason}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* RISK FLAGS */}
+        {pick.riskFlags && pick.riskFlags.length > 0 && (
+          <div className="mb-3 p-2.5 rounded-xl" style={{ background: "oklch(0.68 0.22 25 / 6%)", border: "1px solid oklch(0.68 0.22 25 / 15%)" }}>
+            <div className="text-[9px] font-bold tracking-widest uppercase mb-1.5" style={{ color: "oklch(0.82 0.17 85)" }}>Risk Flags</div>
+            <div className="space-y-0.5">
+              {pick.riskFlags.map((flag, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  <span className="text-[oklch(0.82_0.17_85)] text-[10px] mt-0.5">⚠</span>
+                  <span className="text-[10px] text-[oklch(0.60_0.015_255)] leading-tight">{flag}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Quick reasoning (fallback when no structured reasons) */}
+        {(!pick.reasons || pick.reasons.length === 0) && (
+          <p className="text-[11px] text-[oklch(0.55_0.015_255)] leading-relaxed mb-2">
+            {pick.reasoning}
+          </p>
+        )}
 
         {/* Action row: expand + add to parlay */}
         <div className="flex items-center justify-between">
@@ -362,6 +433,21 @@ function MoneyPickCard({
               className="overflow-hidden"
             >
               <div className="mt-3 space-y-3 pt-3 border-t border-[oklch(1_0_0/6%)]">
+                {/* Performance Graph */}
+                {pick.streakInfo?.last5Games && pick.streakInfo.last5Games.length > 0 ? (
+                  <div className="p-2.5 rounded-xl" style={{ background: "oklch(0.12 0.018 255)", border: "1px solid oklch(1 0 0 / 6%)" }}>
+                    <PerformanceGraph
+                      games={pick.streakInfo.last5Games}
+                      expectedLine={pick.recommendedLine}
+                    />
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-xl" style={{ background: "oklch(0.12 0.018 255)", border: "1px solid oklch(1 0 0 / 6%)" }}>
+                    <div className="text-[9px] font-bold tracking-widest uppercase mb-1.5" style={{ color: "oklch(0.45 0.015 255)" }}>Last 5 Games</div>
+                    <p className="text-[10px] text-[oklch(0.38_0.015_255)]">Game log loading — check back shortly</p>
+                  </div>
+                )}
+
                 {/* Statcast */}
                 {pick.savantMetrics && (
                   <div className="grid grid-cols-4 gap-1.5">
@@ -417,8 +503,9 @@ function MetricBox({ label, value, good }: { label: string; value: string; good:
 
 export function MoneyPicksTab() {
   const { data, isLoading } = trpc.aiPicks.getHRRPicks.useQuery(undefined, {
-    refetchInterval: 5 * 60 * 1000, // Auto-refresh every 5 minutes for new lineups
-    staleTime: 2 * 60 * 1000, // Consider data fresh for 2 minutes
+    refetchInterval: 10 * 60 * 1000, // Auto-refresh every 10 minutes (picks rarely change)
+    staleTime: 10 * 60 * 1000, // Serve cached data for 10 min before background refetch
+    gcTime: 30 * 60 * 1000, // Keep in React Query cache for 30 min (instant tab switching)
   });
   const [activeFilter, setActiveFilter] = useState<FilterTier>("all");
   const [selectedPicks, setSelectedPicks] = useState<Set<number>>(new Set());
@@ -479,13 +566,22 @@ export function MoneyPicksTab() {
           streak,
           odds: realOdds,
           oddsProvider,
-          streakInfo,
+          streakInfo: streakInfo ? {
+            ...streakInfo,
+            last5Games: (pick.streakInfo as any)?.last5Games ?? [],
+          } : null,
           dayNightSplit,
           primePosition: pick.primePosition ?? false,
           primePositionFactors: pick.primePositionFactors ?? null,
           overallScore: pick.overallScore ?? pick.hrrConfidence,
           vsGrade: pick.vsGrade ?? null,
           gameTotalOU: pick.gameTotalOU ?? null,
+          // Phase R new fields
+          grade: pick.grade ?? undefined,
+          reasons: pick.reasons ?? [],
+          riskFlags: pick.riskFlags ?? [],
+          bpBoost: pick.bpBoost ?? 0,
+          baseScore: pick.baseScore ?? undefined,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)
@@ -535,9 +631,34 @@ export function MoneyPicksTab() {
 
   if (isLoading) {
     return (
-      <div className="p-4 space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="animate-pulse rounded-2xl h-40" style={{ background: "oklch(0.14 0.022 255)" }} />
+      <div className="p-4 space-y-4">
+        {/* Loading header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="animate-pulse h-5 w-32 rounded-lg" style={{ background: "oklch(0.18 0.02 255)" }} />
+            <div className="animate-pulse h-3 w-48 rounded mt-1.5" style={{ background: "oklch(0.15 0.02 255)" }} />
+          </div>
+          <div className="animate-pulse h-6 w-16 rounded-lg" style={{ background: "oklch(0.18 0.02 255)" }} />
+        </div>
+        {/* Loading status */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 6%)" }}>
+          <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />
+          <span className="text-[oklch(0.55_0.015_255)] text-xs">Running 10-factor scoring model…</span>
+        </div>
+        {/* Skeleton cards */}
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="animate-pulse rounded-2xl p-4 space-y-3" style={{ background: "oklch(0.14 0.022 255)", animationDelay: `${i * 80}ms` }}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full" style={{ background: "oklch(0.20 0.02 255)" }} />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-4 w-32 rounded" style={{ background: "oklch(0.22 0.02 255)" }} />
+                <div className="h-3 w-24 rounded" style={{ background: "oklch(0.18 0.02 255)" }} />
+              </div>
+              <div className="h-8 w-16 rounded-xl" style={{ background: "oklch(0.20 0.02 255)" }} />
+            </div>
+            <div className="h-3 w-full rounded" style={{ background: "oklch(0.18 0.02 255)" }} />
+            <div className="h-3 w-4/5 rounded" style={{ background: "oklch(0.16 0.02 255)" }} />
+          </div>
         ))}
       </div>
     );
@@ -638,9 +759,29 @@ export function MoneyPicksTab() {
       {/* Money Pick Cards */}
       {filteredPicks.length === 0 ? (
         <div className="text-center py-12">
-          <DollarSign size={40} className="mx-auto mb-3" style={{ color: "oklch(0.35 0.015 255)" }} />
-          <p className="text-[oklch(0.45_0.015_255)] text-sm">No plays at this confidence level</p>
-          <p className="text-[oklch(0.35_0.015_255)] text-xs mt-1">Try lowering the filter</p>
+          {moneyPicks.length === 0 ? (
+            // Quality gate: no picks scored 78+ today
+            <>
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "oklch(0.16 0.03 255)" }}>
+                <Shield size={28} style={{ color: "oklch(0.45 0.015 255)" }} />
+              </div>
+              <h3 className="text-white font-bold text-base mb-2">No Official HRR Play Today</h3>
+              <p className="text-[oklch(0.50_0.015_255)] text-sm max-w-xs mx-auto leading-relaxed">
+                Our 10-factor model hasn't found a qualifying play yet. Picks require a score of 78+ to appear here.
+              </p>
+              <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
+                <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />
+                <span className="text-[oklch(0.55_0.015_255)] text-xs">Refreshes as lineups confirm</span>
+              </div>
+            </>
+          ) : (
+            // Filter too strict
+            <>
+              <DollarSign size={40} className="mx-auto mb-3" style={{ color: "oklch(0.35 0.015 255)" }} />
+              <p className="text-[oklch(0.45_0.015_255)] text-sm">No plays at this confidence level</p>
+              <p className="text-[oklch(0.35_0.015_255)] text-xs mt-1">Try lowering the filter</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-3">

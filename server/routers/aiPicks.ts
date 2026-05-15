@@ -834,7 +834,8 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache,
-        ballparkMatchups.length > 0 // hasBallparkPalData
+        ballparkMatchups.length > 0, // hasBallparkPalData
+        ballparkMatchups // raw BP matchups for kProb/hrProb
       );
       
       // Enrich with Savant data
@@ -852,7 +853,7 @@ export const aiPicksRouter = router({
           }
           return scoreDiff;
         })
-        .slice(0, 5)
+        .slice(0, 10)
         .map((pick, idx) => ({ ...pick, rank: idx + 1 }));
       
       return {
@@ -951,7 +952,8 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache2,
-        bpMatchups2.length > 0 // hasBallparkPalData
+        bpMatchups2.length > 0, // hasBallparkPalData
+        bpMatchups2 // raw BP matchups for kProb/hrProb
       );
       
       // Enrich all picks with Savant data
@@ -1111,7 +1113,8 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache3,
-        bpMatchups3.length > 0 // hasBallparkPalData
+        bpMatchups3.length > 0, // hasBallparkPalData
+        bpMatchups3 // raw BP matchups for kProb/hrProb
       );
 
       console.log(`[HRR] Matrix scored: ${matrixPicks.length} picks`);
@@ -1160,11 +1163,17 @@ export const aiPicksRouter = router({
           lineSource: "model" as const,
           // Matrix scores (from 10-factor scoring pipeline)
           overallScore: matrixPick?.overallScore ?? proj.hrrConfidence,
+          baseScore: matrixPick?.baseScore,
           factorBreakdown: matrixPick?.factorBreakdown,
           vsGrade: matrixPick?.vsGrade,
           gameTotalOU: matrixPick?.gameTotalOU,
           primePosition: matrixPick?.primePosition,
           primePositionFactors: matrixPick?.primePositionFactors,
+          // Phase R: structured reasons, risk flags, grade, BP boost
+          reasons: matrixPick?.reasons ?? [],
+          riskFlags: matrixPick?.riskFlags ?? [],
+          grade: matrixPick?.grade ?? 'strong',
+          bpBoost: matrixPick?.bpBoost ?? 0,
           // Poisson-based probabilities
           overProbability: Math.round(modelOverProb * 100),
           // Edge vs book

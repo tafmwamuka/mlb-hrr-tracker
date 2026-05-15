@@ -64,7 +64,7 @@ interface AdaptedData {
 }
 
 let cachedData: AdaptedData | null = null;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes — lineups don't change every 5 min
 
 /**
  * Convert PlayerWithContext to PlayerData format for ranking services

@@ -20,15 +20,13 @@ import {
   type PlayerStat,
 } from "@/hooks/useMLBStats";
 import { PlayerModal } from "@/components/PlayerModal";
-import { TopPlaysTab } from "@/components/TopPlaysTab";
-import { AllPlaysTab } from "@/components/AllPlaysTab";
 import { ParlaysTab } from "@/components/ParlaysTab";
 import { MoneyPicksTab } from "@/components/MoneyPicksTab";
 import { ResultsTab } from "@/components/ResultsTab";
 import { GameCards } from "@/components/GameCards";
-import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, Layers, Ticket } from "lucide-react";
+import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, Ticket } from "lucide-react";
 
-type TabType = "topPlays" | "allPlays" | "parlays" | "results";
+type TabType = "topPlays" | "parlays" | "results";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -67,11 +65,6 @@ const TAB_CONFIG = {
     label: "Money Picks",
     icon: Flame,
     color: "oklch(0.82 0.17 85)",
-  },
-  allPlays: {
-    label: "All Plays",
-    icon: Layers,
-    color: "oklch(0.75 0.20 290)",
   },
   parlays: {
     label: "Parlays",
@@ -639,19 +632,6 @@ export default function Home() {
             >
               <GameCards />
               <MoneyPicksTab />
-            </motion.div>
-          )}
-
-          {activeTab === "allPlays" && (
-            <motion.div
-              key="allPlays"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 overflow-y-auto"
-            >
-              <AllPlaysTab />
             </motion.div>
           )}
 

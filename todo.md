@@ -695,3 +695,32 @@
 - [x] Audit full pick pipeline: confirm ballparkpal VS gate (9/10 only) runs BEFORE matrix on all 3 tabs
 - [x] Fix any pipeline gaps where matrix runs without ballparkpal gate
 - [x] Save checkpoint
+
+## Phase R: System Redesign — New Flow Chart (2026-05-15)
+
+### Scoring Model Rebuild
+- [x] Replace scoring weights: Team Implied Runs 16%, Lineup Spot 15%, OBP/xwOBA 14%, Pitcher Weakness 14%, Recent Form 10%, Day/Night Split 8%, Park+Weather 8%, Bullpen Weakness 6%, Platoon Advantage 5%, Hard Contact/Barrel 4%
+- [x] Change BallparkPal from hard gate to scoring boost/penalty: Grade 10=+15, Grade 9=+10, Grade 8=+5, Grade 7=neutral, Grade 6 or below=-10
+- [x] Only auto-exclude when 4 negatives stack: VS Grade ≤6 AND batting 7th+ AND team implied <4.0 AND poor day/night split
+- [x] Update quality gate: 85+ Elite (show alone), 78-84 Strong, 70-77 Watchlist only (hide), below 70 hide
+- [x] Cap maximum picks at 10; if none score 78+, show "No official HRR play today"
+- [x] Add auto-fail rules: team total <3.5, batting 9th with poor team total, negative edge
+- [x] Add soft penalties: batting 7th+, wind blowing in, cold weather, poor recent form, high K matchup
+
+### Tab Restructure
+- [x] Remove "All Plays" tab from Home.tsx and AllPlaysTab component
+
+### Pick Card UI Redesign
+- [x] Show on each card: Player Name, Team, Opponent, Lineup Position, Market (1+ HRR), Odds, Model Probability, Edge, Grade
+- [x] Show "WHY THIS PLAY QUALIFIES" reasons section
+- [x] Show "RISK FLAGS" section (strikeout risk, expensive odds, weather concern, bullpen concern)
+
+### Performance Graph
+- [x] Fetch per-game H+R+RBI totals for last 7 games per player from MLB Stats API
+- [x] Add performanceGraph field to HRR pick API response
+- [x] Build PerformanceGraph bar chart component (last 7 games HRR totals)
+- [x] Show graph in expanded player card section
+
+### Speed Improvements
+- [x] Progressive load: improved skeleton with "Running 10-factor scoring model" status
+- [x] Fix cache TTLs: enrichment 30min, BallparkPal 20min, lineupAdapter 10min, frontend staleTime 10min, gcTime 30min

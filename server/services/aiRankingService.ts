@@ -1,16 +1,54 @@
 /**
- * AI Ranking Service
- * Integrates all data sources to create comprehensive AI picks
- * Factors: VS Gate (ballparkpal), RC, player stats, park factors, HR Targets, pitcher matchup,
- *          batting position, day/night splits, streak (MLB game logs), game totals (O/U), Statcast
+ * AI Ranking Service — Phase R Redesign
+ *
+ * New 10-factor scoring model (total = 100%):
+ *   Team Implied Runs   16%  — game O/U environment (high-scoring games = more HRR)
+ *   Lineup Spot         15%  — batting order position (cleanup > leadoff for HRR)
+ *   OBP / xwOBA         14%  — on-base + expected contact quality (Statcast xwOBA percentile)
+ *   Pitcher Weakness    14%  — ERA-based pitcher vulnerability
+ *   Recent Form         10%  — last 5-7 game hit/run/RBI rates (MLB game logs)
+ *   Day/Night Split      8%  — player performance by game time slot
+ *   Park + Weather       8%  — park factor + temperature/wind conditions
+ *   Bullpen Weakness     6%  — proxy: pitcher ERA + confidence (no separate bullpen feed)
+ *   Platoon Advantage    5%  — batter vs pitcher handedness advantage
+ *   Hard Contact/Barrel  4%  — Statcast barrel% percentile
+ *
+ * BallparkPal (vsGrade):
+ *   Grade 10 → +15 pts boost on final score
+ *   Grade 9  → +10 pts boost
+ *   Grade 8  → +5  pts boost
+ *   Grade 7  → neutral (0)
+ *   Grade ≤6 → -10 pts penalty
+ *   Only auto-exclude when ALL 4 negatives stack:
+ *     vsGrade ≤6 AND batting 7th+ AND team implied <4.0 AND poor day/night split
+ *
+ * Quality Gate:
+ *   ≥85  → Elite Play  (tier = "elite")
+ *   78-84 → Strong Play (tier = "strong")
+ *   70-77 → Watchlist only — hidden from UI
+ *   <70   → Hidden
+ *   Max 10 picks returned; if none ≥78, show "No official HRR play today"
+ *
+ * Auto-Fail Rules (pick excluded regardless of score):
+ *   - Team game total < 3.5 (very low-scoring environment)
+ *   - Batting 9th with team total < 4.5
+ *   - BallparkPal kProb ≥ 30% (high strikeout risk from BP data)
+ *
+ * Soft Penalties (applied to score before quality gate):
+ *   - Batting 7th or lower: -3 pts
+ *   - Wind blowing in (headwind): -4 pts
+ *   - Cold weather (<50°F): -5 pts
+ *   - Poor recent form (cold streak): -5 pts
+ *   - High K matchup (kProb ≥ 22%): -3 pts
  */
 
 import type { PlayerDayNightSplits } from "./dayNightSplitService";
 import type { PlayerStreakData } from "./mlbStreakService";
-import { calculateHandednessAdvantage } from "./advancedDataService";
+import { calculateHandednessAdvantage, calculateWeatherImpact } from "./advancedDataService";
 import type { GameTotal } from "./gameTotalsService";
 import { getGameTotalScoreForTeam } from "./gameTotalsService";
-import { lookupStatcastPlayer, calculateStatcastScore, type StatcastCache } from "./pybaseballService";
+import { lookupStatcastPlayer, type StatcastCache } from "./pybaseballService";
+import type { BallparkMatchup } from "./ballparkMatchupService";
 
 export interface PlayerData {
   playerId: number;
@@ -73,6 +111,8 @@ interface HRTargetData {
   threatScore: number; // Composite score
 }
 
+export type PickGrade = 'elite' | 'strong' | 'watchlist';
+
 export interface AIPick {
   rank: number;
   playerId: number;
@@ -89,23 +129,40 @@ export interface AIPick {
   statConfidence: { hits: number; runs: number; rbi: number; slg: number };
   reasoning: string;
   ballparkReasoning?: string; // Explicit ballpark-based reasoning
+  // Phase R: structured reasons and risk flags
+  reasons: string[];           // "WHY THIS PLAY QUALIFIES" bullet points
+  riskFlags: string[];         // "RISK FLAGS" bullet points
+  grade: PickGrade;            // 'elite' | 'strong' | 'watchlist'
+  bpBoost: number;             // BallparkPal boost/penalty applied (+15 to -10)
   factorBreakdown: {
-    rc: number; // Runs Created score (0-100)
-    playerStats: number; // Historical stats score (0-100)
-    parkFactors: number; // Park factor score (0-100)
-    hrTargets: number; // HR Targets grade score (0-100)
-    pitcherMatchup: number; // Pitcher weakness score (0-100)
-    battingPosition: number; // Position weighting (0-100)
-    dayNightSplit?: number; // Day/night split score (0-100)
-    streakBonus?: number; // Streak/hot hand bonus (0-100)
-    statcast?: number; // Statcast quality score (0-100)
-    gameTotal?: number; // Game total (O/U) environment score (0-100)
+    teamImpliedRuns: number;   // Game O/U environment (0-100)
+    lineupSpot: number;        // Batting position weight (0-100)
+    obpXwOBA: number;          // OBP + xwOBA quality (0-100)
+    pitcherWeakness: number;   // Pitcher ERA vulnerability (0-100)
+    recentForm: number;        // Last 5-7 game form (0-100)
+    dayNightSplit: number;     // Day/night split score (0-100)
+    parkWeather: number;       // Park factor + weather (0-100)
+    bullpenWeakness: number;   // Bullpen proxy score (0-100)
+    platoonAdvantage: number;  // Handedness advantage (0-100)
+    hardContactBarrel: number; // Barrel% percentile (0-100)
+    // Legacy fields kept for backward compat
+    rc?: number;
+    playerStats?: number;
+    parkFactors?: number;
+    hrTargets?: number;
+    pitcherMatchup?: number;
+    battingPosition?: number;
+    dayNightSplit_?: number;
+    streakBonus?: number;
+    statcast?: number;
+    gameTotal?: number;
   };
-  // VS Gate data (from ballparkpal matchup page)
-  vsGrade?: number; // -10 to 10 batter vs pitcher matchup grade
+  // VS / BallparkPal data
+  vsGrade?: number; // 0-10 normalized vsGrade
   gameTotalOU?: number | null; // Vegas over/under line (e.g. 9.5)
   gameTotalScore?: number; // Normalized 0-100 game environment score
-  overallScore: number; // Weighted average (0-100)
+  overallScore: number; // Final weighted score (0-100, after BP boost)
+  baseScore: number;    // Score before BP boost/penalty
   // Day/night split data
   dayNightSplit?: {
     gameTimeType: 'day' | 'night';
@@ -125,6 +182,7 @@ export interface AIPick {
     last10HitRate: number; // 0-100
     trendDirection: 'up' | 'down' | 'stable';
     streakLabel?: string; // e.g. "🔥 HOT (5-game hit streak)"
+    last5Games?: Array<{ date: string; hits: number; runs: number; rbi: number; atBats: number; homeRuns: number }>;
   };
   // Odds data
   odds?: {
@@ -151,29 +209,31 @@ export interface AIPick {
   combinedScore?: number; // Ballpark RC + Savant combined score
   primePosition?: boolean; // True when 3+ of 4 data-driven factors are favorable
   primePositionFactors?: {
-    platoonAdvantage: boolean;   // batter avg vs pitcher handedness > season avg by 15+ pts
-    pitcherMatchup: boolean;     // pitcher matchup score >= 65
-    battingPositionStrong: boolean; // batting position weight >= 65
-    dayNightFavorable: boolean;  // day/night split is favorable
-    favorableCount: number;      // how many of 4 factors are favorable
+    platoonAdvantage: boolean;
+    pitcherMatchup: boolean;
+    battingPositionStrong: boolean;
+    dayNightFavorable: boolean;
+    favorableCount: number;
   };
 }
 
+// ─── Scoring helpers ──────────────────────────────────────────────────────────
+
 /**
- * Calculate batting position weight
- * Higher weight for middle of lineup (4-6)
+ * Batting position weight (0-100) — optimized for HRR (Hits+Runs+RBI)
+ * Cleanup/3-4-5 get the most run-scoring opportunities
  */
 function getBattingPositionWeight(position: number): number {
   const weights: Record<number, number> = {
-    1: 60, // Lead-off
-    2: 70, // 2-hole
-    3: 80, // 3-hole
-    4: 100, // Cleanup (max)
-    5: 95, // 5-hole
-    6: 90, // 6-hole
-    7: 75, // 7-hole
-    8: 65, // 8-hole
-    9: 50, // Pitcher spot
+    1: 72,  // Lead-off: high OBP, good runs, fewer RBI
+    2: 78,  // 2-hole: good contact, run-scoring
+    3: 88,  // 3-hole: high avg, RBI opportunities
+    4: 100, // Cleanup: max RBI + run potential
+    5: 95,  // 5-hole: strong RBI spot
+    6: 85,  // 6-hole: decent RBI
+    7: 68,  // 7-hole: lower run/RBI opportunities
+    8: 55,  // 8-hole: limited opportunities
+    9: 45,  // 9-hole (or pitcher): minimal HRR potential
   };
   return weights[position] || 50;
 }
@@ -196,58 +256,83 @@ function gradeToScore(grade: string): number {
 
 /**
  * Calculate RC score (0-100)
- * RC ranges from 0-50+ typically
  */
 function rcToScore(rc: number): number {
   return Math.min(100, (rc / 40) * 100);
 }
 
 /**
- * Calculate player stats score (0-100)
- * Based on batting average, slugging %, power
+ * Calculate OBP/xwOBA score (0-100)
+ * Combines OBP (on-base ability) with Statcast xwOBA percentile
  */
-function playerStatsToScore(stats: PlayerData["stats"]): number {
-  const avgScore = Math.min(100, (stats.avg / 0.350) * 100);
-  const slgScore = Math.min(100, (stats.slg / 0.500) * 100);
-  const powerScore = Math.min(100, (stats.power / 0.200) * 100);
+function calculateOBPxwOBAScore(
+  stats: PlayerData["stats"],
+  xwOBAPercentile: number | null
+): number {
+  // OBP score: .400 OBP = 100, .300 = 75, .250 = 62
+  const obpScore = Math.min(100, (stats.obp / 0.400) * 100);
 
-  return (avgScore * 0.3 + slgScore * 0.4 + powerScore * 0.3);
+  if (xwOBAPercentile !== null) {
+    // Blend OBP (40%) + xwOBA percentile (60%) when Statcast available
+    return obpScore * 0.40 + xwOBAPercentile * 0.60;
+  }
+
+  // Fallback: OBP only, supplement with avg/slg
+  const avgScore = Math.min(100, (stats.avg / 0.320) * 100);
+  return obpScore * 0.60 + avgScore * 0.40;
 }
 
 /**
- * Calculate park factor score (0-100)
- * Parks with higher HR rates get higher scores
+ * Calculate pitcher weakness score (0-100) — primary pitcher factor
+ * ERA-based: high ERA = high score (vulnerable pitcher = good for HRR)
  */
-function parkFactorToScore(parkFactor: number): number {
-  // Park factor typically ranges from 0.8 to 1.2
-  // 1.0 = neutral, >1.0 = hitter friendly
-  return Math.min(100, ((parkFactor - 0.8) / 0.4) * 100);
+function calculatePitcherWeaknessScore(era: number, confidence: number): number {
+  // ERA score: 6.00+ ERA = 100, 4.50 = 75, 3.50 = 50, 2.50 = 25
+  const eraScore = Math.min(100, Math.max(0, ((era - 2.0) / 4.0) * 100));
+  // Blend ERA (70%) with matchup confidence (30%)
+  return eraScore * 0.70 + confidence * 0.30;
 }
 
 /**
- * Calculate pitcher matchup score (0-100)
- * Based on pitcher weakness and zone overlap
+ * Calculate bullpen weakness proxy (0-100)
+ * No direct bullpen data — proxy using pitcher ERA + confidence
+ * Higher ERA starter = likely weaker bullpen too
  */
-function pitcherMatchupToScore(confidence: number): number {
-  return confidence; // Already 0-100 from ballpark.com
+function calculateBullpenWeaknessScore(era: number, confidence: number): number {
+  // Simpler proxy: if starter ERA is high, bullpen likely also weak
+  const eraProxy = Math.min(100, Math.max(0, ((era - 2.5) / 3.5) * 100));
+  return eraProxy * 0.60 + confidence * 0.40;
+}
+
+/**
+ * Calculate park + weather combined score (0-100)
+ * Park factor (60%) + weather conditions (40%)
+ */
+function calculateParkWeatherScore(
+  parkFactor: number,
+  weather?: { temperature: number; windSpeed: number; windDirection: string }
+): number {
+  // Park factor: 1.20 = 100, 1.00 = 50, 0.80 = 0
+  const parkScore = Math.min(100, Math.max(0, ((parkFactor - 0.80) / 0.40) * 100));
+
+  if (!weather) return parkScore;
+
+  const weatherScore = calculateWeatherImpact(weather);
+  return parkScore * 0.60 + weatherScore * 0.40;
 }
 
 /**
  * Determine if a game time is day or night
- * Day games: before 5pm local time
  */
 function getGameTimeType(gameTime?: string): 'day' | 'night' {
-  if (!gameTime) return 'night'; // Default to night if unknown
+  if (!gameTime) return 'night';
   const hour = new Date(gameTime).getUTCHours();
-  // Adjust for ET (UTC-4 or UTC-5): day games typically start before 5pm ET
-  // 5pm ET = 21:00 or 22:00 UTC
-  const etHour = (hour - 4 + 24) % 24; // Approximate ET
+  const etHour = (hour - 4 + 24) % 24;
   return etHour < 17 ? 'day' : 'night';
 }
 
 /**
  * Calculate day/night split score (0-100)
- * Returns a score and boost based on how well the player performs in this game's time slot
  */
 function calculateDayNightScore(
   splits: PlayerDayNightSplits | null,
@@ -260,16 +345,12 @@ function calculateDayNightScore(
 
   const split = gameTimeType === 'day' ? splits.day : splits.night;
   if (!split || split.gamesPlayed < 5) {
-    // Not enough data — neutral
     return { score: 50, boost: 0, favorable: false, splitAvg: seasonAvg, splitOPS: 0, splitHits: 0, splitGames: split?.gamesPlayed || 0 };
   }
 
-  // How much better/worse is the player in this time slot vs season avg?
   const splitAvgNum = parseFloat(split.avg) || 0;
   const boost = seasonAvg > 0 ? ((splitAvgNum - seasonAvg) / seasonAvg) * 100 : 0;
-  const favorable = boost > 5; // 5%+ better = favorable
-
-  // Score: base 50, +/- based on boost magnitude
+  const favorable = boost > 5;
   const score = Math.min(100, Math.max(0, 50 + boost * 1.5));
 
   return {
@@ -284,11 +365,9 @@ function calculateDayNightScore(
 }
 
 /**
- * Calculate streak/hot hand score (0-100) using MLB game log data
- * Players on a streak get a bonus; cold players get a penalty
+ * Calculate recent form score (0-100) from MLB game log data
  */
-function calculateStreakScore(
-  _unused: null,
+function calculateRecentFormScore(
   mlbStreak?: PlayerStreakData | null
 ): {
   score: number;
@@ -327,13 +406,36 @@ function calculateStreakScore(
 }
 
 /**
- * Rank AI picks using comprehensive algorithm
- * VS Gate: Two-stage filter using vsGrade scores.
- *   hasBallparkPalData=true  (real ballparkpal data): STRONG_THRESHOLD=9.5, MODERATE_THRESHOLD=8.5
- *   hasBallparkPalData=false (mlbMatchupService fallback): STRONG_THRESHOLD=7.0, MODERATE_THRESHOLD=5.5
- * Game Totals: Odds API O/U line boosts picks in high-scoring game environments.
- * Remaining factors: RC, player stats, park factors, HR Targets, pitcher matchup,
- *                    batting position, day/night splits, streak.
+ * Calculate BallparkPal boost/penalty from vsGrade (0-10 normalized scale)
+ * Grade 10 → +15, Grade 9 → +10, Grade 8 → +5, Grade 7 → 0, Grade ≤6 → -10
+ */
+function calculateBPBoost(vsGrade: number | null): number {
+  if (vsGrade === null) return 0; // No data = neutral
+  if (vsGrade >= 9.5) return 15;  // Grade 10
+  if (vsGrade >= 8.5) return 10;  // Grade 9
+  if (vsGrade >= 7.5) return 5;   // Grade 8
+  if (vsGrade >= 6.5) return 0;   // Grade 7
+  return -10;                      // Grade 6 or below
+}
+
+/**
+ * Determine pick grade tier from final score
+ */
+function getPickGrade(score: number): PickGrade {
+  if (score >= 85) return 'elite';
+  if (score >= 78) return 'strong';
+  return 'watchlist';
+}
+
+// ─── Main ranking function ────────────────────────────────────────────────────
+
+/**
+ * Rank AI picks using the Phase R 10-factor scoring model.
+ *
+ * BallparkPal is now a BOOST/PENALTY on the final score, not a hard gate.
+ * The only hard exclusion is when ALL 4 negatives stack simultaneously.
+ *
+ * Quality gate: ≥78 to appear in UI (max 10 picks), ≥85 = Elite tier.
  */
 export function rankAIPicks(
   matchups: MatchupData[],
@@ -343,80 +445,21 @@ export function rankAIPicks(
   // Enrichment data
   dayNightSplitsMap?: Map<number, PlayerDayNightSplits>,
   mlbStreakMap?: Map<number, PlayerStreakData>,
-  // VS Gate: map from playerName -> vsGrade (0-10 scale)
+  // VS data: map from playerName -> vsGrade (0-10 scale)
   vsGradeMap?: Map<string, number>,
   // Game Totals: map from teamAbbr -> GameTotal
   gameTotalsMap?: Map<string, GameTotal>,
   // Statcast data from pybaseball
   statcastCache?: StatcastCache,
   // Whether vsGradeMap is from real ballparkpal data (true) or mlbMatchupService fallback (false)
-  hasBallparkPalData?: boolean
+  hasBallparkPalData?: boolean,
+  // Raw BallparkPal matchups for kProb, hrProb access
+  ballparkMatchups?: BallparkMatchup[]
 ): AIPick[] {
-  // ── VS Gate: two-stage filter with adaptive thresholds ──────────────────────────────
-  //
-  // Two threshold modes based on data source:
-  //   hasBallparkPalData=true  (real ballparkpal, grade 10→10.0, grade 9→9.5):
-  //     STRONG_THRESHOLD = 9.5 (grade 10 = always in)
-  //     MODERATE_THRESHOLD = 8.5 (grade 9 = conditional)
-  //   hasBallparkPalData=false (mlbMatchupService fallback, max score ~7.0):
-  //     STRONG_THRESHOLD = 7.0 (STRONG tier = always in)
-  //     MODERATE_THRESHOLD = 5.5 (MODERATE tier = conditional)
-  //
-  // Stage 1 — Entry rules:
-  //   STRONG (score >= STRONG_THRESHOLD): ALWAYS enters the matrix
-  //   MODERATE (score >= MODERATE_THRESHOLD): enters ONLY if matchup context is good:
-  //     - Platoon advantage (batter hits opposite-hand pitcher well), OR
-  //     - Pitcher ERA >= 4.50 (vulnerable starter), OR
-  //     - Batter barrel% >= 8% (real power threat)
-  //   Below MODERATE_THRESHOLD: excluded
-  //   No data (score = null): excluded if vsGradeMap is populated
-  //
-  // Stage 2 — Matrix quality gate (applied AFTER scoring, see bottom of function):
-  //   All players must score >= 75 in the matrix to become picks.
-  //   No free passes — the matrix is the final judge.
-  const hasVSData = vsGradeMap && vsGradeMap.size > 0;
-  // Adaptive thresholds: tight for real ballparkpal data, looser for mlbMatchupService fallback
-  const STRONG_THRESHOLD = hasBallparkPalData ? 9.5 : 7.0;
-  const MODERATE_THRESHOLD = hasBallparkPalData ? 8.5 : 5.5;
-  const gatedMatchups = hasVSData
-    ? matchups.filter(m => {
-        const vsScore = vsGradeMap!.get(m.playerName) ?? vsGradeMap!.get(m.playerName.split(' ').pop() || '') ?? null;
 
-        // No entry for this player — exclude when we have data for others
-        if (vsScore === null) return false;
-
-        // STRONG: always enters the matrix
-        if (vsScore >= STRONG_THRESHOLD) return true;
-
-        // MODERATE: enters only with good matchup context
-        if (vsScore >= MODERATE_THRESHOLD) {
-          const playerData = playerDataMap.get(m.playerId);
-          const statcastEntry = statcastCache?.data?.get(m.playerName);
-
-          // Context check 1: platoon advantage (opposite handedness)
-          const batterHand = playerData?.handedness ?? 'R';
-          const pitcherHand = m.pitcher?.handedness ?? 'R';
-          const hasPlatoonAdvantage = batterHand !== pitcherHand;
-
-          // Context check 2: pitcher ERA >= 4.50 (vulnerable starter)
-          const pitcherERA = m.pitcher?.era ?? null;
-          const pitcherIsVulnerable = pitcherERA !== null ? pitcherERA >= 4.50 : false;
-
-          // Context check 3: batter barrel% >= 8% (real power threat)
-          const barrelPct = statcastEntry?.barrelPct ?? null;
-          const isBarrelThreat = barrelPct !== null ? barrelPct >= 8.0 : false;
-
-          return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat;
-        }
-
-        // Below MODERATE_THRESHOLD: excluded
-        return false;
-      })
-    : matchups; // No VS data at all: use all matchups (graceful degradation)
-
-  console.log(`[rankAIPicks] VS Gate (${hasBallparkPalData ? 'ballparkpal' : 'mlbMatchup'} mode, STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD}): ${matchups.length} → ${gatedMatchups.length} matchups passed`);
-
-  const picks = gatedMatchups
+  // ── Auto-exclude: only when ALL 4 negatives stack ─────────────────────────
+  // This replaces the old hard VS gate. BallparkPal is now a boost/penalty.
+  const picks = matchups
     .map((matchup) => {
       const playerData = playerDataMap.get(matchup.playerId);
       const hrTargets = hrTargetsMap.get(matchup.playerName);
@@ -424,84 +467,173 @@ export function rankAIPicks(
 
       if (!playerData) return null;
 
-      // ── Core factor scores ────────────────────────────────────────────────
-      const rcScore = rcToScore(matchup.rc);
-      const playerStatsScore = playerStatsToScore(playerData.stats);
-      const parkFactorScore = parkFactorToScore(parkFactor);
-      const pitcherMatchupScore = pitcherMatchupToScore(matchup.confidence);
-      const battingPositionScore = getBattingPositionWeight(matchup.battingPosition);
-      const hrTargetsScore = hrTargets ? gradeToScore(hrTargets.grade) : 50;
-
-      // ── Day/night split ───────────────────────────────────────────────────
-      const gameTimeType = getGameTimeType(matchup.gameTime);
-      const splits: PlayerDayNightSplits | null = dayNightSplitsMap?.get(matchup.playerId) ?? null;
-      const dayNightResult = calculateDayNightScore(splits, gameTimeType, playerData.stats.avg);
-      const dayNightScore = dayNightResult.score;
-
-      // ── Streak data (MLB game logs) ────────────────────────────────────────
-      const mlbStreak = mlbStreakMap?.get(matchup.playerId) ?? null;
-      const streakResult = calculateStreakScore(null, mlbStreak);
-      const streakScore = streakResult.score;
-
-      // ── Statcast score (pybaseball: xwOBA, barrel%, exit velo percentiles) ──
-      const statcastPlayer = statcastCache
-        ? (statcastCache.byId.get(matchup.playerId) ?? lookupStatcastPlayer(statcastCache, matchup.playerName))
-        : null;
-      const statcastScore = calculateStatcastScore(statcastPlayer);
-
-      // ── VS Score from MLB-native matchup service (0-10 float scale) ─────────────────────
-      // VS score is the primary gate (already filtered above), but we also use it
-      // as a scoring signal — score=10 gets a meaningful boost over score=7.
+      // ── VS grade (BallparkPal or fallback) ───────────────────────────────
       const vsGrade = vsGradeMap?.get(matchup.playerName) ?? null;
-      // Convert 0-10 float score to 0-100 scoring scale
-      // score=10 → 100, score=7 → 70, score=5 → 50, score=0 → 0
-      const vsScore = vsGrade !== null ? Math.round((vsGrade / 10) * 100) : 50;
 
-      // ── Game Total (O/U) environment score ───────────────────────────────
+      // ── Game Total (O/U) environment ──────────────────────────────────────
       const gameTotalData = gameTotalsMap ? getGameTotalScoreForTeam(matchup.team, gameTotalsMap) : null;
       const gameTotalScore = gameTotalData?.score ?? 50;
       const gameTotalOU = gameTotalData?.overUnder ?? null;
 
-      // ── Weighted overall score ────────────────────────────────────────────
-      // New weights incorporate VS grade and game total.
-      // VS grade replaces pure RC as the primary matchup signal.
-      // Game total replaces part of park factor (O/U already prices in park).
-      // Total = 1.0
-      const overallScore =
-        vsScore * 0.15 +             // VS Grade (batter vs pitcher matchup) — PRIMARY
-        rcScore * 0.08 +             // Ballpark.com RC (secondary matchup signal)
-        playerStatsScore * 0.10 +    // Season stats (avg, slg, power)
-        statcastScore * 0.12 +       // Statcast: xwOBA, barrel%, exit velo (replaces theLAB)
-        gameTotalScore * 0.08 +      // Game total O/U environment
-        parkFactorScore * 0.06 +     // Park factor (reduced — O/U already prices this in)
-        hrTargetsScore * 0.10 +      // HR Targets grade
-        pitcherMatchupScore * 0.11 + // Pitcher weakness
-        battingPositionScore * 0.08 + // Lineup position
-        dayNightScore * 0.10 +       // Day/night split
-        streakScore * 0.12;          // Streak/hot hand
+      // ── Statcast data ─────────────────────────────────────────────────────
+      const statcastPlayer = statcastCache
+        ? (statcastCache.byId.get(matchup.playerId) ?? lookupStatcastPlayer(statcastCache, matchup.playerName))
+        : null;
 
-      // ── Reasoning ────────────────────────────────────────────────────────
+      // ── BallparkPal raw matchup (for kProb, hrProb) ───────────────────────
+      const bpMatchup = ballparkMatchups?.find(bp =>
+        bp.batter.toLowerCase() === matchup.playerName.toLowerCase() ||
+        bp.batter.toLowerCase().includes(matchup.playerName.split(' ').pop()?.toLowerCase() || '')
+      ) ?? null;
+      const kProb = bpMatchup?.kProb ?? null;
+
+      // ── Auto-fail rules ───────────────────────────────────────────────────
+      // Rule 1: Team game total < 3.5 (very low-scoring environment)
+      if (gameTotalOU !== null && gameTotalOU < 3.5) {
+        console.log(`[rankAIPicks] Auto-fail ${matchup.playerName}: game total ${gameTotalOU} < 3.5`);
+        return null;
+      }
+
+      // Rule 2: Batting 9th with team total < 4.5
+      if (matchup.battingPosition === 9 && gameTotalOU !== null && gameTotalOU < 4.5) {
+        console.log(`[rankAIPicks] Auto-fail ${matchup.playerName}: batting 9th with game total ${gameTotalOU}`);
+        return null;
+      }
+
+      // Rule 3: BallparkPal kProb ≥ 30% (very high strikeout risk)
+      if (kProb !== null && kProb >= 30) {
+        console.log(`[rankAIPicks] Auto-fail ${matchup.playerName}: kProb ${kProb}% ≥ 30%`);
+        return null;
+      }
+
+      // ── 4-negative stack exclusion (replaces old VS hard gate) ───────────
+      // Only exclude when ALL 4 negatives are present simultaneously
+      const vsGradeLow = vsGrade !== null && vsGrade <= 6.0;
+      const battingLow = matchup.battingPosition >= 7;
+      const teamImpliedLow = gameTotalOU !== null && gameTotalOU < 4.0;
+      const dayNightSplitsForPlayer = dayNightSplitsMap?.get(matchup.playerId) ?? null;
+      const gameTimeType = getGameTimeType(matchup.gameTime);
+      const dayNightResult = calculateDayNightScore(dayNightSplitsForPlayer, gameTimeType, playerData.stats.avg);
+      const poorDayNight = !dayNightResult.favorable && dayNightResult.score < 40;
+
+      if (vsGradeLow && battingLow && teamImpliedLow && poorDayNight) {
+        console.log(`[rankAIPicks] 4-negative stack exclusion: ${matchup.playerName} (vsGrade=${vsGrade}, pos=${matchup.battingPosition}, OU=${gameTotalOU}, dayNight=${dayNightResult.score})`);
+        return null;
+      }
+
+      // ── Factor 1: Team Implied Runs (16%) ─────────────────────────────────
+      // gameTotalScore is already 0-100 normalized
+      const teamImpliedScore = gameTotalScore;
+
+      // ── Factor 2: Lineup Spot (15%) ───────────────────────────────────────
+      const lineupSpotScore = getBattingPositionWeight(matchup.battingPosition);
+
+      // ── Factor 3: OBP / xwOBA (14%) ──────────────────────────────────────
+      const xwOBAPercentile = statcastPlayer?.xwOBAPercentile ?? null;
+      const obpXwOBAScore = calculateOBPxwOBAScore(playerData.stats, xwOBAPercentile);
+
+      // ── Factor 4: Pitcher Weakness (14%) ─────────────────────────────────
+      const pitcherWeaknessScore = calculatePitcherWeaknessScore(
+        matchup.pitcher.era,
+        matchup.confidence
+      );
+
+      // ── Factor 5: Recent Form (10%) ───────────────────────────────────────
+      const mlbStreak = mlbStreakMap?.get(matchup.playerId) ?? null;
+      const recentFormResult = calculateRecentFormScore(mlbStreak);
+      const recentFormScore = recentFormResult.score;
+
+      // ── Factor 6: Day/Night Split (8%) ────────────────────────────────────
+      const dayNightScore = dayNightResult.score;
+
+      // ── Factor 7: Park + Weather (8%) ─────────────────────────────────────
+      const parkWeatherScore = calculateParkWeatherScore(parkFactor, matchup.weather);
+
+      // ── Factor 8: Bullpen Weakness (6%) ──────────────────────────────────
+      const bullpenWeaknessScore = calculateBullpenWeaknessScore(
+        matchup.pitcher.era,
+        matchup.confidence
+      );
+
+      // ── Factor 9: Platoon Advantage (5%) ─────────────────────────────────
+      const platoonScore = calculateHandednessAdvantage(
+        playerData.handedness,
+        matchup.pitcher.handedness,
+        matchup.platoonSplit
+      );
+
+      // ── Factor 10: Hard Contact / Barrel (4%) ────────────────────────────
+      const barrelPercentile = statcastPlayer?.barrelPercentile ?? 50;
+      const hardContactScore = barrelPercentile;
+
+      // ── Weighted base score (0-100) ───────────────────────────────────────
+      const baseScore =
+        teamImpliedScore   * 0.16 +   // Team Implied Runs
+        lineupSpotScore    * 0.15 +   // Lineup Spot
+        obpXwOBAScore      * 0.14 +   // OBP / xwOBA
+        pitcherWeaknessScore * 0.14 + // Pitcher Weakness
+        recentFormScore    * 0.10 +   // Recent Form
+        dayNightScore      * 0.08 +   // Day/Night Split
+        parkWeatherScore   * 0.08 +   // Park + Weather
+        bullpenWeaknessScore * 0.06 + // Bullpen Weakness
+        platoonScore       * 0.05 +   // Platoon Advantage
+        hardContactScore   * 0.04;    // Hard Contact/Barrel
+
+      // ── BallparkPal boost/penalty ─────────────────────────────────────────
+      const bpBoost = calculateBPBoost(vsGrade);
+
+      // ── Soft penalties ────────────────────────────────────────────────────
+      let softPenalty = 0;
+      if (matchup.battingPosition >= 7) softPenalty -= 3;
+      if (matchup.weather) {
+        const wd = matchup.weather.windDirection.toLowerCase();
+        const isHeadwind = wd.includes('in') || wd === 'n' || wd === 'ne' || wd === 'nw';
+        if (isHeadwind && matchup.weather.windSpeed > 10) softPenalty -= 4;
+        if (matchup.weather.temperature < 50) softPenalty -= 5;
+      }
+      if (recentFormResult.streakType === 'cold') softPenalty -= 5;
+      if (kProb !== null && kProb >= 22) softPenalty -= 3;
+
+      // ── Final score ───────────────────────────────────────────────────────
+      const overallScore = Math.min(100, Math.max(0, Math.round(baseScore + bpBoost + softPenalty)));
+
+      // ── Build reasons (WHY THIS PLAY QUALIFIES) ───────────────────────────
       const reasons: string[] = [];
-      if (vsGrade !== null && vsGrade >= 7.0) reasons.push(`Strong matchup (VS ${vsGrade.toFixed(1)})`);
-      else if (vsGrade !== null && vsGrade >= 5.5) reasons.push(`Moderate matchup (VS ${vsGrade.toFixed(1)})`);
-      if (gameTotalOU !== null && gameTotalOU >= 9.5) reasons.push(`High-scoring game (O/U ${gameTotalOU})`);
-      if (rcScore > 80) reasons.push("High RC vs this pitcher");
-      if (playerStatsScore > 80) reasons.push("Strong season stats");
-      if (parkFactorScore > 70) reasons.push("Hitter-friendly park");
-      if (hrTargetsScore > 85) reasons.push("Top HR threat");
-      if (pitcherMatchupScore > 75) reasons.push("Favorable matchup");
-      if (battingPositionScore > 85) reasons.push("High in lineup");
-      if (dayNightResult.favorable) reasons.push(`Strong ${gameTimeType} performer (+${dayNightResult.boost}%)`);
-      if (streakResult.isOnStreak) reasons.push(`On ${streakResult.streakLength}-game hit streak`);
-      if (streakResult.last5HitRate >= 70) reasons.push(`${streakResult.last5HitRate}% hit rate last 5`);
-      // theLAB removed
+      if (vsGrade !== null && vsGrade >= 9.5) reasons.push(`Elite BallparkPal matchup (Grade ${Math.round(vsGrade)}/10)`);
+      else if (vsGrade !== null && vsGrade >= 8.5) reasons.push(`Strong BallparkPal matchup (Grade ${Math.round(vsGrade)}/10)`);
+      else if (vsGrade !== null && vsGrade >= 7.5) reasons.push(`Favorable BallparkPal matchup (Grade ${Math.round(vsGrade)}/10)`);
+      if (gameTotalOU !== null && gameTotalOU >= 9.5) reasons.push(`High-scoring game environment (O/U ${gameTotalOU})`);
+      else if (gameTotalOU !== null && gameTotalOU >= 8.5) reasons.push(`Above-average game total (O/U ${gameTotalOU})`);
+      if (matchup.battingPosition <= 3) reasons.push(`Top of lineup (#${matchup.battingPosition} — high run-scoring opportunity)`);
+      else if (matchup.battingPosition <= 5) reasons.push(`Heart of lineup (#${matchup.battingPosition} — prime RBI spot)`);
+      if (obpXwOBAScore >= 75) reasons.push(`Strong contact quality (OBP ${playerData.stats.obp.toFixed(3)}${xwOBAPercentile !== null ? `, xwOBA ${xwOBAPercentile}th pctile` : ''})`);
+      if (pitcherWeaknessScore >= 70) reasons.push(`Vulnerable starter (ERA ${matchup.pitcher.era.toFixed(2)})`);
+      if (recentFormResult.streakType === 'hot') reasons.push(`Hot recent form (${recentFormResult.last5HitRate}% hit rate last 5)`);
+      if (dayNightResult.favorable) reasons.push(`Strong ${gameTimeType} performer (+${dayNightResult.boost}% vs season avg)`);
+      if (parkFactor >= 1.05) reasons.push(`Hitter-friendly park (factor ${parkFactor.toFixed(2)})`);
+      if (platoonScore >= 60) reasons.push(`Platoon advantage vs ${matchup.pitcher.handedness}HP`);
+      if (barrelPercentile >= 70) reasons.push(`Elite barrel% (${barrelPercentile}th percentile)`);
+      if (bpBoost > 0) reasons.push(`BallparkPal boost: +${bpBoost} pts`);
 
-      const reasoning = reasons.join(" • ") || "Solid matchup";
+      // ── Build risk flags ──────────────────────────────────────────────────
+      const riskFlags: string[] = [];
+      if (kProb !== null && kProb >= 22) riskFlags.push(`Strikeout risk: ${kProb.toFixed(1)}% K probability`);
+      if (matchup.battingPosition >= 7) riskFlags.push(`Lower lineup spot (#${matchup.battingPosition}) — fewer RBI opportunities`);
+      if (matchup.weather && matchup.weather.temperature < 55) riskFlags.push(`Cold weather (${matchup.weather.temperature}°F) — suppresses offense`);
+      if (matchup.weather) {
+        const wd = matchup.weather.windDirection.toLowerCase();
+        const isHeadwind = wd.includes('in') || wd === 'n' || wd === 'ne' || wd === 'nw';
+        if (isHeadwind && matchup.weather.windSpeed > 10) riskFlags.push(`Wind blowing in (${matchup.weather.windSpeed}mph ${matchup.weather.windDirection})`);
+      }
+      if (recentFormResult.streakType === 'cold') riskFlags.push(`Cold streak — ${recentFormResult.last5HitRate}% hit rate last 5 games`);
+      if (bpBoost < 0) riskFlags.push(`BallparkPal penalty: ${bpBoost} pts (poor matchup grade)`);
+      if (gameTotalOU !== null && gameTotalOU < 7.0) riskFlags.push(`Low game total (O/U ${gameTotalOU}) — limited scoring`);
 
-      // Build ballpark-specific reasoning
-      const parkFactorValue = parkFactorScore > 70 ? "hitter-friendly" : parkFactorScore < 50 ? "pitcher-friendly" : "neutral";
+      // ── Legacy reasoning string ───────────────────────────────────────────
+      const reasoning = reasons.slice(0, 3).join(" • ") || "Solid matchup";
+      const parkFactorValue = parkFactor > 1.05 ? "hitter-friendly" : parkFactor < 0.95 ? "pitcher-friendly" : "neutral";
       const ouStr = gameTotalOU !== null ? ` Game O/U: ${gameTotalOU}.` : "";
-      const ballparkReasoning = `Playing at ${parkFactorValue} park. RC ranking: ${Math.round(matchup.rc)}/100.${ouStr} ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ""}`;
+      const ballparkReasoning = `Playing at ${parkFactorValue} park.${ouStr} ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ""}`;
 
       // ── Best stat type ────────────────────────────────────────────────────
       const stats = playerData.stats;
@@ -513,24 +645,27 @@ export function rankAIPicks(
       };
       const bestStat = Object.entries(statScores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as 'hits' | 'runs' | 'rbi';
 
-      // ── Realistic prop line ───────────────────────────────────────────────
-      const calculateRealisticLine = (stat: 'hits' | 'runs' | 'rbi', value: number, parkFactor: number): number => {
-        const gamesPlayed = 40;
-        const perGameAvg = value / gamesPlayed;
-        let line: number;
-        if (stat === 'hits') {
-          line = perGameAvg >= 1.0 ? 1.5 : 0.5;
-        } else if (stat === 'runs') {
-          line = perGameAvg >= 0.9 ? 1.5 : 0.5;
-        } else {
-          line = perGameAvg >= 0.9 ? 1.5 : 0.5;
-        }
-        if (parkFactor > 1.1 && line === 0.5) line = 1.5;
-        return line;
-      };
+      // ── Prop line ─────────────────────────────────────────────────────────
+      const gamesPlayed = 40;
+      const perGameAvg = stats[bestStat] / gamesPlayed;
+      const line = perGameAvg >= 1.0 ? 1.5 : 0.5;
 
-      const adjustedParkFactor = parkFactorScore / 100;
-      const line = calculateRealisticLine(bestStat, stats[bestStat], adjustedParkFactor);
+      // ── Pick grade ────────────────────────────────────────────────────────
+      const grade = getPickGrade(overallScore);
+
+      // ── Prime position (legacy: 3+ of 4 factors favorable) ───────────────
+      const platoonSplit = matchup.platoonSplit;
+      const platoonAdvantage = platoonSplit
+        ? (() => {
+            const relevantAvg = matchup.pitcher.handedness === 'R' ? platoonSplit.vsRHP : platoonSplit.vsLHP;
+            return relevantAvg - playerData.stats.avg >= 0.015;
+          })()
+        : platoonScore >= 55;
+      const pitcherMatchupFavorable = pitcherWeaknessScore >= 65;
+      const battingPositionStrong = lineupSpotScore >= 65;
+      const dayNightFavorable = dayNightResult.favorable;
+      const primeFactors = [platoonAdvantage, pitcherMatchupFavorable, battingPositionStrong, dayNightFavorable];
+      const favorableCount = primeFactors.filter(Boolean).length;
 
       // ── Build pick object ─────────────────────────────────────────────────
       const pick: AIPick = {
@@ -551,93 +686,78 @@ export function rankAIPicks(
         },
         prediction: "over" as const,
         line,
-        confidence: Math.round(overallScore),
+        confidence: overallScore,
         reasoning,
         ballparkReasoning,
-        factorBreakdown: {
-          rc: Math.round(rcScore),
-          playerStats: Math.round(playerStatsScore),
-          parkFactors: Math.round(parkFactorScore),
-          hrTargets: Math.round(hrTargetsScore),
-          pitcherMatchup: Math.round(pitcherMatchupScore),
-          battingPosition: Math.round(battingPositionScore),
-          dayNightSplit: Math.round(dayNightScore),
-          streakBonus: Math.round(streakScore),
-          statcast: Math.round(statcastScore), // Real Statcast score from pybaseball
-          gameTotal: Math.round(gameTotalScore),
-        },
-        overallScore: Math.round(overallScore),
+        reasons,
+        riskFlags,
+        grade,
+        bpBoost,
+        baseScore: Math.round(baseScore),
+        overallScore,
         vsGrade: vsGrade ?? undefined,
         gameTotalOU,
         gameTotalScore: Math.round(gameTotalScore),
+        factorBreakdown: {
+          teamImpliedRuns: Math.round(teamImpliedScore),
+          lineupSpot: Math.round(lineupSpotScore),
+          obpXwOBA: Math.round(obpXwOBAScore),
+          pitcherWeakness: Math.round(pitcherWeaknessScore),
+          recentForm: Math.round(recentFormScore),
+          dayNightSplit: Math.round(dayNightScore),
+          parkWeather: Math.round(parkWeatherScore),
+          bullpenWeakness: Math.round(bullpenWeaknessScore),
+          platoonAdvantage: Math.round(platoonScore),
+          hardContactBarrel: Math.round(hardContactScore),
+          // Legacy aliases for backward compat
+          rc: Math.round(rcToScore(matchup.rc)),
+          playerStats: Math.round(Math.min(100, (stats.avg / 0.350) * 100)),
+          parkFactors: Math.round(Math.min(100, ((parkFactor - 0.8) / 0.4) * 100)),
+          hrTargets: hrTargets ? gradeToScore(hrTargets.grade) : 50,
+          pitcherMatchup: Math.round(pitcherWeaknessScore),
+          battingPosition: Math.round(lineupSpotScore),
+          streakBonus: Math.round(recentFormScore),
+          statcast: statcastPlayer ? Math.round(
+            (statcastPlayer.xwOBAPercentile ?? 50) * 0.40 +
+            (statcastPlayer.barrelPercentile ?? 50) * 0.25 +
+            (statcastPlayer.hardHitPercentile ?? 50) * 0.20 +
+            (statcastPlayer.exitVeloPercentile ?? 50) * 0.15
+          ) : 50,
+          gameTotal: Math.round(gameTotalScore),
+        },
+        primePosition: favorableCount >= 3,
+        primePositionFactors: {
+          platoonAdvantage,
+          pitcherMatchup: pitcherMatchupFavorable,
+          battingPositionStrong,
+          dayNightFavorable,
+          favorableCount,
+        },
       };
 
-      // Attach day/night split info if available
-      if (splits || dayNightResult.splitGames > 0) {
-        pick.dayNightSplit = {
-          gameTimeType,
-          splitAvg: dayNightResult.splitAvg,
-          splitOPS: dayNightResult.splitOPS,
-          splitHits: dayNightResult.splitHits,
-          splitGames: dayNightResult.splitGames,
-          splitBoost: dayNightResult.boost,
-          favorable: dayNightResult.favorable,
-        };
-      }
+      // Attach day/night split info
+      pick.dayNightSplit = {
+        gameTimeType,
+        splitAvg: dayNightResult.splitAvg,
+        splitOPS: dayNightResult.splitOPS,
+        splitHits: dayNightResult.splitHits,
+        splitGames: dayNightResult.splitGames,
+        splitBoost: dayNightResult.boost,
+        favorable: dayNightResult.favorable,
+      };
 
-      // Streak label from MLB game logs
+      // Attach streak info
       const streakLabel = mlbStreak?.hasRealData ? (mlbStreak.streakLabel ?? "") : "";
       pick.streakInfo = {
-        isOnStreak: streakResult.isOnStreak,
-        streakLength: streakResult.streakLength,
-        streakType: streakResult.streakType,
-        last5HitRate: streakResult.last5HitRate,
-        last10HitRate: streakResult.last10HitRate,
-        trendDirection: streakResult.trendDirection,
+        isOnStreak: recentFormResult.isOnStreak,
+        streakLength: recentFormResult.streakLength,
+        streakType: recentFormResult.streakType,
+        last5HitRate: recentFormResult.last5HitRate,
+        last10HitRate: recentFormResult.last10HitRate,
+        trendDirection: recentFormResult.trendDirection,
         streakLabel,
+        last5Games: mlbStreak?.last5Games ?? [],
       };
-
-      // ── Data-driven Prime Position: 3+ of 4 factors must be favorable ─────────
-      // Factor 1: Platoon advantage — batter avg vs pitcher handedness > season avg by 15+ pts
-      const platoonSplit = matchup.platoonSplit;
-      const platoonScore = calculateHandednessAdvantage(
-        playerData.handedness,
-        matchup.pitcher.handedness,
-        platoonSplit
-      );
-      const platoonAdvantage = platoonSplit
-        ? (() => {
-            const relevantAvg = matchup.pitcher.handedness === 'R' ? platoonSplit.vsRHP : platoonSplit.vsLHP;
-            return relevantAvg - playerData.stats.avg >= 0.015; // 15+ pts above season avg
-          })()
-        : platoonScore >= 55; // fallback: opposite handedness is slight advantage
-
-      // Factor 2: Pitcher matchup score >= 65
-      const pitcherMatchupFavorable = pitcherMatchupScore >= 65;
-
-      // Factor 3: Batting position weight >= 65 (productive spots in lineup)
-      const battingPositionStrong = battingPositionScore >= 65;
-
-      // Factor 4: Day/night split is favorable
-      const dayNightFavorable = dayNightResult.favorable;
-
-      const primeFactors = [
-        platoonAdvantage,
-        pitcherMatchupFavorable,
-        battingPositionStrong,
-        dayNightFavorable,
-      ];
-      const favorableCount = primeFactors.filter(Boolean).length;
-      pick.primePosition = favorableCount >= 3;
-      pick.primePositionFactors = {
-        platoonAdvantage,
-        pitcherMatchup: pitcherMatchupFavorable,
-        battingPositionStrong,
-        dayNightFavorable,
-        favorableCount,
-      };
-
-      // theLAB removed — no edge info to attach
 
       return pick;
     })
@@ -656,22 +776,19 @@ export function rankAIPicks(
       rank: index + 1,
     }));
 
-  // ── Quality gate: adaptive threshold based on data source ────────────────────────────────────
-  // Quality over quantity — even 1 pick is fine if only 1 qualifies.
-  //
-  // Threshold modes:
-  //   hasBallparkPalData=true  (real ballparkpal, VS scores up to 10.0):
-  //     QUALITY_THRESHOLD = 75
-  //     VS=10 alone scores ~65, needs hot streak + Statcast to reach 75
-  //     VS=9 with platoon + good stats: ~70-76
-  //   hasBallparkPalData=false (mlbMatchupService fallback, VS scores max ~7.0):
-  //     QUALITY_THRESHOLD = 65
-  //     VS=7 (STRONG) scores ~70 on 0-100 scale, needs 1-2 other signals to reach 65
-  //     VS=5.5 (MODERATE) scores ~55, needs strong stats + streak to reach 65
-  //     This ensures we still get picks when ballparkpal is unavailable
-  const QUALITY_THRESHOLD = hasBallparkPalData ? 75 : 65;
-  const qualityPicks = picks.filter(p => p.overallScore >= QUALITY_THRESHOLD);
-  console.log(`[rankAIPicks] Quality gate (>= ${QUALITY_THRESHOLD}, ${hasBallparkPalData ? 'ballparkpal' : 'mlbMatchup'} mode): ${picks.length} → ${qualityPicks.length} picks`);
+  // ── Quality gate: 78+ to appear in UI, max 10 picks ──────────────────────
+  // 85+ = Elite, 78-84 = Strong, below 78 = hidden
+  // If none qualify, return empty array (UI shows "No official HRR play today")
+  const QUALITY_THRESHOLD = 78;
+  const MAX_PICKS = 10;
+
+  const qualityPicks = picks
+    .filter(p => p.overallScore >= QUALITY_THRESHOLD)
+    .slice(0, MAX_PICKS);
+
+  console.log(`[rankAIPicks] Quality gate (>= ${QUALITY_THRESHOLD}, max ${MAX_PICKS}): ${picks.length} scored → ${qualityPicks.length} picks`);
+  console.log(`[rankAIPicks] Grade breakdown: Elite (85+): ${qualityPicks.filter(p => p.grade === 'elite').length}, Strong (78-84): ${qualityPicks.filter(p => p.grade === 'strong').length}`);
+
   return qualityPicks;
 }
 
@@ -715,16 +832,16 @@ export function getMockParkFactors(): Map<string, number> {
   data.set("CLE", 0.97); // Progressive Field
   data.set("DET", 0.97); // Comerica Park
   data.set("MIA", 0.96); // LoanDepot Park
-  data.set("TB", 0.96); // Tropicana Field
+  data.set("TB", 0.96);  // Tropicana Field
   data.set("CHW", 0.96); // Guaranteed Rate Field
-  data.set("KC", 0.96); // Kauffman Stadium
+  data.set("KC", 0.96);  // Kauffman Stadium
   data.set("PIT", 0.96); // PNC Park
   // Pitcher-friendly parks
   data.set("NYM", 0.95); // Citi Field
   data.set("ARI", 0.95); // Chase Field
   data.set("LAA", 0.94); // Angel Stadium
   data.set("OAK", 0.94); // Oakland Coliseum
-  data.set("SD", 0.93); // Petco Park
-  data.set("SF", 0.92); // Oracle Park
+  data.set("SD", 0.93);  // Petco Park
+  data.set("SF", 0.92);  // Oracle Park
   return data;
 }

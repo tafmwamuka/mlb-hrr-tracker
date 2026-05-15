@@ -51,7 +51,7 @@ export interface GameTotal {
 let cachedMatchups: BallparkMatchup[] | null = null;
 let cachedGameTotals: Map<string, GameTotal> | null = null;
 let cacheTimestamp = 0;
-const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const CACHE_TTL = 20 * 60 * 1000; // 20 minutes — BallparkPal data is stable for 20+ min
 
 const CHROMIUM_PATH = '/usr/bin/chromium';
 
