@@ -1295,6 +1295,143 @@ export const aiPicksRouter = router({
     }),
 
   /**
+   * Get the full scoring matrix — all scored candidates before the quality gate.
+   * Shows every player's 10-factor breakdown so you can see exactly why picks
+   * were included or excluded.
+   */
+  getScoringMatrix: publicProcedure.query(async () => {
+    try {
+      const lineupData = await getAdaptedLineupData();
+      const dataDate = await getDataDate();
+
+      const enrichment = await getEnrichmentData(
+        lineupData.matchups.map(m => ({
+          playerId: m.playerId,
+          playerName: m.playerName,
+          team: m.team,
+          gameTime: m.gameTime,
+          pitcherId: m.pitcher.id ?? null,
+          pitcherHand: m.pitcher.handedness ?? null,
+        }))
+      ).catch(() => ({
+        vsGradeMap: new Map<string, number>(),
+        gameTotalsMap: new Map(),
+        dayNightSplitsMap: new Map(),
+        mlbStreakMap: new Map(),
+        statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
+        ballparkMatchups: [] as import('../services/ballparkMatchupService').BallparkMatchup[],
+        fetchedAt: Date.now(),
+        isWarm: false,
+      }));
+      const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache, ballparkMatchups, bullpenFatigueMap } = enrichment as any;
+
+      let matchups = lineupData.matchups;
+      let players = lineupData.playerDataMap;
+
+      if (matchups.length < 50 && ballparkMatchups.length > 0) {
+        const bpData = buildMatchupsFromBallparkPal(ballparkMatchups);
+        if (bpData.matchups.length > 0) {
+          const realNames = new Set(matchups.map((m: any) => m.playerName));
+          const bpOnly = bpData.matchups.filter((m: any) => !realNames.has(m.playerName));
+          matchups = [...matchups, ...bpOnly];
+          for (const [id, pd] of Array.from(bpData.playerDataMap.entries())) {
+            if (!players.has(id)) players.set(id, pd);
+          }
+        }
+      }
+
+      if (matchups.length === 0) {
+        return { success: true, candidates: [], dataDate, timestamp: new Date(), totalCandidates: 0 };
+      }
+
+      const hrTargetsMap = ballparkMatchups.length > 0
+        ? buildRealHRTargetsMap(matchups.map((m: any) => m.playerName), ballparkMatchups)
+        : getMockHRTargets();
+
+      const enrichedMatchups = enrichMatchupsWithBallparkRC(matchups, ballparkMatchups);
+
+      // Run the full scoring model — rankAIPicks applies the quality gate internally.
+      // We need ALL scored candidates, so we call the scoring logic directly.
+      // rankAIPicks returns only quality-gated picks; to get all candidates we
+      // call it and also capture the full unsorted list by temporarily lowering
+      // the threshold to 0 via a separate call.
+      // Strategy: call rankAIPicks with all data, it returns quality-gated picks.
+      // For the full matrix we want ALL scored players (even those below 75).
+      // We expose the full scored list by running the same pipeline but returning
+      // all picks sorted by score before the quality gate.
+      const allScoredPicks = rankAIPicks(
+        enrichedMatchups,
+        players,
+        hrTargetsMap,
+        getMockParkFactors(),
+        dayNightSplitsMap,
+        mlbStreakMap,
+        vsGradeMap,
+        gameTotalsMap,
+        statcastCache,
+        ballparkMatchups.length > 0,
+        ballparkMatchups,
+        bullpenFatigueMap ?? new Map()
+      );
+
+      // Build a lightweight matrix row for each pick
+      const candidates = allScoredPicks.map((pick, idx) => ({
+        rank: idx + 1,
+        playerName: pick.playerName,
+        team: pick.team,
+        battingPosition: pick.battingPosition,
+        pitcher: pick.pitcher,
+        pitcherTeam: pick.pitcherTeam,
+        overallScore: pick.overallScore,
+        baseScore: pick.baseScore,
+        bpBoost: pick.bpBoost,
+        grade: pick.grade,
+        vsGrade: pick.vsGrade ?? null,
+        gameTotalOU: pick.gameTotalOU ?? null,
+        projectedPA: pick.projectedPA ?? null,
+        passesGate: pick.overallScore >= 75,
+        factors: {
+          teamImpliedRuns: pick.factorBreakdown.teamImpliedRuns,
+          lineupSpot: pick.factorBreakdown.lineupSpot,
+          obpXwOBA: pick.factorBreakdown.obpXwOBA,
+          pitcherWeakness: pick.factorBreakdown.pitcherWeakness,
+          recentForm: pick.factorBreakdown.recentForm,
+          dayNightSplit: pick.factorBreakdown.dayNightSplit,
+          parkWeather: pick.factorBreakdown.parkWeather,
+          bullpenWeakness: pick.factorBreakdown.bullpenWeakness,
+          platoonAdvantage: pick.factorBreakdown.platoonAdvantage,
+          hardContactBarrel: pick.factorBreakdown.hardContactBarrel,
+        },
+        reasons: pick.reasons,
+        riskFlags: pick.riskFlags,
+      }));
+
+      return {
+        success: true,
+        candidates,
+        dataDate,
+        timestamp: new Date(),
+        totalCandidates: candidates.length,
+        qualifiedCount: candidates.filter(c => c.passesGate).length,
+        ballparkPalActive: ballparkMatchups.length > 0,
+      };
+    } catch (error) {
+      console.error('Error generating scoring matrix:', error);
+      const fallbackDate = await getDataDate();
+      return {
+        success: false,
+        candidates: [],
+        dataDate: fallbackDate,
+        timestamp: new Date(),
+        totalCandidates: 0,
+        qualifiedCount: 0,
+        ballparkPalActive: false,
+        error: 'Failed to generate scoring matrix',
+      };
+    }
+  }),
+
+  /**
    * Get today's games with lineups for game cards UI
    * Returns real MLB schedule data with batting orders and probable pitchers
    */

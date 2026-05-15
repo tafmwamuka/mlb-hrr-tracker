@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronDown, Flame, Shield, TrendingUp, Target, Zap, DollarSign,
   CheckCircle2, Plus, Minus, ShoppingCart, X, Clock, RefreshCw,
-  TrendingDown, CalendarDays
+  TrendingDown, CalendarDays, BarChart2, ChevronRight
 } from "lucide-react";
 import { SaferPlayTip } from "@/components/SaferPlayTip";
 import { PerformanceGraph } from "@/components/PerformanceGraph";
@@ -107,7 +107,7 @@ function getScoreTier(score: number): { tier: 'S' | 'A' | 'B' | 'C'; label: stri
     bg: 'oklch(0.72 0.18 165 / 12%)',
     border: 'oklch(0.72 0.18 165 / 40%)',
   };
-  if (score >= 78) return {
+  if (score >= 75) return {
     tier: 'B',
     label: 'B TIER',
     color: 'oklch(0.72 0.10 220)',
@@ -592,17 +592,22 @@ function MetricBox({ label, value, good }: { label: string; value: string; good:
 
 export function MoneyPicksTab() {
   const { data, isLoading } = trpc.aiPicks.getHRRPicks.useQuery(undefined, {
-    refetchInterval: 10 * 60 * 1000, // Auto-refresh every 10 minutes (picks rarely change)
-    staleTime: 10 * 60 * 1000, // Serve cached data for 10 min before background refetch
-    gcTime: 30 * 60 * 1000, // Keep in React Query cache for 30 min (instant tab switching)
+    refetchInterval: 10 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
   const { data: yesterdayData } = trpc.results.getYesterdayResults.useQuery(undefined, {
-    staleTime: 30 * 60 * 1000, // Yesterday's results don't change
+    staleTime: 30 * 60 * 1000,
     gcTime: 60 * 60 * 1000,
   });
   const [activeFilter, setActiveFilter] = useState<FilterTier>("all");
   const [selectedPicks, setSelectedPicks] = useState<Set<number>>(new Set());
   const [showParlayBuilder, setShowParlayBuilder] = useState(false);
+  const [showMatrix, setShowMatrix] = useState(false);
+  const { data: matrixData, isLoading: matrixLoading } = trpc.aiPicks.getScoringMatrix.useQuery(
+    undefined,
+    { enabled: showMatrix, staleTime: 5 * 60 * 1000 }
+  );
 
   // Filter picks to only those with at least one alternate line at 75%+
   const moneyPicks: MoneyPick[] = useMemo(() => {
@@ -693,7 +698,7 @@ export function MoneyPicksTab() {
     switch (activeFilter) {
       case "s": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 90);
       case "a": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 85 && (p.overallScore ?? 0) < 90);
-      case "b": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 78 && (p.overallScore ?? 0) < 85);
+      case "b": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 75 && (p.overallScore ?? 0) < 85);
       default: return moneyPicks;
     }
   }, [moneyPicks, activeFilter]);
@@ -966,7 +971,7 @@ export function MoneyPicksTab() {
               </div>
               <h3 className="text-white font-bold text-base mb-2">No Official HRR Play Today</h3>
               <p className="text-[oklch(0.50_0.015_255)] text-sm max-w-xs mx-auto leading-relaxed">
-                Our 10-factor model hasn't found a qualifying play yet. Picks require a score of 78+ to appear here.
+                Our 10-factor model hasn't found a qualifying play yet. Picks require a score of 75+ to appear here.
               </p>
               <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
                 <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />
@@ -1001,6 +1006,120 @@ export function MoneyPicksTab() {
         <p className="text-[10px] text-[oklch(0.35_0.015_255)] leading-relaxed">
           Probabilities from Poisson model using Statcast + Ballpark.com data. Streaks based on model projections. Always bet responsibly.
         </p>
+      </div>
+
+      {/* Scoring Matrix Panel */}
+      <div className="rounded-2xl overflow-hidden border" style={{ background: "oklch(0.13 0.022 255)", borderColor: "oklch(1 0 0 / 8%)" }}>
+        <button
+          onClick={() => setShowMatrix(v => !v)}
+          className="w-full flex items-center justify-between p-4 hover:bg-[oklch(1_0_0/4%)] transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <BarChart2 size={14} style={{ color: "oklch(0.72 0.10 220)" }} />
+            <span className="text-sm font-bold text-white">Scoring Matrix</span>
+            {matrixData && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold" style={{ background: "oklch(0.72 0.10 220 / 15%)", color: "oklch(0.72 0.10 220)" }}>
+                {matrixData.totalCandidates} scored · {matrixData.qualifiedCount} qualified
+              </span>
+            )}
+          </div>
+          <ChevronRight size={14} className={`text-[oklch(0.45_0.015_255)] transition-transform ${showMatrix ? 'rotate-90' : ''}`} />
+        </button>
+
+        <AnimatePresence>
+          {showMatrix && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div className="px-4 pb-4">
+                {matrixLoading ? (
+                  <div className="flex items-center justify-center py-8 gap-2">
+                    <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "oklch(0.72 0.10 220)", borderTopColor: 'transparent' }} />
+                    <span className="text-xs text-[oklch(0.50_0.015_255)]">Running scoring model...</span>
+                  </div>
+                ) : matrixData?.candidates && matrixData.candidates.length > 0 ? (
+                  <div className="space-y-1">
+                    {/* Header row */}
+                    <div className="grid gap-1 mb-2 px-2" style={{ gridTemplateColumns: '1fr 36px 28px 28px 28px 28px 28px 28px 28px 28px 28px 28px' }}>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)]">Player</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center">Score</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Team Implied Runs">TIR</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Lineup Spot">LU</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="OBP/xwOBA">OBP</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Pitcher Weakness">PIT</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Recent Form">FRM</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Day/Night Split">D/N</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Park+Weather">PRK</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Bullpen">BUL</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Platoon">PLT</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Hard Contact/Barrel">HRD</span>
+                    </div>
+                    {/* Divider */}
+                    <div className="h-px mb-2" style={{ background: "oklch(1 0 0 / 8%)" }} />
+                    {/* Candidate rows */}
+                    {matrixData.candidates.map((c: any, i: number) => {
+                      const tier = getScoreTier(c.overallScore);
+                      const passes = c.passesGate;
+                      return (
+                        <div
+                          key={i}
+                          className="grid gap-1 px-2 py-1.5 rounded-lg items-center"
+                          style={{
+                            gridTemplateColumns: '1fr 36px 28px 28px 28px 28px 28px 28px 28px 28px 28px 28px',
+                            background: passes ? 'oklch(0.15 0.025 165 / 30%)' : 'oklch(1 0 0 / 2%)',
+                            opacity: passes ? 1 : 0.55,
+                          }}
+                        >
+                          {/* Player name + team */}
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-semibold text-white truncate">{c.playerName}</div>
+                            <div className="text-[9px] text-[oklch(0.45_0.015_255)]">{c.team} #{c.battingPosition} vs {c.pitcherTeam}</div>
+                          </div>
+                          {/* Overall score */}
+                          <div className="text-center">
+                            <span className="text-[11px] font-bold" style={{ color: tier.color }}>{c.overallScore}</span>
+                          </div>
+                          {/* Factor scores */}
+                          {(['teamImpliedRuns','lineupSpot','obpXwOBA','pitcherWeakness','recentForm','dayNightSplit','parkWeather','bullpenWeakness','platoonAdvantage','hardContactBarrel'] as const).map(key => {
+                            const val = c.factors[key] as number;
+                            const color = val >= 70 ? 'oklch(0.72 0.18 165)' : val >= 50 ? 'oklch(0.82 0.17 85)' : 'oklch(0.55 0.015 255)';
+                            return (
+                              <div key={key} className="text-center">
+                                <span className="text-[10px] font-semibold" style={{ color }}>{val}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                    {/* Legend */}
+                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[oklch(1_0_0/6%)]">
+                      <div className="flex items-center gap-1">
+                        <div className="w-2 h-2 rounded-sm" style={{ background: 'oklch(0.15 0.025 165 / 60%)' }} />
+                        <span className="text-[9px] text-[oklch(0.45_0.015_255)]">Qualifies (75+)</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-2 h-2 rounded-sm" style={{ background: 'oklch(1 0 0 / 8%)' }} />
+                        <span className="text-[9px] text-[oklch(0.45_0.015_255)]">Below threshold</span>
+                      </div>
+                      <div className="ml-auto text-[9px] text-[oklch(0.35_0.015_255)]">
+                        TIR·LU·OBP·PIT·FRM·D/N·PRK·BUL·PLT·HRD
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <span className="text-xs text-[oklch(0.45_0.015_255)]">No candidates scored yet — lineups may still be pending.</span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Floating Parlay Builder */}

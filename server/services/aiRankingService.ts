@@ -24,11 +24,11 @@
  *
  * Quality Gate:
  *   ≥85  → Elite Play  (tier = "elite")  — max 4
- *   78-84 → Strong Play (tier = "strong") — max 6
+ *   75-84 → Strong Play (tier = "strong") — max 6
  *   Total cap: 10 picks (4 Elite + 6 Strong)
- *   70-77 → Watchlist only — hidden from UI
+ *   70-74 → Watchlist only — hidden from UI
  *   <70   → Hidden
- *   If none ≥78, show "No official HRR play today"
+ *   If none ≥75, show "No official HRR play today"
  *
  * S1 — Predictive Contact Upgrade:
  *   Rolling contact metrics from Statcast (xwOBA, Hard-Hit%, Exit Velo, Barrel%, Contact%)
@@ -516,7 +516,7 @@ function calculateBPBoost(vsGrade: number | null): number {
  */
 function getPickGrade(score: number): PickGrade {
   if (score >= 85) return 'elite';
-  if (score >= 78) return 'strong';
+  if (score >= 75) return 'strong';
   return 'watchlist';
 }
 
@@ -927,10 +927,10 @@ export function rankAIPicks(
       rank: index + 1,
     }));
 
-  // ── Quality gate: 4 Elite (85+) + 6 Strong (78-84) = max 10 picks ────────
+  // ── Quality gate: 4 Elite (85+) + 6 Strong (75-84) = max 10 picks ────────
   // If none qualify, return empty array (UI shows "No official HRR play today")
   const ELITE_THRESHOLD = 85;
-  const STRONG_THRESHOLD = 78;
+  const STRONG_THRESHOLD = 75;
   const MAX_ELITE = 4;
   const MAX_STRONG = 6;
 
@@ -979,7 +979,7 @@ export function rankAIPicks(
     rank: index + 1,
   }));
 
-  console.log(`[rankAIPicks] Quality gate (S5 correlation cap): ${picks.length} scored → ${elitePicks.length} Elite (85+) + ${strongPicks.length} Strong (78-84) = ${qualityPicks.length} picks`);
+  console.log(`[rankAIPicks] Quality gate (S5 correlation cap): ${picks.length} scored → ${elitePicks.length} Elite (85+) + ${strongPicks.length} Strong (75-84) = ${qualityPicks.length} picks`);
 
   return qualityPicks;
 }

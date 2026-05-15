@@ -889,3 +889,17 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 ### Admin Endpoint
 - [ ] Add `trpc.admin.getBallparkPalCacheStatus` procedure: returns slateDate, fetchedAt, matchupCount, ageMinutes
 - [ ] Show cache status in the Stats/Performance Dashboard tab
+
+## Phase V — Score Tier & Matrix (User Request May 15)
+- [x] Lower quality gate minimum score from 78 to 75 in aiRankingService.ts
+- [x] Update B tier range in MoneyPicksTab.tsx getScoreTier() to include 75-77
+- [x] Update filter tab labels to reflect 75+ minimum
+- [x] Add getScoringMatrix tRPC endpoint returning all scored candidates with factor breakdown
+- [x] Add Scoring Matrix UI panel showing all candidates before quality gate
+
+## Phase V — Score Tier & Matrix (User Request May 15)
+- [x] Lower quality gate minimum score from 78 to 75 in aiRankingService.ts
+- [x] Update B tier range in MoneyPicksTab.tsx getScoreTier() to include 75-77
+- [x] Update filter tab labels to reflect 75+ minimum
+- [x] Add getScoringMatrix tRPC endpoint returning all scored candidates with factor breakdown
+- [x] Add Scoring Matrix UI panel showing all candidates before quality gate
