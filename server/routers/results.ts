@@ -192,8 +192,9 @@ export const resultsRouter = router({
         });
       }
 
-      // All Plays results (singular stats)
-      for (const pick of sortedAllPicks) {
+      // All Plays results (singular stats) — exclude hits props, only show R and RBI
+      const nonHitsAllPicks = sortedAllPicks.filter((p: any) => p.statType !== 'hits');
+      for (const pick of nonHitsAllPicks) {
         const gamePk = playerGameMap.get(pick.playerId) || 0;
         const gameStatus = gameStatusMap.get(gamePk);
         const playerStats = liveStats.get(pick.playerId);
@@ -272,7 +273,7 @@ export const resultsRouter = router({
         allPlaysHitRate,
         totalPlays: results.length,
         moneyPlays: moneyPickResults.length,
-        allPlaysCount: sortedAllPicks.length,
+        allPlaysCount: nonHitsAllPicks.length,
         hasActuals: finalResults.length > 0,
         gamesInProgress,
         gamesCompleted,

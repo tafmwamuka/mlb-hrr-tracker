@@ -232,15 +232,133 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
   return playerMap;
 }
 
+// In-memory cache: 10-minute TTL to avoid burning API credits on every pick request
+let oddsCache: { data: Map<string, HRRMarketData>; ts: number } | null = null;
+const ODDS_CACHE_TTL = 10 * 60 * 1000;
+
 /**
  * Fetch all HRR market data for today's games
  * Returns a map of player name → HRR market data
+ * Uses 10-minute in-memory cache to conserve API credits.
  */
-export async function fetchHRRMarketData(): Promise<Map<string, HRRMarketData>> {
-  // Odds API credits exhausted — theLAB mismatch board is now the sole odds source.
-  // Odds are attached per-player in theLabService and flow through theLabMismatchMap.
-  // This function intentionally returns an empty map so callers fall back to theLAB odds.
-  return new Map();
+export async function fetchHRRMarketData(apiKey?: string): Promise<Map<string, HRRMarketData>> {
+  const key = apiKey || process.env.ODDS_API_KEY || '';
+  if (!key) {
+    console.warn('[OddsAPI] No API key available — skipping live odds fetch');
+    return new Map();
+  }
+
+  // Return cached data if fresh
+  if (oddsCache && Date.now() - oddsCache.ts < ODDS_CACHE_TTL) {
+    console.log(`[OddsAPI] Returning cached odds (${oddsCache.data.size} players)`);
+    return oddsCache.data;
+  }
+
+  try {
+    console.log('[OddsAPI] Fetching today\'s MLB events...');
+    const events = await fetchMLBEvents(key);
+    if (events.length === 0) {
+      console.warn('[OddsAPI] No MLB events found for today');
+      return new Map();
+    }
+    console.log(`[OddsAPI] Found ${events.length} events, fetching player props...`);
+
+    // Fetch props for all games in parallel (with concurrency limit of 5)
+    const allBookmakers: BookmakerData[] = [];
+    const chunks: GameEvent[][] = [];
+    for (let i = 0; i < events.length; i += 5) {
+      chunks.push(events.slice(i, i + 5));
+    }
+    for (const chunk of chunks) {
+      const results = await Promise.allSettled(
+        chunk.map(event => fetchPlayerProps(key, event.id))
+      );
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          allBookmakers.push(...result.value);
+        }
+      }
+    }
+
+    const playerMap = parseHRRData(allBookmakers);
+    console.log(`[OddsAPI] Parsed odds for ${playerMap.size} players`);
+
+    // Cache the result
+    oddsCache = { data: playerMap, ts: Date.now() };
+    return playerMap;
+  } catch (err) {
+    console.error('[OddsAPI] Failed to fetch market data:', err);
+    return oddsCache?.data ?? new Map();
+  }
+}
+
+/**
+ * Targeted fetch: given a list of player names + their teams, find only the
+ * matching event IDs and fetch props for those games only.
+ * This conserves API credits by avoiding fetching all 28+ daily events.
+ */
+export async function fetchOddsForPicks(
+  picks: Array<{ playerName: string; team: string }>,
+  apiKey?: string
+): Promise<Map<string, HRRMarketData>> {
+  const key = apiKey || process.env.ODDS_API_KEY || '';
+  if (!key || picks.length === 0) return new Map();
+
+  // Return cached data if fresh (shared with fetchHRRMarketData)
+  if (oddsCache && Date.now() - oddsCache.ts < ODDS_CACHE_TTL) {
+    console.log(`[OddsAPI] Returning cached odds for ${picks.length} picks`);
+    return oddsCache.data;
+  }
+
+  try {
+    // Step 1: Get all today's events (1 API call)
+    const events = await fetchMLBEvents(key);
+    if (events.length === 0) return new Map();
+
+    // Step 2: Find which events contain our picks' teams
+    const pickTeams = new Set(
+      picks.map(p => p.team.toLowerCase().trim())
+    );
+
+    const matchingEvents = events.filter(event => {
+      const home = event.home_team.toLowerCase();
+      const away = event.away_team.toLowerCase();
+      // Match by team name substring (e.g. "Yankees" matches "New York Yankees")
+      return Array.from(pickTeams).some(t =>
+        home.includes(t) || away.includes(t) ||
+        t.includes(home.split(' ').pop()?.toLowerCase() ?? '') ||
+        t.includes(away.split(' ').pop()?.toLowerCase() ?? '')
+      );
+    });
+
+    if (matchingEvents.length === 0) {
+      console.log('[OddsAPI] No matching events found for picks teams');
+      return new Map();
+    }
+
+    console.log(`[OddsAPI] Fetching props for ${matchingEvents.length} targeted events (${picks.length} picks)`);
+
+    // Step 3: Fetch props only for matching events (typically 1-3 calls)
+    const allBookmakers: BookmakerData[] = [];
+    const results = await Promise.allSettled(
+      matchingEvents.map(event => fetchPlayerProps(key, event.id))
+    );
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        allBookmakers.push(...result.value);
+      }
+    }
+
+    const playerMap = parseHRRData(allBookmakers);
+    console.log(`[OddsAPI] Parsed odds for ${playerMap.size} players (targeted fetch)`);
+
+    // Cache the result
+    oddsCache = { data: playerMap, ts: Date.now() };
+    return playerMap;
+  } catch (err) {
+    console.error('[OddsAPI] Targeted fetch failed:', err);
+    return oddsCache?.data ?? new Map();
+  }
 }
 
 /**

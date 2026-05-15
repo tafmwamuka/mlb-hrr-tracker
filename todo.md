@@ -921,3 +921,22 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Fix Results page showing picks not matching Money Picks (data source mismatch)
 - [x] Fix odds not showing on Money Picks cards
 - [x] Fix game log not loading in expanded Money Picks cards
+
+## Phase Y — Live Odds API + Speed (User Request May 15)
+- [ ] Store ODDS_API_KEY secret (The Odds API key 051d21d41bd013e020da70a412acd38e)
+- [ ] Wire oddsApiService to fetch real player prop lines (H/R/RBI overs) from The Odds API
+- [ ] Replace model-derived bookOdds in hrrPicksService with real Odds API American odds
+- [ ] Show real sportsbook name (e.g. DraftKings, FanDuel) as oddsProvider on card
+- [ ] Pre-warm enrichment cache on server startup (non-blocking)
+- [ ] Add stale-while-revalidate: serve cached picks immediately, refresh in background
+- [ ] Tighten per-request timeouts for non-critical external calls (day/night splits, streaks)
+- [ ] Add picks-level in-memory cache (5 min TTL) to avoid re-running full pipeline on every request
+
+## Phase Z — Odds API Targeted + Results Cleanup (User Request May 15)
+- [x] Change Odds API fetch to targeted: only fetch events that contain final qualified money picks (saves API credits)
+- [x] Add per-pick odds lookup: after money picks are finalized, find matching event IDs and fetch only those games
+- [x] Replace model-derived bookOdds with real sportsbook American odds on qualified picks
+- [x] Remove hits props from Results tab (only show R and RBI props, or HRR combined)
+- [x] Add picks-level in-memory cache (5 min TTL) to avoid re-running full pipeline on every request
+- [x] Pre-warm enrichment cache on server startup (already wired in server/_core/index.ts)
+- [x] Tighten per-request timeouts for non-critical calls (day/night splits 4s, streaks 8s)

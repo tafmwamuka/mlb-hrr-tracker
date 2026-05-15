@@ -15,6 +15,7 @@
  */
 
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from './aiRankingService';
+import { fetchOddsForPicks, americanToImpliedProbability, removeVig } from './oddsApiService';
 import { getMockSavantData } from './savantService';
 import { generateHRRProjections } from './hrrService';
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from './poissonModel';
@@ -176,11 +177,30 @@ export interface HRRPicksResult {
   firstPitchTime: string | null;
 }
 
+// ─── Picks-level in-memory cache ────────────────────────────────────────────
+// Avoids re-running the full pipeline (VS gate + matrix scoring + Poisson) on
+// every request. TTL is 5 minutes; invalidated automatically at midnight ET.
+const PICKS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+let picksCache: { result: HRRPicksResult; ts: number; slateDate: string } | null = null;
+
+export function invalidatePicksCache() {
+  picksCache = null;
+  console.log('[HRRPicks] Cache invalidated');
+}
+
 /**
  * Run the full HRR picks pipeline and return enriched money picks.
  * This is the single source of truth — both getHRRPicks and getTodayResults call this.
+ * Results are cached for 5 minutes to avoid redundant pipeline runs.
  */
 export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
+  // Serve from cache if fresh and same slate date
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const todaySlate = `${nowET.getFullYear()}-${String(nowET.getMonth() + 1).padStart(2, '0')}-${String(nowET.getDate()).padStart(2, '0')}`;
+  if (picksCache && picksCache.slateDate === todaySlate && Date.now() - picksCache.ts < PICKS_CACHE_TTL) {
+    console.log(`[HRRPicks] Serving from cache (age: ${Math.round((Date.now() - picksCache.ts) / 1000)}s)`);
+    return picksCache.result;
+  }
   const lineupData = await getAdaptedLineupData();
   const dataDate = await getDataDate();
 
@@ -424,15 +444,62 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     })
     .filter((p: any): p is EnrichedMoneyPick => p !== null);
 
-  return {
+  // Targeted Odds API fetch: only call for events containing our final picks
+  // This uses ~1-3 API calls instead of 28+ (one per game)
+  let hasOddsData = false;
+  if (moneyPicks.length > 0) {
+    try {
+      const oddsMap = await fetchOddsForPicks(
+        moneyPicks.map((p: any) => ({ playerName: p.playerName, team: p.team }))
+      );
+      if (oddsMap.size > 0) {
+        hasOddsData = true;
+        // Overlay real sportsbook odds onto each money pick
+        for (const pick of moneyPicks as any[]) {
+          const oddsData = oddsMap.get(pick.playerName);
+          if (!oddsData) continue;
+
+          // Use featured HRR line if available, else best individual stat line
+          const featuredLine = oddsData.featuredLine;
+          const featuredOverOdds = oddsData.featuredOverOdds;
+          const featuredUnderOdds = oddsData.featuredUnderOdds;
+
+          if (featuredLine !== null && featuredOverOdds !== null) {
+            // Real sportsbook HRR line
+            const overProb = americanToImpliedProbability(featuredOverOdds);
+            const underProb = featuredUnderOdds ? americanToImpliedProbability(featuredUnderOdds) : 1 - overProb;
+            const { trueOver } = removeVig(overProb, underProb);
+            pick.bookOdds = featuredOverOdds > 0 ? `+${featuredOverOdds}` : `${featuredOverOdds}`;
+            pick.bookOddsProvider = oddsData.bookmaker;
+            pick.bookImpliedProb = Math.round(trueOver * 100);
+            pick.lineSource = 'sportsbook';
+          } else if (featuredOverOdds !== null) {
+            // Individual stat odds as fallback
+            pick.bookOdds = featuredOverOdds > 0 ? `+${featuredOverOdds}` : `${featuredOverOdds}`;
+            pick.bookOddsProvider = oddsData.bookmaker;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[HRRPicks] Odds API fetch failed, using model odds:', err);
+    }
+  }
+
+  const result: HRRPicksResult = {
     moneyPicks,
     allMatrixPicks: matrixPicks,
     dataDate,
     lineupSource: lineupData.lineupSource,
-    hasOddsData: false,
+    hasOddsData,
     lineupsPending: false,
     slateDate: todayETDate,
     isStaleSlate,
     firstPitchTime: null,
   };
+
+  // Store in picks cache
+  picksCache = { result, ts: Date.now(), slateDate: todayETDate };
+  console.log(`[HRRPicks] Cache updated: ${moneyPicks.length} money picks, ${matrixPicks.length} matrix picks`);
+
+  return result;
 }
