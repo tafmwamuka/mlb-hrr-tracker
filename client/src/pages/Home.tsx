@@ -662,6 +662,7 @@ export default function Home() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
+              className="flex-1 overflow-y-auto"
             >
               <PerformanceDashboard />
             </motion.div>

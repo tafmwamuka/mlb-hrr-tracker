@@ -20,11 +20,9 @@ import { eq, and, gte, lt, desc, sql } from "drizzle-orm";
 import { getAdaptedLineupData } from "../services/lineupAdapter";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import { getMockSavantData, calculateCombinedScore } from "../services/savantService";
-import { generateHRRProjections } from "../services/hrrService";
-import { fetchHRRMarketData, getBestHRRLine } from "../services/oddsApiService";
-import { poissonOverProbability, calculateAlternateLines } from "../services/poissonModel";
 import { fetchGameStatuses, getLivePlayerStats, type GameStatus, type PlayerBoxStats } from "../services/liveResultsService";
 import { getDataDate } from "../services/mlbLineupService";
+import { getEnrichedMoneyPicks } from "../services/hrrPicksService";
 
 export interface LiveResult {
   playerId: number;
@@ -58,9 +56,11 @@ export const resultsRouter = router({
     try {
       const dateStr = await getDataDate();
 
-      // Step 1: Get lineup data (same source as all tabs)
-      const lineupData = await getAdaptedLineupData();
-      if (lineupData.matchups.length === 0) {
+      // ═══════════════════════════════════════════════════════════════════
+      // MONEY PICKS: use the SAME pipeline as getHRRPicks → MoneyPicksTab
+      // ═══════════════════════════════════════════════════════════════════
+      const hrrResult = await getEnrichedMoneyPicks();
+      if (hrrResult.lineupsPending) {
         return {
           success: true,
           results: [],
@@ -75,87 +75,25 @@ export const resultsRouter = router({
         };
       }
 
-      const matchups = lineupData.matchups;
-      const players = lineupData.playerDataMap;
-      const games = lineupData.games;
-
-      // ═══════════════════════════════════════════════════════════════════
-      // MONEY PICKS: HRR combined props with 75%+ alternate lines
-      // (Same logic as getHRRPicks → MoneyPicksTab filter)
-      // ═══════════════════════════════════════════════════════════════════
-      const parkFactors = getMockParkFactors();
-      const savantGames = getMockSavantData();
-      const savantMap = new Map<string, { xwOBA: number; hardHitPct: number; exitVelocity: number; barrelPct: number }>();
-      for (const game of savantGames) {
-        for (const hitter of [...game.homeHitters, ...game.awayHitters]) {
-          savantMap.set(hitter.name, {
-            xwOBA: hitter.xwOBA,
-            hardHitPct: hitter.hardHitPct,
-            exitVelocity: hitter.exitVelocity,
-            barrelPct: hitter.barrelPct,
-          });
-        }
-      }
-
-      const projections = generateHRRProjections(matchups, players, parkFactors, savantMap);
-
-      // Fetch real sportsbook lines (non-blocking)
-      let marketData = new Map<string, any>();
-      try {
-        marketData = await fetchHRRMarketData();
-      } catch (e) {
-        // Odds API unavailable, use model-only
-      }
-
-      // Enrich with Poisson probabilities (same as getHRRPicks)
-      const hrrPicks = projections.map((proj) => {
-        const lambda = proj.expectedTotal;
-        const bestLine = getBestHRRLine(proj.playerName, marketData, proj.hrrLine);
-        const activeLine = bestLine.line;
-        const alternates = calculateAlternateLines(lambda, 5.5);
-        return {
-          ...proj,
-          hrrLine: activeLine,
-          alternateLines: alternates.map(alt => ({
-            line: alt.line,
-            overProb: Math.round(alt.overProb * 100),
-          })),
-        };
-      });
-
-      // Filter to Money Picks: only those with at least one alternate line at 75%+
-      // Then pick the HIGHEST line with 75%+ (same as MoneyPicksTab logic)
-      const moneyPickResults: { playerId: number; playerName: string; team: string; line: number; probability: number; pitcher: string; pitcherTeam: string; expectedTotal: number; reasoning: string }[] = [];
-      
-      for (const pick of hrrPicks) {
-        const qualifyingLines = (pick.alternateLines || [])
-          .filter(a => a.overProb >= 75)
-          .sort((a, b) => b.line - a.line); // Highest line first
-
-        if (qualifyingLines.length === 0) continue;
-
-        const recommended = qualifyingLines[0];
-        moneyPickResults.push({
-          playerId: pick.playerId,
-          playerName: pick.playerName,
-          team: pick.team,
-          line: recommended.line,
-          probability: recommended.overProb,
-          pitcher: pick.pitcher,
-          pitcherTeam: pick.pitcherTeam,
-          expectedTotal: pick.expectedTotal,
-          reasoning: pick.reasoning,
-        });
-      }
+      const moneyPickResults = hrrResult.moneyPicks.map(p => ({
+        playerId: p.playerId,
+        playerName: p.playerName,
+        team: p.team,
+        line: p.recommendedLine,
+        probability: p.recommendedProb,
+        pitcher: p.pitcher,
+        pitcherTeam: p.pitcherTeam,
+        expectedTotal: p.expectedTotal,
+        reasoning: p.reasoning,
+      }));
 
       // ═══════════════════════════════════════════════════════════════════
       // ALL PLAYS: Singular stat picks (same as getComprehensivePicks)
       // ═══════════════════════════════════════════════════════════════════
-      const allPicks = rankAIPicks(matchups, players, getMockHRTargets(), parkFactors);
-      
-      // Enrich with Savant data (same as getComprehensivePicks)
+      // Use the matrix picks from the shared pipeline as All Plays
+      const allPicks = hrrResult.allMatrixPicks;
       const savantAllGames = getMockSavantData();
-      const enrichedAllPicks = allPicks.map(pick => {
+      const enrichedAllPicks = allPicks.map((pick: any) => {
         let savantMetrics = null;
         for (const game of savantAllGames) {
           for (const hitter of [...game.homeHitters, ...game.awayHitters]) {
@@ -164,14 +102,13 @@ export const resultsRouter = router({
             }
           }
         }
-        const combined = savantMetrics ? calculateCombinedScore(savantMetrics as any, null, pick.statType as 'hits' | 'runs' | 'rbi').score : pick.overallScore;
+        const combined = savantMetrics ? calculateCombinedScore(savantMetrics as any, null, (pick.statType ?? 'hits') as 'hits' | 'runs' | 'rbi').score : pick.overallScore;
         return { ...pick, savantMetrics, combinedScore: combined };
       });
 
-      // Sort same as All Plays (by combinedScore with stat priority tiebreaker)
       const STAT_SORT_PRIORITY: Record<string, number> = { hits: 3, runs: 2, rbi: 1, slg: 0 };
       const sortedAllPicks = [...enrichedAllPicks]
-        .sort((a, b) => {
+        .sort((a: any, b: any) => {
           const scoreDiff = (Number(b.combinedScore) || b.overallScore) - (Number(a.combinedScore) || a.overallScore);
           if (Math.abs(scoreDiff) < 3) {
             return (STAT_SORT_PRIORITY[b.statType] || 0) - (STAT_SORT_PRIORITY[a.statType] || 0);
@@ -182,10 +119,11 @@ export const resultsRouter = router({
       // ═══════════════════════════════════════════════════════════════════
       // GAME STATUS + BOXSCORES
       // ═══════════════════════════════════════════════════════════════════
-      
-      // Build player -> gamePk map
+
+      // Build player -> gamePk map from lineup data
+      const lineupData2 = await getAdaptedLineupData();
       const playerGameMap = new Map<number, number>();
-      for (const game of games) {
+      for (const game of lineupData2.games) {
         for (const p of [...game.homeLineup, ...game.awayLineup]) {
           playerGameMap.set(p.id, game.gamePk);
         }

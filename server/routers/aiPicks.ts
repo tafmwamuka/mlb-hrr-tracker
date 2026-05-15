@@ -1432,6 +1432,44 @@ export const aiPicksRouter = router({
   }),
 
   /**
+   * Get game log for a specific player on-demand (for expanded card view)
+   * Returns last 7 games with H/R/RBI breakdown
+   */
+  getPlayerGameLog: publicProcedure
+    .input((input: unknown) => {
+      if (typeof input !== 'number') throw new Error('playerId must be a number');
+      return input;
+    })
+    .query(async ({ input: playerId }) => {
+      try {
+        const { getPlayerStreak } = await import('../services/mlbStreakService');
+        const streakData = await getPlayerStreak(playerId, 'hits');
+        return {
+          success: true,
+          playerId,
+          last5Games: streakData.last5Games,
+          streakLength: streakData.streakLength,
+          trendDirection: streakData.trendDirection,
+          streakLabel: streakData.streakLabel,
+          last5HitRate: streakData.last5HitRate,
+          hasRealData: streakData.hasRealData,
+        };
+      } catch (error) {
+        console.error('[getPlayerGameLog] Error:', error);
+        return {
+          success: false,
+          playerId,
+          last5Games: [],
+          streakLength: 0,
+          trendDirection: 'NEUTRAL' as const,
+          streakLabel: '',
+          last5HitRate: 0,
+          hasRealData: false,
+        };
+      }
+    }),
+
+  /**
    * Get today's games with lineups for game cards UI
    * Returns real MLB schedule data with batting orders and probable pitchers
    */

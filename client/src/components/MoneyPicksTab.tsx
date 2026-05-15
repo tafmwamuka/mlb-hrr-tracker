@@ -22,6 +22,7 @@ interface AlternateLine {
 }
 
 interface MoneyPick {
+  playerId: number;
   playerName: string;
   team: string;
   pitcher: string;
@@ -180,6 +181,20 @@ function MoneyPickCard({
   onToggleSelect: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // On-demand game log: only fetch when card is expanded and no cached last5Games
+  const hasGameLog = (pick.streakInfo?.last5Games?.length ?? 0) > 0;
+  const { data: gameLogData, isLoading: gameLogLoading } = trpc.aiPicks.getPlayerGameLog.useQuery(
+    pick.playerId,
+    {
+      enabled: expanded && !hasGameLog && pick.playerId > 0,
+      staleTime: 30 * 60 * 1000,
+      retry: 2,
+    }
+  );
+  // Merge on-demand game log with streakInfo
+  const displayGames = hasGameLog
+    ? (pick.streakInfo?.last5Games ?? [])
+    : (gameLogData?.last5Games ?? []);
   const probColor = getProbColor(pick.recommendedProb);
   const scoreTier = getScoreTier(pick.overallScore ?? pick.recommendedProb);
   const archetype = getPlayerArchetype(pick);
@@ -235,22 +250,20 @@ function MoneyPickCard({
             >
               HRR O {pick.recommendedLine}
             </div>
-            {/* Real American odds */}
+            {/* Model-derived American odds */}
             {pick.odds ? (
               <div className="flex items-center gap-1">
                 <DollarSign size={10} style={{ color: "oklch(0.82 0.17 85)" }} />
                 <span className="text-xs font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
                   {pick.odds}
                 </span>
-                {pick.oddsProvider && (
-                  <span className="text-[9px] text-[oklch(0.45_0.015_255)]">{pick.oddsProvider}</span>
-                )}
+                <span className="text-[9px] text-[oklch(0.38_0.015_255)]" title="Model-derived odds (not sportsbook)">MDL</span>
               </div>
             ) : (
               <div className="flex items-center gap-1">
                 <CheckCircle2 size={10} style={{ color: probColor }} />
                 <span className="text-xs font-bold" style={{ color: probColor }}>
-                  {pick.recommendedProb}% hit rate
+                  {pick.recommendedProb}%
                 </span>
               </div>
             )}
@@ -524,18 +537,26 @@ function MoneyPickCard({
               className="overflow-hidden"
             >
               <div className="mt-3 space-y-3 pt-3 border-t border-[oklch(1_0_0/6%)]">
-                {/* Performance Graph */}
-                {pick.streakInfo?.last5Games && pick.streakInfo.last5Games.length > 0 ? (
+                {/* Performance Graph — uses cached or on-demand game log */}
+                {displayGames.length > 0 ? (
                   <div className="p-2.5 rounded-xl" style={{ background: "oklch(0.12 0.018 255)", border: "1px solid oklch(1 0 0 / 6%)" }}>
                     <PerformanceGraph
-                      games={pick.streakInfo.last5Games}
+                      games={displayGames}
                       expectedLine={pick.recommendedLine}
                     />
+                  </div>
+                ) : gameLogLoading ? (
+                  <div className="p-2.5 rounded-xl" style={{ background: "oklch(0.12 0.018 255)", border: "1px solid oklch(1 0 0 / 6%)" }}>
+                    <div className="text-[9px] font-bold tracking-widest uppercase mb-1.5" style={{ color: "oklch(0.45 0.015 255)" }}>Last 5 Games</div>
+                    <div className="flex items-center gap-2">
+                      <RefreshCw size={10} className="animate-spin" style={{ color: "oklch(0.55 0.015 255)" }} />
+                      <p className="text-[10px] text-[oklch(0.45_0.015_255)]">Loading game log…</p>
+                    </div>
                   </div>
                 ) : (
                   <div className="p-2.5 rounded-xl" style={{ background: "oklch(0.12 0.018 255)", border: "1px solid oklch(1 0 0 / 6%)" }}>
                     <div className="text-[9px] font-bold tracking-widest uppercase mb-1.5" style={{ color: "oklch(0.45 0.015 255)" }}>Last 5 Games</div>
-                    <p className="text-[10px] text-[oklch(0.38_0.015_255)]">Game log loading — check back shortly</p>
+                    <p className="text-[10px] text-[oklch(0.38_0.015_255)]">Game log unavailable — MLB Stats API may be temporarily unreachable</p>
                   </div>
                 )}
 
@@ -626,9 +647,12 @@ export function MoneyPicksTab() {
         // Use real streak from backend if available, otherwise generate from probability
         const streakInfo = pick.streakInfo ?? null;
         const dayNightSplit = pick.dayNightSplit ?? null;
-        // Real odds from bookOdds
+        // Real odds from bookOdds (model-derived American odds)
         const realOdds = pick.bookOdds ? String(pick.bookOdds) : null;
-        const oddsProvider = pick.lineSource ?? null;
+        // Use bookOddsProvider if available, fall back to lineSource
+        const oddsProvider = pick.bookOddsProvider && pick.bookOddsProvider !== 'model'
+          ? pick.bookOddsProvider
+          : null; // Don't show provider label for model-derived odds
         // Streak label: use real data if available
         const streak = streakInfo
           ? (streakInfo.isOnStreak && streakInfo.streakLength >= 3
@@ -639,6 +663,7 @@ export function MoneyPicksTab() {
           : generateStreak(pick.expectedTotal, recommended.line, recommended.overProb);
 
         return {
+          playerId: pick.playerId ?? 0,
           playerName: pick.playerName,
           team: pick.team,
           pitcher: pick.pitcher,

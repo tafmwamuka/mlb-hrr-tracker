@@ -43,14 +43,14 @@ const STREAK_TTL = 30 * 60 * 1000;
 
 // ─── Core fetch ───────────────────────────────────────────────────────────────
 
-async function fetchPlayerGameLog(playerId: number): Promise<PlayerGameLogEntry[]> {
+async function fetchPlayerGameLog(playerId: number, attempt = 0): Promise<PlayerGameLogEntry[]> {
   const season = new Date().getFullYear();
   const url = `${MLB_API_BASE}/people/${playerId}/stats?stats=gameLog&season=${season}&group=hitting`;
 
   try {
     const res = await fetch(url, {
       headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return [];
 
@@ -69,7 +69,15 @@ async function fetchPlayerGameLog(playerId: number): Promise<PlayerGameLogEntry[
         atBats: s.stat?.atBats ?? 0,
         homeRuns: s.stat?.homeRuns ?? 0,
       }));
-  } catch {
+  } catch (err: any) {
+    // Retry up to 2 times on transient network errors (TLS/ECONNRESET)
+    const isTransient = err?.cause?.code === 'ECONNRESET' ||
+      err?.cause?.message?.includes('TLS') ||
+      err?.cause?.message?.includes('socket');
+    if (isTransient && attempt < 2) {
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+      return fetchPlayerGameLog(playerId, attempt + 1);
+    }
     return [];
   }
 }

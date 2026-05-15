@@ -38,7 +38,7 @@ import type { GameTotal } from "./gameTotalsService";
 import { getBullpenFatigue, type BullpenFatigue } from "./bullpenFatigueService";
 
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes — picks don't change mid-session
-const FETCH_TIMEOUT = 4_000; // 4 seconds hard timeout per enrichment source (fail fast)
+const FETCH_TIMEOUT = 12_000; // 12 seconds — gives MLB Stats API time to respond for game logs
 
 export interface EnrichmentData {
   vsGradeMap: Map<string, number>;          // player name → 0-10 VS score (primary gate)

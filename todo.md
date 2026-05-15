@@ -915,3 +915,9 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Implement relative slate strength Best Bet Today logic
 - [x] Update quality gate in aiRankingService to use new thresholds (83/74/68)
 - [x] Update empty-state copy to reflect new thresholds
+
+## Phase X — Bug Fixes (User Request May 15)
+- [x] Fix Stats page not scrolling (overflow/height issue)
+- [x] Fix Results page showing picks not matching Money Picks (data source mismatch)
+- [x] Fix odds not showing on Money Picks cards
+- [x] Fix game log not loading in expanded Money Picks cards
