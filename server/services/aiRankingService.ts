@@ -231,6 +231,8 @@ export interface AIPick {
     savantFactors: string[]; // Reasoning factors from Savant data
   };
   combinedScore?: number; // Ballpark RC + Savant combined score
+  isBestBet?: boolean;    // True when no official plays qualify but this is the top slate pick
+  leanTier?: boolean;     // True when score is 68-73 (Lean/B tier — informational only)
   primePosition?: boolean; // True when 3+ of 4 data-driven factors are favorable
   primePositionFactors?: {
     platoonAdvantage: boolean;
@@ -500,23 +502,27 @@ function calculateRecentFormScore(
 
 /**
  * Calculate BallparkPal boost/penalty from vsGrade (0-10 normalized scale)
- * Grade 10 → +15, Grade 9 → +10, Grade 8 → +5, Grade 7 → 0, Grade ≤6 → -10
+ * Phase W calibration: reduced influence so BP doesn't act as a hidden hard gate.
+ * Grade 10 → +12, Grade 9 → +8, Grade 8 → +4, Grade 7 → 0, Grade 6 → -4, Grade ≤5 → -6
  */
 function calculateBPBoost(vsGrade: number | null): number {
   if (vsGrade === null) return 0; // No data = neutral
-  if (vsGrade >= 9.5) return 15;  // Grade 10
-  if (vsGrade >= 8.5) return 10;  // Grade 9
-  if (vsGrade >= 7.5) return 5;   // Grade 8
+  if (vsGrade >= 9.5) return 12;  // Grade 10
+  if (vsGrade >= 8.5) return 8;   // Grade 9
+  if (vsGrade >= 7.5) return 4;   // Grade 8
   if (vsGrade >= 6.5) return 0;   // Grade 7
-  return -10;                      // Grade 6 or below
+  if (vsGrade >= 5.5) return -4;  // Grade 6
+  return -6;                       // Grade 5 or below
 }
 
 /**
  * Determine pick grade tier from final score
+ * Phase W calibration: S=83+, A=74-82, B/Lean=68-73, hidden below 68
  */
 function getPickGrade(score: number): PickGrade {
-  if (score >= 85) return 'elite';
-  if (score >= 75) return 'strong';
+  if (score >= 83) return 'elite';
+  if (score >= 74) return 'strong';
+  if (score >= 68) return 'watchlist'; // Lean tier — shown but not official
   return 'watchlist';
 }
 
@@ -532,7 +538,7 @@ function getPickGrade(score: number): PickGrade {
  * S4: theLAB edge score applied as a post-scoring boost.
  * S5: Correlation cap — max 3 picks per game, max 4 per team.
  *
- * Quality gate: 4 Elite (85+) + 6 Strong (78-84) = max 10 picks.
+   * Quality gate: 4 Elite (83+) + 6 Strong (74-82) + 3 Lean (68-73) = max 13 picks.
  */
 export function rankAIPicks(
   matchups: MatchupData[],
@@ -712,17 +718,28 @@ export function rankAIPicks(
         else if (edgeScore < 40) edgeBoost = -3;
       }
 
-      // ── Soft penalties ────────────────────────────────────────────────────
+      // ── Soft penalties (Phase W: reduced severity) ───────────────────────
       let softPenalty = 0;
-      if (matchup.battingPosition >= 7) softPenalty -= 3;
+      // Lineup position: graduated penalty (7th=-2, 8th=-3, 9th=-5 only with weak env)
+      if (matchup.battingPosition === 7) softPenalty -= 2;
+      else if (matchup.battingPosition === 8) softPenalty -= 3;
+      else if (matchup.battingPosition >= 9) {
+        // 9th spot: -5 only when combined with weak game environment
+        const weakEnv = gameTotalOU !== null && gameTotalOU < 7.5;
+        softPenalty -= weakEnv ? 5 : 2;
+      }
+      // Weather: max -4 total (cold=-2, wind-in=-2)
       if (matchup.weather) {
         const wd = matchup.weather.windDirection.toLowerCase();
         const isHeadwind = wd.includes('in') || wd === 'n' || wd === 'ne' || wd === 'nw';
-        if (isHeadwind && matchup.weather.windSpeed > 10) softPenalty -= 4;
-        if (matchup.weather.temperature < 50) softPenalty -= 5;
+        if (isHeadwind && matchup.weather.windSpeed > 10) softPenalty -= 2;
+        if (matchup.weather.temperature < 50) softPenalty -= 2;
       }
-      if (recentFormResult.streakType === 'cold') softPenalty -= 5;
-      if (kProb !== null && kProb >= 22) softPenalty -= 3;
+      // Cold streak: reduced from -5 to -3
+      if (recentFormResult.streakType === 'cold') softPenalty -= 3;
+      // Strikeout risk: -2 to -4 (no large double-digit penalties)
+      if (kProb !== null && kProb >= 28) softPenalty -= 4;
+      else if (kProb !== null && kProb >= 22) softPenalty -= 2;
 
         // ── Final score (S4: include edge boost) ──────────────────────────────
       const overallScore = Math.min(100, Math.max(0, Math.round(baseScore + bpBoost + softPenalty + edgeBoost)));
@@ -780,8 +797,9 @@ export function rankAIPicks(
       const perGameAvg = stats[bestStat] / gamesPlayed;
       const line = perGameAvg >= 1.0 ? 1.5 : 0.5;
 
-      // ── Pick grade ────────────────────────────────────────────────────────
+      // ── Pick grade ────────────────────────────────────────────────────
       const grade = getPickGrade(overallScore);
+      const leanTier = overallScore >= 68 && overallScore < 74;
 
       // ── Prime position (legacy: 3+ of 4 factors favorable) ───────────────
       const platoonSplit = matchup.platoonSplit;
@@ -825,6 +843,7 @@ export function rankAIPicks(
         bpBoost,
         baseScore: Math.round(baseScore),
         overallScore,
+        leanTier,
         vsGrade: vsGrade ?? undefined,
         gameTotalOU,
         gameTotalScore: Math.round(gameTotalScore),
@@ -927,12 +946,15 @@ export function rankAIPicks(
       rank: index + 1,
     }));
 
-  // ── Quality gate: 4 Elite (85+) + 6 Strong (75-84) = max 10 picks ────────
+  // ── Quality gate: 4 Elite (83+) + 6 Strong (74-82) + 3 Lean (68-73) = max 13 picks ──
+  // Phase W calibration: S=83+, A=74-82, B/Lean=68-73, hidden below 68
   // If none qualify, return empty array (UI shows "No official HRR play today")
-  const ELITE_THRESHOLD = 85;
-  const STRONG_THRESHOLD = 75;
+  const ELITE_THRESHOLD = 83;
+  const STRONG_THRESHOLD = 74;
+  const LEAN_THRESHOLD = 68;
   const MAX_ELITE = 4;
   const MAX_STRONG = 6;
+  const MAX_LEAN = 3;
 
   // S5: Correlation cap — prevent over-stacking same game or same team
   // Max 3 picks per game (gamePk), max 4 picks per team
@@ -970,16 +992,36 @@ export function rankAIPicks(
 
   const eliteCandidates = picksWithGamePk.filter(p => p.overallScore >= ELITE_THRESHOLD);
   const strongCandidates = picksWithGamePk.filter(p => p.overallScore >= STRONG_THRESHOLD && p.overallScore < ELITE_THRESHOLD);
+  const leanCandidates = picksWithGamePk.filter(p => p.overallScore >= LEAN_THRESHOLD && p.overallScore < STRONG_THRESHOLD);
 
   const elitePicks = applyCorrelationCap(eliteCandidates, MAX_ELITE);
   const strongPicks = applyCorrelationCap(strongCandidates, MAX_STRONG);
+  const leanPicks = applyCorrelationCap(leanCandidates, MAX_LEAN);
 
-  const qualityPicks = [...elitePicks, ...strongPicks].map((pick, index) => ({
+  const qualityPicks = [...elitePicks, ...strongPicks, ...leanPicks].map((pick, index) => ({
     ...pick,
     rank: index + 1,
   }));
 
-  console.log(`[rankAIPicks] Quality gate (S5 correlation cap): ${picks.length} scored → ${elitePicks.length} Elite (85+) + ${strongPicks.length} Strong (75-84) = ${qualityPicks.length} picks`);
+  console.log(`[rankAIPicks] Quality gate (S5 correlation cap): ${picks.length} scored → ${elitePicks.length} Elite (83+) + ${strongPicks.length} Strong (74-82) + ${leanPicks.length} Lean (68-73) = ${qualityPicks.length} picks`);
+
+  // ── Relative Slate Strength: Best Bet Today fallback ───────────────────────────
+  // If the slate is weak (no official plays qualify) but there is at least one
+  // scored candidate, surface the top-scoring player as "Best Bet Today".
+  // This prevents dead slates while preserving quality discipline.
+  if (qualityPicks.length === 0 && picks.length > 0) {
+    const topPick = picks[0]; // Already sorted by score descending
+    if (topPick.overallScore >= 60) {
+      // Mark as Best Bet Today — informational, not an official recommendation
+      const bestBetPick = {
+        ...topPick,
+        isBestBet: true,
+        rank: 1,
+      };
+      console.log(`[rankAIPicks] No official plays — surfacing Best Bet Today: ${bestBetPick.playerName} (score=${bestBetPick.overallScore})`);
+      return [bestBetPick];
+    }
+  }
 
   return qualityPicks;
 }

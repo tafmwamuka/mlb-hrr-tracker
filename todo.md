@@ -903,3 +903,15 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Update filter tab labels to reflect 75+ minimum
 - [x] Add getScoringMatrix tRPC endpoint returning all scored candidates with factor breakdown
 - [x] Add Scoring Matrix UI panel showing all candidates before quality gate
+
+## Phase W — Model Calibration (User Request May 15)
+- [x] Update tier thresholds: S=83+, A=74-82, B=68-73, hidden below 68
+- [x] Add Lean tier (68-73) to aiRankingService getPickGrade()
+- [x] Update MoneyPicksTab getScoreTier() and filter tabs for new thresholds
+- [x] Reduce weather penalties: cold=-2, wind-in=-2, max=-4
+- [x] Reduce lineup position penalties: 7th=-2, 8th=-3, 9th=-5 only if weak env
+- [x] Reduce kProb penalty: high-K = -2 to -4 (no large double-digit)
+- [x] Update BallparkPal boost/penalty: G10=+12, G9=+8, G8=+4, G7=0, G6=-4, G5-below=-6
+- [x] Implement relative slate strength Best Bet Today logic
+- [x] Update quality gate in aiRankingService to use new thresholds (83/74/68)
+- [x] Update empty-state copy to reflect new thresholds

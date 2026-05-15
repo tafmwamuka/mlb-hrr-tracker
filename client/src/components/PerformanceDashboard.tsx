@@ -151,9 +151,9 @@ export function PerformanceDashboard() {
         </div>
         <div className="space-y-2">
           {[
-            { tier: "S", label: "S Tier (90+)", desc: "Highest confidence — model's strongest plays", color: "oklch(0.82 0.17 85)" },
-            { tier: "A", label: "A Tier (85–89)", desc: "Elite plays — strong edge and favorable conditions", color: "oklch(0.72 0.18 165)" },
-            { tier: "B", label: "B Tier (78–84)", desc: "Strong plays — solid edge with minor risk flags", color: "oklch(0.72 0.10 220)" },
+            { tier: "S", label: "S Tier (83+)", desc: "Highest confidence — model's strongest plays", color: "oklch(0.82 0.17 85)" },
+            { tier: "A", label: "A Tier (74–82)", desc: "Strong plays — solid edge with favorable conditions", color: "oklch(0.72 0.18 165)" },
+            { tier: "B", label: "Lean (68–73)", desc: "Borderline plays — informational, lower confidence", color: "oklch(0.72 0.10 220)" },
           ].map(({ tier, label, desc, color }) => (
             <div key={tier} className="flex items-start gap-3">
               <div

@@ -87,11 +87,13 @@ interface MoneyPick {
   riskFlags?: string[];  // RISK FLAGS
   bpBoost?: number;      // BallparkPal boost/penalty
   baseScore?: number;    // Score before BP boost
+  isBestBet?: boolean;   // True when surfaced as Best Bet Today (weak slate fallback)
+  leanTier?: boolean;    // True when score is 68-73 (informational only)
 }
 
-// S/A/B/C Tier system based on overallScore
+// S/A/B/C Tier system based on overallScore — Phase W calibration: S=83+, A=74-82, B/Lean=68-73
 function getScoreTier(score: number): { tier: 'S' | 'A' | 'B' | 'C'; label: string; color: string; glow: string; bg: string; border: string } {
-  if (score >= 90) return {
+  if (score >= 83) return {
     tier: 'S',
     label: 'S TIER',
     color: 'oklch(0.82 0.17 85)',
@@ -99,7 +101,7 @@ function getScoreTier(score: number): { tier: 'S' | 'A' | 'B' | 'C'; label: stri
     bg: 'oklch(0.82 0.17 85 / 12%)',
     border: 'oklch(0.82 0.17 85 / 40%)',
   };
-  if (score >= 85) return {
+  if (score >= 74) return {
     tier: 'A',
     label: 'A TIER',
     color: 'oklch(0.72 0.18 165)',
@@ -107,9 +109,9 @@ function getScoreTier(score: number): { tier: 'S' | 'A' | 'B' | 'C'; label: stri
     bg: 'oklch(0.72 0.18 165 / 12%)',
     border: 'oklch(0.72 0.18 165 / 40%)',
   };
-  if (score >= 75) return {
+  if (score >= 68) return {
     tier: 'B',
-    label: 'B TIER',
+    label: 'LEAN',
     color: 'oklch(0.72 0.10 220)',
     glow: 'glow-b-tier',
     bg: 'oklch(0.72 0.10 220 / 10%)',
@@ -164,7 +166,7 @@ function generateStreak(expectedTotal: number, line: number, prob: number): stri
   return `${hitsInRecent} of last ${gamesBack}`;
 }
 
-type FilterTier = "all" | "s" | "a" | "b";
+type FilterTier = "all" | "s" | "a" | "b" | "lean";
 
 function MoneyPickCard({
   pick,
@@ -678,6 +680,8 @@ export function MoneyPicksTab() {
           grade: pick.grade ?? undefined,
           reasons: pick.reasons ?? [],
           riskFlags: pick.riskFlags ?? [],
+          isBestBet: pick.isBestBet ?? false,
+          leanTier: pick.leanTier ?? false,
           bpBoost: pick.bpBoost ?? 0,
           baseScore: pick.baseScore ?? undefined,
         } as MoneyPick;
@@ -696,9 +700,10 @@ export function MoneyPicksTab() {
   // Apply confidence filter
   const filteredPicks = useMemo(() => {
     switch (activeFilter) {
-      case "s": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 90);
-      case "a": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 85 && (p.overallScore ?? 0) < 90);
-      case "b": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 75 && (p.overallScore ?? 0) < 85);
+      case "s": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 83);
+      case "a": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 74 && (p.overallScore ?? 0) < 83);
+      case "b": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 68 && (p.overallScore ?? 0) < 74);
+      case "lean": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 68 && (p.overallScore ?? 0) < 74);
       default: return moneyPicks;
     }
   }, [moneyPicks, activeFilter]);
@@ -877,12 +882,12 @@ export function MoneyPicksTab() {
       </div>
 
       {/* Quick Filter Buttons */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {([
           { key: "all", label: "All Picks" },
-          { key: "s", label: "S Tier" },
-          { key: "a", label: "A Tier" },
-          { key: "b", label: "B Tier" },
+          { key: "s", label: "S Tier (83+)" },
+          { key: "a", label: "A Tier (74-82)" },
+          { key: "b", label: "Lean (68-73)" },
         ] as { key: FilterTier; label: string }[]).map((filter) => (
           <button
             key={filter.key}
@@ -955,6 +960,20 @@ export function MoneyPicksTab() {
 
       <SaferPlayTip />
 
+      {/* Best Bet Today banner — shown when the top pick is a weak-slate fallback */}
+      {moneyPicks.length > 0 && moneyPicks[0].isBestBet && (
+        <div className="rounded-2xl p-3 border" style={{ background: "oklch(0.14 0.04 60 / 0.35)", borderColor: "oklch(0.82 0.17 85 / 40%)" }}>
+          <div className="flex items-center gap-2 mb-1.5">
+            <Zap size={13} style={{ color: "oklch(0.82 0.17 85)" }} />
+            <span className="text-xs font-bold tracking-wide" style={{ color: "oklch(0.82 0.17 85)" }}>BEST BET TODAY</span>
+            <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded" style={{ background: "oklch(0.82 0.17 85 / 12%)", color: "oklch(0.82 0.17 85)" }}>WEAK SLATE</span>
+          </div>
+          <p className="text-[10px] text-[oklch(0.60_0.015_255)] leading-relaxed">
+            No plays reached official thresholds today. The model is surfacing the strongest available candidate as a <strong className="text-white">Best Bet</strong> — lower confidence, informational only.
+          </p>
+        </div>
+      )}
+
       {/* Best Edge Today Hero Card — show #1 pick when not filtered */}
       {activeFilter === 'all' && moneyPicks.length > 0 && (
         <BestEdgeCard pick={{ ...moneyPicks[0], overallScore: moneyPicks[0].overallScore ?? moneyPicks[0].recommendedProb }} />
@@ -964,14 +983,14 @@ export function MoneyPicksTab() {
       {filteredPicks.length === 0 ? (
         <div className="text-center py-12">
           {moneyPicks.length === 0 ? (
-            // Quality gate: no picks scored 78+ today
+            // Quality gate: no picks scored 68+ today
             <>
               <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "oklch(0.16 0.03 255)" }}>
                 <Shield size={28} style={{ color: "oklch(0.45 0.015 255)" }} />
               </div>
               <h3 className="text-white font-bold text-base mb-2">No Official HRR Play Today</h3>
               <p className="text-[oklch(0.50_0.015_255)] text-sm max-w-xs mx-auto leading-relaxed">
-                Our 10-factor model hasn't found a qualifying play yet. Picks require a score of 75+ to appear here.
+                Our 10-factor model hasn't found a qualifying play yet. Official plays require S Tier (83+) or A Tier (74+) to appear here.
               </p>
               <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
                 <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />

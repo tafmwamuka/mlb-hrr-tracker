@@ -30,8 +30,9 @@ interface BestEdgePick {
   } | null;
 }
 
+// Phase W calibration: S=83+, A=74-82, B/Lean=68-73
 function getTierConfig(score: number) {
-  if (score >= 90) return {
+  if (score >= 83) return {
     tier: 'S',
     label: 'S TIER',
     color: 'oklch(0.82 0.17 85)',
@@ -41,7 +42,7 @@ function getTierConfig(score: number) {
     glow: '0 0 40px oklch(0.82 0.17 85 / 25%), 0 0 80px oklch(0.82 0.17 85 / 10%)',
     accentBar: 'linear-gradient(90deg, oklch(0.82 0.17 85), oklch(0.82 0.17 85 / 30%))',
   };
-  if (score >= 85) return {
+  if (score >= 74) return {
     tier: 'A',
     label: 'A TIER',
     color: 'oklch(0.72 0.18 165)',
@@ -53,7 +54,7 @@ function getTierConfig(score: number) {
   };
   return {
     tier: 'B',
-    label: 'B TIER',
+    label: 'LEAN',
     color: 'oklch(0.72 0.10 220)',
     gradientFrom: 'oklch(0.72 0.10 220 / 15%)',
     gradientTo: 'oklch(0.72 0.10 220 / 5%)',
