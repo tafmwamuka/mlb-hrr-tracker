@@ -640,6 +640,7 @@ export function MoneyPicksTab() {
     if (!fp) return null;
     try {
       const d = new Date(fp);
+      if (isNaN(d.getTime())) return null;
       return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
     } catch { return null; }
   })();

@@ -1219,8 +1219,9 @@ export const aiPicksRouter = router({
       // Find first pitch time from games
       const games3 = await getGamesForUI();
       const upcomingGames = games3.filter(g => g.status === 'Preview' || g.status === 'Scheduled');
+      // Use gameDate (ISO) for firstPitchTime so the frontend can parse it correctly
       const firstPitchTime = upcomingGames.length > 0
-        ? upcomingGames.sort((a, b) => new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime())[0]?.gameTime ?? null
+        ? upcomingGames.sort((a, b) => new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime())[0]?.gameDate ?? null
         : null;
       const confirmedCount = games3.filter(g => g.lineupSource === 'confirmed').length;
       const projectedCount = games3.filter(g => g.lineupSource === 'projected').length;
