@@ -940,3 +940,9 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Add picks-level in-memory cache (5 min TTL) to avoid re-running full pipeline on every request
 - [x] Pre-warm enrichment cache on server startup (already wired in server/_core/index.ts)
 - [x] Tighten per-request timeouts for non-critical calls (day/night splits 4s, streaks 8s)
+
+## Phase AA — Odds API Safeguards (User Request May 15)
+- [x] Add time-window gate: only call Odds API between 11 AM – 11 PM ET
+- [x] Extend Odds API cache TTL from 10 min to 15 min
+- [x] Add daily usage counter with warning log if > 200 calls/day
+- [x] Return cached/model odds silently outside the time window (no error shown to user)

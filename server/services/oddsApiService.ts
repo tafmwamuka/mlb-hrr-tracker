@@ -232,14 +232,44 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
   return playerMap;
 }
 
-// In-memory cache: 10-minute TTL to avoid burning API credits on every pick request
+// In-memory cache: 15-minute TTL to conserve API credits
 let oddsCache: { data: Map<string, HRRMarketData>; ts: number } | null = null;
-const ODDS_CACHE_TTL = 10 * 60 * 1000;
+const ODDS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
+// Daily usage counter — resets at midnight ET
+let dailyCallCount = 0;
+let dailyCallDate = '';
+const DAILY_CALL_WARNING_THRESHOLD = 200;
+
+function trackApiCall(callCount: number) {
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const todayStr = `${nowET.getFullYear()}-${String(nowET.getMonth() + 1).padStart(2, '0')}-${String(nowET.getDate()).padStart(2, '0')}`;
+  if (dailyCallDate !== todayStr) {
+    dailyCallCount = 0;
+    dailyCallDate = todayStr;
+  }
+  dailyCallCount += callCount;
+  if (dailyCallCount >= DAILY_CALL_WARNING_THRESHOLD) {
+    console.warn(`[OddsAPI] ⚠️ Daily call count reached ${dailyCallCount} (threshold: ${DAILY_CALL_WARNING_THRESHOLD}). Consider reviewing usage.`);
+  } else {
+    console.log(`[OddsAPI] Daily calls used today: ${dailyCallCount}`);
+  }
+}
+
+/**
+ * Returns true if current ET time is within the active window (11 AM – 11 PM ET).
+ * Outside this window, no API calls are made — cached/model odds are used instead.
+ */
+function isWithinActiveWindow(): boolean {
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const hour = nowET.getHours();
+  return hour >= 11 && hour < 23; // 11:00 AM to 10:59 PM ET
+}
 
 /**
  * Fetch all HRR market data for today's games
  * Returns a map of player name → HRR market data
- * Uses 10-minute in-memory cache to conserve API credits.
+ * Uses 15-minute in-memory cache and 11AM-11PM ET time-window gate.
  */
 export async function fetchHRRMarketData(apiKey?: string): Promise<Map<string, HRRMarketData>> {
   const key = apiKey || process.env.ODDS_API_KEY || '';
@@ -252,6 +282,12 @@ export async function fetchHRRMarketData(apiKey?: string): Promise<Map<string, H
   if (oddsCache && Date.now() - oddsCache.ts < ODDS_CACHE_TTL) {
     console.log(`[OddsAPI] Returning cached odds (${oddsCache.data.size} players)`);
     return oddsCache.data;
+  }
+
+  // Time-window gate: only call API between 11 AM – 11 PM ET
+  if (!isWithinActiveWindow()) {
+    console.log('[OddsAPI] Outside active window (11AM-11PM ET) — skipping API call, using model odds');
+    return oddsCache?.data ?? new Map();
   }
 
   try {
@@ -310,9 +346,16 @@ export async function fetchOddsForPicks(
     return oddsCache.data;
   }
 
+  // Time-window gate: only call API between 11 AM – 11 PM ET
+  if (!isWithinActiveWindow()) {
+    console.log('[OddsAPI] Outside active window (11AM-11PM ET) — skipping targeted fetch, using model odds');
+    return oddsCache?.data ?? new Map();
+  }
+
   try {
     // Step 1: Get all today's events (1 API call)
     const events = await fetchMLBEvents(key);
+    trackApiCall(1); // count the events list call
     if (events.length === 0) return new Map();
 
     // Step 2: Find which events contain our picks' teams
@@ -343,6 +386,7 @@ export async function fetchOddsForPicks(
     const results = await Promise.allSettled(
       matchingEvents.map(event => fetchPlayerProps(key, event.id))
     );
+    trackApiCall(matchingEvents.length); // count the props calls
     for (const result of results) {
       if (result.status === 'fulfilled') {
         allBookmakers.push(...result.value);
