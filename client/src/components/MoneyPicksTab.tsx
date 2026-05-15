@@ -641,7 +641,7 @@ export function MoneyPicksTab() {
     try {
       const d = new Date(fp);
       if (isNaN(d.getTime())) return null;
-      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York', timeZoneName: 'short' });
     } catch { return null; }
   })();
 
