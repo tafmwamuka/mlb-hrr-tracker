@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, saveBallparkPalCache } from "../db";
 import { propPredictions } from "../../drizzle/schema";
 
 /**
@@ -139,6 +139,33 @@ export const scheduledRouter = router({
         total: picks.length,
         refreshedAt,
       };
+    }),
+
+  /**
+   * Save BallparkPal matchup data to the database.
+   * Called by the scheduled task after a successful BallparkPal fetch.
+   * The live server then reads from DB instead of fetching BallparkPal directly
+   * (BallparkPal blocks server IPs via Cloudflare; the scheduled task runs on a
+   * user device that is not blocked).
+   */
+  saveBallparkPalData: protectedProcedure
+    .input(z.object({
+      slateDate: z.string(), // YYYY-MM-DD
+      matchups: z.array(z.record(z.string(), z.unknown())), // raw BallparkMatchup objects
+      source: z.string().optional().default('scheduled_task'),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (!ctx.user) {
+        return { success: false, error: 'Unauthorized' };
+      }
+      try {
+        await saveBallparkPalCache(input.slateDate, input.matchups, input.source);
+        console.log(`[Scheduled] BallparkPal cache saved: ${input.matchups.length} matchups for ${input.slateDate}`);
+        return { success: true, matchupCount: input.matchups.length, slateDate: input.slateDate };
+      } catch (error) {
+        console.error('[Scheduled] Failed to save BallparkPal cache:', error);
+        return { success: false, error: String(error) };
+      }
     }),
 
   getLastRefresh: protectedProcedure.query(async () => {

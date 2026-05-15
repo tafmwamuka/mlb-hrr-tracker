@@ -863,3 +863,29 @@
 ### Homepage Structure
 - [x] Money Picks tab: 1) Slate header, 2) Yesterday's Results strip, 3) Best Edge Today hero, 4) Official Money Picks list
 - [x] Separate Stats tab for Performance Dashboard
+
+## Phase U: BallparkPal Store-and-Serve Pattern
+
+### Problem
+The live server cannot access BallparkPal.com due to Cloudflare IP blocks.
+The scheduled task (running on user's device) CAN access it successfully.
+Solution: scheduled task saves data to DB → live server reads from DB.
+
+### Database
+- [ ] Add `ballparkpal_cache` table to drizzle/schema.ts: id, slateDate, matchupsJson, fetchedAt, source
+- [ ] Run pnpm db:push to migrate
+
+### Scheduled Task Updates
+- [ ] After successful BallparkPal fetch in scheduled task, call new `saveBallparkPalCache` DB helper
+- [ ] Store full matchups JSON + slateDate + fetchedAt timestamp
+- [ ] Log "BallparkPal cache saved: N matchups" in scheduled task output
+
+### Live Server Updates
+- [ ] Update ballparkMatchupService to check DB cache first (today's date)
+- [ ] If DB cache exists and is < 6 hours old → use it (skip direct fetch)
+- [ ] If DB cache is stale/missing → try direct fetch as before
+- [ ] Log "[BallparkPal] Using DB cache: N matchups (fetched X min ago)"
+
+### Admin Endpoint
+- [ ] Add `trpc.admin.getBallparkPalCacheStatus` procedure: returns slateDate, fetchedAt, matchupCount, ageMinutes
+- [ ] Show cache status in the Stats/Performance Dashboard tab

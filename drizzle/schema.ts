@@ -228,3 +228,22 @@ export const dailyResults = mysqlTable("daily_results", {
 
 export type DailyResult = typeof dailyResults.$inferSelect;
 export type InsertDailyResult = typeof dailyResults.$inferInsert;
+
+/**
+ * BallparkPal Cache table — stores matchup data fetched by the scheduled task.
+ * The live server reads from this table instead of fetching BallparkPal directly
+ * (BallparkPal blocks server IPs via Cloudflare; the scheduled task runs on a
+ * user device that is not blocked).
+ */
+export const ballparkpalCache = mysqlTable("ballparkpal_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  slateDate: varchar("slateDate", { length: 16 }).notNull(), // YYYY-MM-DD
+  matchupsJson: text("matchupsJson").notNull(), // full JSON array of BallparkMatchup objects
+  matchupCount: int("matchupCount").notNull().default(0),
+  source: varchar("source", { length: 64 }).default("scheduled_task").notNull(), // "scheduled_task" | "manual" | "direct_fetch"
+  fetchedAt: timestamp("fetchedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type BallparkpalCache = typeof ballparkpalCache.$inferSelect;
+export type InsertBallparkpalCache = typeof ballparkpalCache.$inferInsert;

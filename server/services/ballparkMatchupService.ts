@@ -13,6 +13,7 @@
  */
 
 import puppeteer from 'puppeteer-core';
+import { getBallparkPalCache } from '../db';
 
 export interface BallparkMatchup {
   game: string;           // e.g. "Giants @ Dodgers"
@@ -184,14 +185,54 @@ async function fetchWithPuppeteer(): Promise<BallparkMatchup[]> {
 }
 
 /**
+ * Get today's date in ET timezone as YYYY-MM-DD string.
+ * Used for DB cache lookups.
+ */
+function getTodayET(): string {
+  const now = new Date();
+  const etOffset = -5 * 60; // EST (UTC-5); DST handled below
+  // Simple DST detection: second Sunday in March to first Sunday in November
+  const year = now.getUTCFullYear();
+  const marchSecondSunday = new Date(Date.UTC(year, 2, 1));
+  marchSecondSunday.setUTCDate(1 + (7 - marchSecondSunday.getUTCDay() + 0) % 7 + 7);
+  const novFirstSunday = new Date(Date.UTC(year, 10, 1));
+  novFirstSunday.setUTCDate(1 + (7 - novFirstSunday.getUTCDay()) % 7);
+  const isDST = now >= marchSecondSunday && now < novFirstSunday;
+  const etOffsetMs = (isDST ? -4 : -5) * 60 * 60 * 1000;
+  const etDate = new Date(now.getTime() + etOffsetMs);
+  return etDate.toISOString().slice(0, 10);
+}
+
+/**
  * Fetch today's matchup data from ballparkpal.com
- * Uses Puppeteer headless browser to bypass Cloudflare bot protection.
- * Falls back to plain fetch if Puppeteer is unavailable.
+ * Priority order:
+ *   1. In-memory cache (fastest, avoids any I/O)
+ *   2. Database cache (saved by scheduled task — works even when Cloudflare blocks server)
+ *   3. Plain HTTP fetch (fast but often blocked by Cloudflare)
+ *   4. Puppeteer headless browser (only available in dev/sandbox)
  */
 async function fetchMatchupData(): Promise<BallparkMatchup[]> {
-  // Check cache
+  // Check in-memory cache
   if (cachedMatchups && Date.now() - cacheTimestamp < CACHE_TTL) {
     return cachedMatchups;
+  }
+
+  // Step 0: Check DB cache first — populated by scheduled task
+  try {
+    const slateDate = getTodayET();
+    const dbCache = await getBallparkPalCache(slateDate, 6 * 60 * 60 * 1000); // 6 hour max age
+    if (dbCache && dbCache.matchups.length > 0) {
+      const matchups = parseMatchups(dbCache.matchups as Array<Record<string, any>>);
+      if (matchups.length > 0) {
+        cachedMatchups = matchups;
+        cacheTimestamp = Date.now();
+        const ageMin = Math.round((Date.now() - dbCache.fetchedAt.getTime()) / 60000);
+        console.log(`[BallparkPal] DB cache hit: ${matchups.length} matchups (${ageMin} min old, source: ${dbCache.source})`);
+        return matchups;
+      }
+    }
+  } catch (dbErr) {
+    console.warn('[BallparkPal] DB cache lookup failed, falling back to direct fetch:', dbErr);
   }
 
   try {
