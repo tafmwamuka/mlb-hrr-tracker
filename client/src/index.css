@@ -1,10 +1,10 @@
 /* ============================================================
-   MLB Hit · Run · RBI Tracker — Design System
-   Design Philosophy: Sports Analytics Dashboard
-   - Deep navy background (#0A1628 → #162447)
-   - Electric stat-category colors: Gold (Hits), Coral (Runs), Emerald (RBIs)
-   - Barlow Condensed for stat numbers, DM Sans for body text
-   - Mobile-first, bottom tab navigation, podium top-3 section
+   Diamond Edge — HRR Analytics Platform Design System
+   Design Philosophy: Premium Sports Analytics Dashboard
+   - Deep charcoal/matte black background
+   - Emerald green (positive edge), soft gold (S Tier), ice blue (data), muted red (risk)
+   - Inter for UI text, Barlow Condensed for stat numbers
+   - Mobile-first, bottom tab navigation, glassmorphism cards
    ============================================================ */
 
 @import "tailwindcss";
@@ -50,10 +50,16 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* MLB Stat Category Colors */
-  --color-hits: oklch(0.82 0.17 85);      /* Electric Gold */
-  --color-runs: oklch(0.68 0.22 25);      /* Coral Red */
-  --color-rbi: oklch(0.72 0.18 165);      /* Emerald Green */
+  /* Diamond Edge Brand Colors */
+  --color-hits: oklch(0.82 0.17 85);      /* Soft Gold — S Tier / best plays */
+  --color-runs: oklch(0.68 0.22 25);      /* Muted Red — risk flags */
+  --color-rbi: oklch(0.72 0.18 165);      /* Emerald Green — positive edge */
+  --color-ice-blue: oklch(0.72 0.10 220); /* Ice Blue — data / info */
+  --color-edge: oklch(0.72 0.18 165);     /* Emerald — edge positive */
+  --color-tier-s: oklch(0.82 0.17 85);    /* Gold — S Tier */
+  --color-tier-a: oklch(0.72 0.18 165);   /* Emerald — A Tier */
+  --color-tier-b: oklch(0.72 0.10 220);   /* Ice Blue — B Tier */
+  --color-tier-c: oklch(0.50 0.015 255);  /* Muted Gray — C Tier */
 }
 
 :root {
@@ -98,7 +104,7 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Inter', 'DM Sans', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -196,6 +202,43 @@
     background: oklch(0.14 0.025 255 / 80%);
     backdrop-filter: blur(12px);
     border: 1px solid oklch(1 0 0 / 8%);
+  }
+
+  /* Diamond Edge premium glass card */
+  .glass-premium {
+    background: linear-gradient(135deg, oklch(0.15 0.025 255 / 90%), oklch(0.12 0.020 255 / 95%));
+    backdrop-filter: blur(16px);
+    border: 1px solid oklch(1 0 0 / 10%);
+    box-shadow: 0 4px 24px oklch(0 0 0 / 40%), inset 0 1px 0 oklch(1 0 0 / 6%);
+  }
+
+  /* Tier glow effects */
+  .glow-s-tier { box-shadow: 0 0 20px oklch(0.82 0.17 85 / 0.35), 0 0 40px oklch(0.82 0.17 85 / 0.15); }
+  .glow-a-tier { box-shadow: 0 0 20px oklch(0.72 0.18 165 / 0.35), 0 0 40px oklch(0.72 0.18 165 / 0.15); }
+  .glow-b-tier { box-shadow: 0 0 16px oklch(0.72 0.10 220 / 0.25); }
+
+  /* Edge positive/negative */
+  .edge-positive { color: oklch(0.72 0.18 165); }
+  .edge-negative { color: oklch(0.68 0.22 25); }
+
+  /* Premium hover lift */
+  .hover-lift {
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px oklch(0 0 0 / 40%);
+  }
+
+  /* Animated shimmer for loading */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .shimmer {
+    background: linear-gradient(90deg, oklch(0.18 0.02 255) 25%, oklch(0.22 0.025 255) 50%, oklch(0.18 0.02 255) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
   }
 
   /* Premium card hover */

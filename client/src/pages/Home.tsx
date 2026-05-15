@@ -1,5 +1,5 @@
 /**
- * MLB Hit · Run · RBI Tracker — Home Page (Redesigned)
+ * Diamond Edge — HRR Analytics Platform
  * Design: Sports Analytics Dashboard with 5 tabs
  * - Top Plays: AI picks based on comprehensive matchup data
  * - Leaderboard: H/R/RBI/Slg % stats with podium + ranked list
@@ -24,9 +24,10 @@ import { ParlaysTab } from "@/components/ParlaysTab";
 import { MoneyPicksTab } from "@/components/MoneyPicksTab";
 import { ResultsTab } from "@/components/ResultsTab";
 import { GameCards } from "@/components/GameCards";
-import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, Ticket } from "lucide-react";
+import { PerformanceDashboard } from "@/components/PerformanceDashboard";
+import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, Ticket, BarChart3 } from "lucide-react";
 
-type TabType = "topPlays" | "parlays" | "results";
+type TabType = "topPlays" | "parlays" | "results" | "stats";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -75,6 +76,11 @@ const TAB_CONFIG = {
     label: "Results",
     icon: Trophy,
     color: "oklch(0.72 0.18 165)",
+  },
+  stats: {
+    label: "Stats",
+    icon: BarChart3,
+    color: "oklch(0.72 0.10 220)",
   },
 };
 
@@ -556,8 +562,8 @@ export default function Home() {
                 <Flame size={18} style={{ color: "oklch(0.82 0.17 85)" }} />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-white leading-tight tracking-tight">MLB HRR</h1>
-                <p className="text-[10px] text-[oklch(0.50_0.015_255)] font-medium tracking-wider uppercase">Prop Tracker</p>
+                <h1 className="text-xl font-bold text-white leading-tight tracking-tight" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: "-0.02em" }}>Diamond Edge</h1>
+                <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "oklch(0.65 0.12 165)" }}>HRR Analytics Platform</p>
               </div>
             </div>
             <div
@@ -648,6 +654,18 @@ export default function Home() {
             </motion.div>
           )}
 
+
+          {activeTab === "stats" && (
+            <motion.div
+              key="stats"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <PerformanceDashboard />
+            </motion.div>
+          )}
 
           {activeTab === "results" && (
             <motion.div

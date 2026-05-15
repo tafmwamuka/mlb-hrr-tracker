@@ -802,3 +802,64 @@
 - [x] Step 4: Load odds and edge (shown in pick cards)
 - [x] Step 5: Load final scores and grades (Elite/Strong badges)
 - [x] Step 6: Load detailed reasoning and performance graphs (expanded card section)
+
+## Phase T: Diamond Edge Rebrand & Premium UI (2026-05-15)
+
+### Rebrand
+- [x] Update VITE_APP_TITLE to "Diamond Edge" (hardcoded in navbar + index.html; built-in secret cannot be changed via tool)
+- [x] Update all "MLB HRR" / "MLB HRR Tracker" text references to "Diamond Edge"
+- [x] Update navbar brand: "Diamond Edge" + "HRR Analytics Platform" subtitle
+- [x] Update page title, meta description, and favicon alt text
+- [x] Update loading skeleton and empty state copy to use Diamond Edge branding
+
+### Premium Visual Redesign
+- [x] Update index.css: deep charcoal/matte black/dark navy background palette
+- [x] Add Inter font via Google Fonts CDN in index.html
+- [x] Update color system: emerald green (positive edge), soft gold (S Tier), ice blue (data), muted red (risk)
+- [x] Update card design: glassmorphism panels, low-opacity borders, soft shadows
+- [x] Add subtle hover glow and fade transition micro-interactions
+- [x] Ensure clean spacing and breathing room on all cards
+
+### T3 — Best Edge Today Hero Card
+- [x] Build BestEdgeCard component: large premium hero card for #1 ranked pick
+- [x] Show: player headshot, team vs opponent, tier badge, odds, model probability, edge %, projected PA
+- [x] Show WHY THIS PLAY QUALIFIES reasons and RISK FLAGS in hero card
+- [x] Show mini HRR trend graph in hero card
+- [x] Show "No Official HRR Play Today" when no picks qualify
+- [x] Style: glassmorphism, emerald/gold gradient border glow, sharp typography
+- [x] Place hero card at top of Money Picks tab above the pick list
+
+### T4 — HRR Probability Breakdown
+- [x] HRR breakdown bars already exist in MoneyPickCard (Expected Breakdown section shows H/R/RBI flex bars)
+- [x] Poisson-based probabilities calculated in aiRankingService and passed through
+- [x] Visual breakdown shown in pick card body
+
+### T6 — S/A/B/C Tier Pick Structure
+- [x] Map scores to tiers: S=90+, A=85-89, B=78-84, C=70-77 (hidden by default)
+- [x] Update grade badges: S=gold, A=emerald, B=ice blue, C=muted gray
+- [x] Update filter tabs to show S Tier / A Tier / B Tier instead of 85%+ / 90%+ Locks
+- [x] Add distinct glow/accent per tier
+
+### T7 — Player Archetypes
+- [x] Build getPlayerArchetype() function: HIGH FLOOR, RBI MACHINE, RUN GENERATOR, POWER CEILING, STACK BOOSTER
+- [x] HIGH FLOOR: high OBP/contact (OBP > .360, low K rate)
+- [x] RBI MACHINE: batting 3-5, high RBI rate, high team implied runs
+- [x] RUN GENERATOR: batting 1-2, high OBP, high team implied runs
+- [x] POWER CEILING: high barrel%, high HR rate, volatile
+- [x] STACK BOOSTER: consecutive lineup spot, same-game stack
+- [x] Show archetype chips under player name on each pick card
+
+### T9 — Weather Intelligence Tags
+- [x] Weather tags parsed from riskFlags (💨 Headwind, 🌡️ Cold) shown on pick cards
+- [x] Rename "Today's Games" section to "LIVE EDGE BOARD"
+
+### T1 — Performance Dashboard
+- [x] Build PerformanceDashboard component with stat cards
+- [x] Show: Overall Hit Rate, Yesterday's Results, H/R/RBI breakdown, tier system explainer, transparency statement
+- [x] Calculate stats from historical results in database via getHitRateStats
+- [x] Add "Stats" tab to homepage navigation
+- [x] Show all-time view with yesterday comparison
+
+### Homepage Structure
+- [x] Money Picks tab: 1) Slate header, 2) Yesterday's Results strip, 3) Best Edge Today hero, 4) Official Money Picks list
+- [x] Separate Stats tab for Performance Dashboard

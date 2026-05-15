@@ -1,5 +1,5 @@
 /**
- * Game Cards Component
+ * Live Edge Board — Diamond Edge
  * Shows today's real MLB games with lineups and probable pitchers.
  * Displayed as a horizontal scrollable row at the top of the page.
  */
@@ -204,9 +204,12 @@ export function GameCards() {
   return (
     <div className="px-4 mb-4">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="text-white text-sm font-semibold">
-          Today's Games ({data.games.length})
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-white text-sm font-bold tracking-tight" style={{ fontFamily: "'Inter', sans-serif" }}>
+            Live Edge Board
+          </h3>
+          <span className="text-[9px] font-bold tracking-widest text-[oklch(0.45_0.015_255)]">{data.games.length} GAMES</span>
+        </div>
         {(() => {
           const confirmed = data.games.filter((g: Game) => g.lineupSource === 'confirmed').length;
           const total = data.games.length;

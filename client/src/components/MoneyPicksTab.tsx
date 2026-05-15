@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { SaferPlayTip } from "@/components/SaferPlayTip";
 import { PerformanceGraph } from "@/components/PerformanceGraph";
+import { BestEdgeCard } from "@/components/BestEdgeCard";
 
 interface AlternateLine {
   line: number;
@@ -88,17 +89,65 @@ interface MoneyPick {
   baseScore?: number;    // Score before BP boost
 }
 
-function getProbColor(prob: number): string {
-  if (prob >= 85) return "oklch(0.72 0.18 165)";
-  if (prob >= 75) return "oklch(0.78 0.16 140)";
-  return "oklch(0.82 0.17 85)";
+// S/A/B/C Tier system based on overallScore
+function getScoreTier(score: number): { tier: 'S' | 'A' | 'B' | 'C'; label: string; color: string; glow: string; bg: string; border: string } {
+  if (score >= 90) return {
+    tier: 'S',
+    label: 'S TIER',
+    color: 'oklch(0.82 0.17 85)',
+    glow: 'glow-s-tier',
+    bg: 'oklch(0.82 0.17 85 / 12%)',
+    border: 'oklch(0.82 0.17 85 / 40%)',
+  };
+  if (score >= 85) return {
+    tier: 'A',
+    label: 'A TIER',
+    color: 'oklch(0.72 0.18 165)',
+    glow: 'glow-a-tier',
+    bg: 'oklch(0.72 0.18 165 / 12%)',
+    border: 'oklch(0.72 0.18 165 / 40%)',
+  };
+  if (score >= 78) return {
+    tier: 'B',
+    label: 'B TIER',
+    color: 'oklch(0.72 0.10 220)',
+    glow: 'glow-b-tier',
+    bg: 'oklch(0.72 0.10 220 / 10%)',
+    border: 'oklch(0.72 0.10 220 / 30%)',
+  };
+  return {
+    tier: 'C',
+    label: 'C TIER',
+    color: 'oklch(0.50 0.015 255)',
+    glow: '',
+    bg: 'oklch(0.18 0.02 255)',
+    border: 'oklch(1 0 0 / 8%)',
+  };
 }
 
-function getConfidenceTier(prob: number): { label: string; emoji: string } {
-  if (prob >= 90) return { label: "LOCK", emoji: "🔒" };
-  if (prob >= 85) return { label: "STRONG", emoji: "💪" };
-  if (prob >= 80) return { label: "SOLID", emoji: "✅" };
-  return { label: "GOOD", emoji: "👍" };
+function getProbColor(prob: number): string {
+  if (prob >= 85) return 'oklch(0.72 0.18 165)';
+  if (prob >= 75) return 'oklch(0.78 0.16 140)';
+  return 'oklch(0.82 0.17 85)';
+}
+
+// Player archetype logic
+function getPlayerArchetype(pick: MoneyPick): { label: string; color: string; bg: string; border: string } | null {
+  const score = pick.overallScore ?? 0;
+  const pos = pick.battingPosition;
+  const edge = pick.edge ?? 0;
+  const reasons = pick.reasons ?? [];
+  const hasStack = reasons.some(r => r.toLowerCase().includes('stack') || r.toLowerCase().includes('consecutive'));
+  const hasRBI = reasons.some(r => r.toLowerCase().includes('rbi') || r.toLowerCase().includes('run producer'));
+  const hasOBP = reasons.some(r => r.toLowerCase().includes('obp') || r.toLowerCase().includes('contact') || r.toLowerCase().includes('xwoba'));
+  const hasBarrel = reasons.some(r => r.toLowerCase().includes('barrel') || r.toLowerCase().includes('power') || r.toLowerCase().includes('exit'));
+
+  if (hasStack) return { label: 'STACK BOOSTER', color: 'oklch(0.72 0.10 220)', bg: 'oklch(0.72 0.10 220 / 10%)', border: 'oklch(0.72 0.10 220 / 30%)' };
+  if (hasBarrel && score >= 85) return { label: 'POWER CEILING', color: 'oklch(0.82 0.17 85)', bg: 'oklch(0.82 0.17 85 / 10%)', border: 'oklch(0.82 0.17 85 / 30%)' };
+  if (hasRBI && pos >= 3 && pos <= 5) return { label: 'RBI MACHINE', color: 'oklch(0.72 0.18 165)', bg: 'oklch(0.72 0.18 165 / 10%)', border: 'oklch(0.72 0.18 165 / 30%)' };
+  if (pos <= 2 && hasOBP) return { label: 'RUN GENERATOR', color: 'oklch(0.72 0.18 165)', bg: 'oklch(0.72 0.18 165 / 8%)', border: 'oklch(0.72 0.18 165 / 25%)' };
+  if (hasOBP && edge >= 5) return { label: 'HIGH FLOOR', color: 'oklch(0.65 0.12 165)', bg: 'oklch(0.65 0.12 165 / 8%)', border: 'oklch(0.65 0.12 165 / 25%)' };
+  return null;
 }
 
 /**
@@ -115,7 +164,7 @@ function generateStreak(expectedTotal: number, line: number, prob: number): stri
   return `${hitsInRecent} of last ${gamesBack}`;
 }
 
-type FilterTier = "all" | "90+" | "85+" | "75+";
+type FilterTier = "all" | "s" | "a" | "b";
 
 function MoneyPickCard({
   pick,
@@ -130,7 +179,8 @@ function MoneyPickCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const probColor = getProbColor(pick.recommendedProb);
-  const tier = getConfidenceTier(pick.recommendedProb);
+  const scoreTier = getScoreTier(pick.overallScore ?? pick.recommendedProb);
+  const archetype = getPlayerArchetype(pick);
 
   return (
     <motion.div
@@ -143,17 +193,22 @@ function MoneyPickCard({
         borderColor: isSelected ? "oklch(0.72 0.18 165 / 50%)" : "oklch(1 0 0 / 8%)",
       }}
     >
-      {/* Top accent bar */}
-      <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${probColor}, ${probColor}60)` }} />
+      {/* Top accent bar — tier color */}
+      <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${scoreTier.color}, ${scoreTier.color}60)` }} />
 
       <div className="p-4">
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
-            {/* Rank + Tier */}
+            {/* Rank + Tier badge */}
             <div className="flex flex-col items-center gap-0.5">
-              <span className="text-lg font-bold" style={{ color: probColor }}>{tier.emoji}</span>
-              <span className="text-[10px] font-bold text-[oklch(0.45_0.015_255)]">#{rank}</span>
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center font-stat font-bold text-sm"
+                style={{ background: scoreTier.bg, border: `1px solid ${scoreTier.border}`, color: scoreTier.color }}
+              >
+                {scoreTier.tier}
+              </div>
+              <span className="text-[9px] font-bold text-[oklch(0.40_0.015_255)]">#{rank}</span>
             </div>
             <div>
               <div className="text-white font-bold text-base">{pick.playerName}</div>
@@ -200,8 +255,20 @@ function MoneyPickCard({
           </div>
         </div>
 
-        {/* Streak indicator + Confidence badge row */}
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          {/* Archetype chip */}
+          {archetype && (
+            <div className="flex items-center gap-1.5 mb-2">
+              <div
+                className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-widest uppercase"
+                style={{ background: archetype.bg, border: `1px solid ${archetype.border}`, color: archetype.color }}
+              >
+                {archetype.label}
+              </div>
+            </div>
+          )}
+
+          {/* Streak indicator + Confidence badge row */}
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
           {/* Streak badge - real data from theLAB if available */}
           {pick.streakInfo?.streakType === 'hot' ? (
             <div className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: "oklch(0.68 0.22 25 / 15%)", border: "1px solid oklch(0.68 0.22 25 / 35%)" }}>
@@ -242,16 +309,37 @@ function MoneyPickCard({
           )}
 
           <div
-            className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide"
-            style={{ background: `${probColor}15`, color: probColor, border: `1px solid ${probColor}30` }}
+            className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest"
+            style={{ background: scoreTier.bg, color: scoreTier.color, border: `1px solid ${scoreTier.border}` }}
           >
-            {tier.label} PLAY
+            {scoreTier.label}
           </div>
           {pick.edge > 0 && (
             <div className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: "oklch(0.72 0.18 165 / 15%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 30%)" }}>
               +{pick.edge}% edge
             </div>
           )}
+
+          {/* Weather intelligence tags — parsed from riskFlags */}
+          {(() => {
+            const windFlag = pick.riskFlags?.find(r => r.toLowerCase().includes('wind blowing'));
+            const coldFlag = pick.riskFlags?.find(r => r.toLowerCase().includes('cold weather'));
+            if (!windFlag && !coldFlag) return null;
+            return (
+              <>
+                {windFlag && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md" style={{ background: "oklch(0.55 0.15 240 / 12%)", border: "1px solid oklch(0.55 0.15 240 / 30%)" }}>
+                    <span className="text-[9px] font-bold" style={{ color: "oklch(0.65 0.12 240)" }}>💨 Headwind</span>
+                  </div>
+                )}
+                {coldFlag && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md" style={{ background: "oklch(0.55 0.15 240 / 12%)", border: "1px solid oklch(0.55 0.15 240 / 30%)" }}>
+                    <span className="text-[9px] font-bold" style={{ color: "oklch(0.65 0.12 240)" }}>🌡️ Cold</span>
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           {/* Prime Position badge: data-driven 3+ of 4 factors favorable */}
           {pick.primePosition && (
@@ -603,9 +691,9 @@ export function MoneyPicksTab() {
   // Apply confidence filter
   const filteredPicks = useMemo(() => {
     switch (activeFilter) {
-      case "90+": return moneyPicks.filter(p => p.recommendedProb >= 90);
-      case "85+": return moneyPicks.filter(p => p.recommendedProb >= 85);
-      case "75+": return moneyPicks;
+      case "s": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 90);
+      case "a": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 85 && (p.overallScore ?? 0) < 90);
+      case "b": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 78 && (p.overallScore ?? 0) < 85);
       default: return moneyPicks;
     }
   }, [moneyPicks, activeFilter]);
@@ -786,9 +874,10 @@ export function MoneyPicksTab() {
       {/* Quick Filter Buttons */}
       <div className="flex items-center gap-2">
         {([
-          { key: "all", label: "All 75%+" },
-          { key: "85+", label: "85%+" },
-          { key: "90+", label: "90%+ Locks" },
+          { key: "all", label: "All Picks" },
+          { key: "s", label: "S Tier" },
+          { key: "a", label: "A Tier" },
+          { key: "b", label: "B Tier" },
         ] as { key: FilterTier; label: string }[]).map((filter) => (
           <button
             key={filter.key}
@@ -860,6 +949,11 @@ export function MoneyPicksTab() {
       )}
 
       <SaferPlayTip />
+
+      {/* Best Edge Today Hero Card — show #1 pick when not filtered */}
+      {activeFilter === 'all' && moneyPicks.length > 0 && (
+        <BestEdgeCard pick={{ ...moneyPicks[0], overallScore: moneyPicks[0].overallScore ?? moneyPicks[0].recommendedProb }} />
+      )}
 
       {/* Money Pick Cards */}
       {filteredPicks.length === 0 ? (
