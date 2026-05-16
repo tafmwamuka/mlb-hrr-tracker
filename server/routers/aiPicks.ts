@@ -12,8 +12,9 @@ import { americanToImpliedProbability } from "../services/oddsApiService";
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from "../services/poissonModel";
 import { getAdaptedLineupData, getGamesForUI } from "../services/lineupAdapter";
 import { getDataDate, type MLBGame } from "../services/mlbLineupService";
-import { getEnrichmentData } from "../services/enrichmentCache";
+import { getEnrichmentData, onEnrichmentWarm } from "../services/enrichmentCache";
 import { fetchGameTotals } from "../services/gameTotalsService";
+import { bustPicksCache } from "../services/hrrPicksService";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -637,6 +638,15 @@ interface OfficialPullRecord {
 }
 
 let officialPullStore: OfficialPullRecord | null = null;
+
+// Phase BA: When enrichment warms after startup, reset the official board so the next
+// request triggers a fresh build with real VS/Streak/Statcast data instead of the
+// cold-cache board that was built with neutral placeholders.
+onEnrichmentWarm(() => {
+  console.log('[aiPicks] Enrichment warm detected — resetting official board for fresh build with real data');
+  officialPullStore = null;
+  bustPicksCache();
+});
 
 /** Return which pull phase applies right now (ET time) */
 function getSlatePhase(nowET: Date): SlatePhase {

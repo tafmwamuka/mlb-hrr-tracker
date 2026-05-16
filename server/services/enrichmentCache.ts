@@ -30,7 +30,8 @@ import type { GameTotal } from "./gameTotalsService";
 import { getBullpenFatigue, type BullpenFatigue } from "./bullpenFatigueService";
 
 const CACHE_TTL = 45 * 60 * 1000; // 45 minutes — Phase AN: extended to reduce cold-cache frequency
-const FETCH_TIMEOUT = 12_000; // 12 seconds
+const FETCH_TIMEOUT = 20_000; // 20 seconds (day/night splits, game totals)
+const STREAK_FETCH_TIMEOUT = 90_000; // 90 seconds (263 players × 14 batches × ~2s each)
 
 export interface EnrichmentData {
   vsGradeMap: Map<string, number>;          // player name → 0-10 VS score (primary gate)
@@ -147,7 +148,7 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
       ),
       withTimeout(
         batchGetPlayerStreaks(players.map(p => ({ playerId: p.playerId, playerName: p.playerName }))),
-        FETCH_TIMEOUT,
+        STREAK_FETCH_TIMEOUT, // 90s — 263 players in 14 batches of 20, ~2s per batch
         new Map<number, PlayerStreakData>()
       ),
     ]);
@@ -254,6 +255,12 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
     };
     cacheDataDate = getETDate();
 
+    // Fire the one-time warm callback (used by aiPicks to reset the official board)
+    if (onWarmCallback) {
+      try { onWarmCallback(); } catch (e) { console.error('[EnrichmentCache] onWarmCallback error:', e); }
+      onWarmCallback = null;
+    }
+
     console.log(`[EnrichmentCache] Background warm complete. ` +
       `VS: ${vsGradeMap.size} players, ` +
       `Statcast: ${statcastCache.data.size} players, ` +
@@ -308,6 +315,9 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
  * Called once from server startup — does not block startup.
  */
 export async function warmEnrichmentCacheOnStartup(): Promise<void> {
+  // Wait 15 seconds after server start before warming — gives Node.js network stack
+  // time to fully initialize so MLB API calls don't immediately timeout
+  await new Promise(r => setTimeout(r, 15_000));
   try {
     const { getAdaptedLineupData } = await import('./lineupAdapter');
     const lineupData = await getAdaptedLineupData();
@@ -328,6 +338,21 @@ export async function warmEnrichmentCacheOnStartup(): Promise<void> {
     }
   } catch (err) {
     console.error('[EnrichmentCache] Startup warm failed:', err);
+  }
+}
+
+// Callback fired once when the cache transitions from cold → warm
+let onWarmCallback: (() => void) | null = null;
+
+/**
+ * Register a one-time callback to be called when the enrichment cache first becomes warm.
+ * Used by the picks router to reset the official board after startup enrichment completes.
+ */
+export function onEnrichmentWarm(cb: () => void): void {
+  if (cachedEnrichment?.isWarm) {
+    cb(); // already warm — call immediately
+  } else {
+    onWarmCallback = cb;
   }
 }
 

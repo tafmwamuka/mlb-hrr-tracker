@@ -50,7 +50,7 @@ async function fetchPlayerGameLog(playerId: number, attempt = 0): Promise<Player
   try {
     const res = await fetch(url, {
       headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(5000), // Phase AN: fail fast (was 15s)
+      signal: AbortSignal.timeout(8000), // 8s per player — enough for MLB Stats API response
     });
     if (!res.ok) return [];
 

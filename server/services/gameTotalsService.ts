@@ -184,18 +184,23 @@ export async function fetchGameTotals(
   const result = new Map<string, GameTotal>();
 
   if (oddsData.size > 0) {
-    // Use Odds API data — normalize O/U lines to 0-100 scores
-    const ouValues = Array.from(oddsData.values()).map(d => d.overUnder);
-    const scores = normalizeToScore(ouValues);
-    let i = 0;
+    // Use Odds API data — score O/U on an ABSOLUTE MLB scale (6.5=0, 12.5=100)
+    // This prevents low-total games from scoring near 0 just because a high-total
+    // game exists on the same slate (the old relative normalization bug).
+    // MLB realistic range: 6.5 (pitcher's duel) to 12.5 (slugfest)
+    const MLB_OU_MIN = 6.5;
+    const MLB_OU_MAX = 12.5;
     for (const [key, data] of Array.from(oddsData.entries())) {
+      const absScore = Math.round(
+        Math.min(100, Math.max(0, ((data.overUnder - MLB_OU_MIN) / (MLB_OU_MAX - MLB_OU_MIN)) * 100))
+      );
       const gameTotal: GameTotal = {
         game: key,
         awayTeam: data.awayTeam,
         homeTeam: data.homeTeam,
         overUnder: data.overUnder,
         source: "odds_api",
-        gameTotalScore: scores[i++],
+        gameTotalScore: absScore,
       };
       result.set(key, gameTotal);
       // Also index by individual team abbreviations for easy lookup

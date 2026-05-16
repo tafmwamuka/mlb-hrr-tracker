@@ -1268,3 +1268,15 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [ ] Remove BallparkPal from scheduled task detail
 - [ ] Remove RC display from MoneyPicksTab score breakdown panel
 - [ ] TypeScript: 0 errors
+
+## Phase BA: Enrichment Warm Board Reset Fix
+- [x] Fix VS gate to skip when vsGradeMap is empty/all-neutral (evening games always reach scoring)
+- [x] Add empty board protection — never overwrite official board with 0 picks
+- [x] Add stable board filter — only remove confirmed scratches, not intermittent scoring misses
+- [x] Extend picks cache TTL from 5 min to 15 min
+- [x] Fix absolute O/U scale for gameTotals (was relative, crushing low-total games to 0-13)
+- [x] Add 15-second startup warm delay so MLB API calls don't timeout on server start
+- [x] Add onEnrichmentWarm() callback to enrichmentCache.ts — fires once when isWarm transitions to true
+- [x] Wire onEnrichmentWarm in aiPicks.ts — resets officialPullStore=null + bustPicksCache() when enrichment becomes warm
+- [x] Verified: cold-cache 6-pick board correctly replaced by warm-data 8-pick board after ~23s enrichment warm
+- [x] TypeScript: 0 errors
