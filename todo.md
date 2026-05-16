@@ -1114,3 +1114,12 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] FIX: batchComputeMatchupScores batch size doubled from 25 to 50 (halves sequential rounds)
 - [x] FIX: enrichmentCache TTL extended from 30 min to 45 min (reduces cold-cache frequency)
 - [x] FIX: lineupAdapter TTL extended from 10 min to 15 min
+
+## Phase AO — Fix Moniak Bias / Single-Player Dominance (May 16)
+- [x] FIX 1: theLabService last-name matching — replaced loose .includes(lastName) with strict full-name match + team guard
+- [x] FIX 2: aiRankingService gamesPlayed hardcoded to 40 — now uses real gamesPlayed from PlayerWithContext
+- [x] FIX 3: Added gamesPlayed field to PlayerData interface in aiRankingService
+- [x] FIX 4: Added gamesPlayed field to local PlayerData interface in lineupAdapter.ts
+- [x] FIX 5: lineupAdapter.toPlayerData() now passes player.gamesPlayed into PlayerData
+- [x] FIX 6: statScores now use per-game rates (hitsPerGame/runsPerGame/rbiPerGame) not raw season totals
+- [x] FIX 7: statConfidence also normalized by real gamesPlayed vs MLB avg benchmarks (0.9 H/G, 0.55 R/G, 0.55 RBI/G)

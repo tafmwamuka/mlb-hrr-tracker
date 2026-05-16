@@ -76,6 +76,7 @@ export interface PlayerData {
   position: string;
   battingPosition: number; // 1-9 in lineup
   handedness: 'R' | 'L' | 'S'; // Right, Left, Switch
+  gamesPlayed?: number; // Real games played (used for per-game normalization)
   stats: {
     hits: number;
     runs: number;
@@ -791,17 +792,23 @@ export function rankAIPicks(
       const ballparkReasoning = `Playing at ${parkFactorValue} park.${ouStr} ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ''}`;
       // ── Best stat type ────────────────────────────────────────────────────
       const stats = playerData.stats;
-      const STAT_PRIORITY_BONUS = { hits: 25, runs: 10, rbi: 0 };
+      // Phase AO: use real gamesPlayed for per-game normalization (was hardcoded 40)
+      const gamesPlayed = playerData.gamesPlayed && playerData.gamesPlayed >= 5 ? playerData.gamesPlayed : 40;
+      // Normalize to per-game rates for fair comparison across players with different GP
+      const hitsPerGame = stats.hits / gamesPlayed;
+      const runsPerGame = stats.runs / gamesPlayed;
+      const rbiPerGame = stats.rbi / gamesPlayed;
+      // MLB season benchmarks: ~0.9 H/G, ~0.55 R/G, ~0.55 RBI/G for average hitter
+      const STAT_PRIORITY_BONUS = { hits: 0.10, runs: 0.05, rbi: 0 };
       const statScores = {
-        hits: (stats.hits / 50) * 100 + STAT_PRIORITY_BONUS.hits,
-        runs: (stats.runs / 40) * 100 + STAT_PRIORITY_BONUS.runs,
-        rbi: (stats.rbi / 80) * 100 + STAT_PRIORITY_BONUS.rbi,
+        hits: hitsPerGame + STAT_PRIORITY_BONUS.hits,
+        runs: runsPerGame + STAT_PRIORITY_BONUS.runs,
+        rbi: rbiPerGame + STAT_PRIORITY_BONUS.rbi,
       };
       const bestStat = Object.entries(statScores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as 'hits' | 'runs' | 'rbi';
 
       // ── Prop line ─────────────────────────────────────────────────────────
-      const gamesPlayed = 40;
-      const perGameAvg = stats[bestStat] / gamesPlayed;
+      const perGameAvg = statScores[bestStat];
       const line = perGameAvg >= 1.0 ? 1.5 : 0.5;
 
       // ── Pick grade ────────────────────────────────────────────────────
@@ -834,9 +841,10 @@ export function rankAIPicks(
         pitcherTeam: matchup.pitcher.team,
         statType: bestStat as 'hits' | 'runs' | 'rbi' | 'slg',
         statConfidence: {
-          hits: Math.round(Math.min(100, (stats.hits / 50) * 100 * (overallScore / 100))),
-          runs: Math.round(Math.min(100, (stats.runs / 40) * 100 * (overallScore / 100))),
-          rbi: Math.round(Math.min(100, (stats.rbi / 80) * 100 * (overallScore / 100))),
+          // Phase AO: normalize by real gamesPlayed (MLB avg: 0.9 H/G, 0.55 R/G, 0.55 RBI/G)
+          hits: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100 * (overallScore / 100))),
+          runs: Math.round(Math.min(100, (runsPerGame / 0.55) * 100 * (overallScore / 100))),
+          rbi: Math.round(Math.min(100, (rbiPerGame / 0.55) * 100 * (overallScore / 100))),
           slg: Math.round(Math.min(100, (stats.slg / 0.500) * 100 * (overallScore / 100))),
         },
         prediction: "over" as const,
@@ -867,7 +875,7 @@ export function rankAIPicks(
           hardContactBarrel: Math.round(hardContactScore),
           // Legacy aliases for backward compat
           rc: Math.round(rcToScore(matchup.rc)),
-          playerStats: Math.round(Math.min(100, (stats.avg / 0.350) * 100)),
+          playerStats: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100)),
           parkFactors: Math.round(Math.min(100, ((parkFactor - 0.8) / 0.4) * 100)),
           hrTargets: hrTargets ? gradeToScore(hrTargets.grade) : 50,
           pitcherMatchup: Math.round(pitcherWeaknessScore),

@@ -303,12 +303,22 @@ export async function getTheLabPlayerData(
   // Fetch mismatch board
   const mismatchItems = await fetchMismatchBoard(date, propType);
 
-  // Find matching player (case-insensitive name match)
+  // Find matching player — strict: exact full-name match OR last-name match WITH team guard
+  // Phase AO fix: the old loose .includes(lastName) could attach the wrong player's edge data
+  // (e.g. "Moniak" matching "Moniak" from a different team/game)
   const nameLower = playerName.toLowerCase();
+  const lastName = nameLower.split(" ").slice(-1)[0];
   const mismatch = mismatchItems.find(
-    (item) =>
-      item.playerName.toLowerCase() === nameLower ||
-      item.playerName.toLowerCase().includes(nameLower.split(" ").slice(-1)[0].toLowerCase())
+    (item) => {
+      const itemNameLower = item.playerName.toLowerCase();
+      // Exact full-name match (best)
+      if (itemNameLower === nameLower) return true;
+      // Last-name match MUST also match team abbreviation to prevent cross-player contamination
+      if (itemNameLower.includes(lastName) && teamAbbr && item.teamAbbr) {
+        return item.teamAbbr.toUpperCase() === teamAbbr.toUpperCase();
+      }
+      return false;
+    }
   ) ?? null;
 
   // Fetch momentum if we have a theLAB player ID

@@ -204,6 +204,7 @@ interface PlayerData {
   position: string;
   battingPosition: number;
   handedness: 'R' | 'L' | 'S';
+  gamesPlayed?: number; // Phase AO: real games played for per-game normalization
   stats: {
     hits: number;
     runs: number;
@@ -287,6 +288,7 @@ function toPlayerData(player: PlayerWithContext, handedness: 'R' | 'L' | 'S' = '
     position: "DH",
     battingPosition: player.battingPosition,
     handedness,
+    gamesPlayed: player.gamesPlayed || 40, // Phase AO: real games played for per-game normalization
     stats: {
       hits: player.hits,
       runs: player.runs,
