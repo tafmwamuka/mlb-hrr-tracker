@@ -1200,3 +1200,13 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] UI: Add 🔒 EARLY LOCKED badge to picks from early-locked games
 - [x] UI: Add game lock status indicator in slate header showing count of early-locked games
 - [x] TypeScript: 0 errors
+
+## Phase AU: Early / Main / Late Slate Grouping
+- [x] Define slate window buckets: Early (before 4PM ET), Main (4-8PM ET), Late (8PM+ ET)
+- [x] Add getSlateWindow() helper that classifies a game time into Early/Main/Late
+- [x] Group filteredPicks by slate window in MoneyPicksTab
+- [x] Render section headers: "🌅 EARLY SLATE", "⚾ MAIN SLATE", "🌙 LATE SLATE" with pick count + lock status
+- [x] Show lock status per section: locked games show 🔒, pending show pulsing dot
+- [x] Collapse empty sections (no picks in that window)
+- [x] Preserve existing card sort order within each section
+- [x] TypeScript: 0 errors

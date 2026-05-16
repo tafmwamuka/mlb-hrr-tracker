@@ -1103,6 +1103,45 @@ export function MoneyPicksTab() {
     }
   }, [moneyPicks, activeFilter, isProjected]);
 
+  // Phase AU: Slate window grouping — Early (<4PM ET), Main (4-8PM ET), Late (8PM+ ET)
+  type SlateWindow = 'early' | 'main' | 'late';
+
+  function getSlateWindow(gameTimeISO: string | null | undefined): SlateWindow {
+    if (!gameTimeISO) return 'main';
+    try {
+      const d = new Date(gameTimeISO);
+      if (isNaN(d.getTime())) return 'main';
+      // Convert to ET hour
+      const etStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
+      const etHour = parseInt(etStr, 10);
+      if (etHour < 16) return 'early';   // before 4 PM ET
+      if (etHour < 20) return 'main';    // 4–8 PM ET
+      return 'late';                      // 8 PM+ ET
+    } catch {
+      return 'main';
+    }
+  }
+
+  const slateGroups = useMemo(() => {
+    const early: Array<{ pick: MoneyPick; globalIndex: number }> = [];
+    const main: Array<{ pick: MoneyPick; globalIndex: number }> = [];
+    const late: Array<{ pick: MoneyPick; globalIndex: number }> = [];
+
+    filteredPicks.forEach((pick, i) => {
+      const window = getSlateWindow(pick.gameTime);
+      if (window === 'early') early.push({ pick, globalIndex: i });
+      else if (window === 'late') late.push({ pick, globalIndex: i });
+      else main.push({ pick, globalIndex: i });
+    });
+
+    return { early, main, late };
+  }, [filteredPicks]);
+
+  const hasMultipleWindows = useMemo(() => {
+    const nonEmpty = [slateGroups.early, slateGroups.main, slateGroups.late].filter(g => g.length > 0);
+    return nonEmpty.length > 1;
+  }, [slateGroups]);
+
   const toggleSelect = (index: number) => {
     setSelectedPicks(prev => {
       const next = new Set(prev);
@@ -1531,15 +1570,90 @@ export function MoneyPicksTab() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredPicks.map((pick, i) => (
-            <MoneyPickCard
-              key={`${pick.playerName}-${i}`}
-              pick={pick}
-              rank={i + 1}
-              isSelected={selectedPicks.has(i)}
-              onToggleSelect={() => toggleSelect(i)}
-            />
-          ))}
+          {hasMultipleWindows ? (
+            // ── Phase AU: Grouped by slate window ─────────────────────────────────────────────────
+            ([
+              { key: 'early' as const, label: '🌅 EARLY SLATE', sublabel: 'Before 4 PM ET', items: slateGroups.early },
+              { key: 'main'  as const, label: '⚾ MAIN SLATE',  sublabel: '4–8 PM ET',      items: slateGroups.main  },
+              { key: 'late'  as const, label: '🌙 LATE SLATE',  sublabel: '8 PM+ ET',       items: slateGroups.late  },
+            ] as Array<{ key: 'early' | 'main' | 'late'; label: string; sublabel: string; items: Array<{ pick: MoneyPick; globalIndex: number }> }>)
+              .filter(section => section.items.length > 0)
+              .map(section => {
+                // Check if any pick in this section is early-locked
+                const hasEarlyLock = section.items.some(({ pick }) => pick.isEarlyLocked);
+                const allConfirmed = section.items.every(({ pick }) => pick.pickStatus === 'confirmed' || pick.pickStatus === 'final_official' || pick.pickStatus === 'locked_confirmed');
+                const sectionLockLabel = hasEarlyLock
+                  ? '🔒 EARLY LOCKED'
+                  : allConfirmed
+                  ? '✓ CONFIRMED'
+                  : null;
+
+                return (
+                  <div key={section.key} className="space-y-2">
+                    {/* Section header */}
+                    <div className="flex items-center justify-between px-1 pt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold tracking-widest" style={{ color: 'oklch(0.55 0.015 255)' }}>
+                          {section.label}
+                        </span>
+                        <span className="text-[9px]" style={{ color: 'oklch(0.40 0.015 255)' }}>
+                          {section.sublabel}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {sectionLockLabel && (
+                          <span
+                            className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                            style={{
+                              background: hasEarlyLock ? 'oklch(0.72 0.18 165 / 12%)' : 'oklch(0.72 0.18 165 / 8%)',
+                              color: 'oklch(0.72 0.18 165)',
+                              border: '1px solid oklch(0.72 0.18 165 / 30%)',
+                            }}
+                          >
+                            {sectionLockLabel}
+                          </span>
+                        )}
+                        {!sectionLockLabel && (
+                          <span className="flex items-center gap-1 text-[9px]" style={{ color: 'oklch(0.82 0.17 85)' }}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse inline-block" />
+                            PRELIMINARY
+                          </span>
+                        )}
+                        <span
+                          className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
+                          style={{ background: 'oklch(0.18 0.02 255)', color: 'oklch(0.50 0.015 255)' }}
+                        >
+                          {section.items.length} PLAY{section.items.length !== 1 ? 'S' : ''}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Divider */}
+                    <div className="h-px" style={{ background: 'oklch(1 0 0 / 6%)' }} />
+                    {/* Pick cards */}
+                    {section.items.map(({ pick, globalIndex }) => (
+                      <MoneyPickCard
+                        key={`${pick.playerName}-${globalIndex}`}
+                        pick={pick}
+                        rank={globalIndex + 1}
+                        isSelected={selectedPicks.has(globalIndex)}
+                        onToggleSelect={() => toggleSelect(globalIndex)}
+                      />
+                    ))}
+                  </div>
+                );
+              })
+          ) : (
+            // ── Single window: flat list (no section headers needed) ────────────────────────────
+            filteredPicks.map((pick, i) => (
+              <MoneyPickCard
+                key={`${pick.playerName}-${i}`}
+                pick={pick}
+                rank={i + 1}
+                isSelected={selectedPicks.has(i)}
+                onToggleSelect={() => toggleSelect(i)}
+              />
+            ))
+          )}
         </div>
       )}
 
