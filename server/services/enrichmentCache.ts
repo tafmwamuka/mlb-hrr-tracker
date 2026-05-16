@@ -326,3 +326,25 @@ export function invalidateEnrichmentCache(): void {
   cachedEnrichment = null;
   warmingInProgress = false;
 }
+
+/**
+ * Check if the enrichment cache is currently warm (has real data).
+ */
+export function isEnrichmentWarm(): boolean {
+  return !!(cachedEnrichment && cachedEnrichment.isWarm);
+}
+
+/**
+ * Wait up to maxWaitMs for the enrichment cache to become warm.
+ * Polls every 500ms. Returns true if warm, false if timed out.
+ * Phase AQ: prevents cold-cache scoring runs on server startup.
+ */
+export async function pollForWarmEnrichment(maxWaitMs = 25_000): Promise<boolean> {
+  if (isEnrichmentWarm()) return true;
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 500));
+    if (isEnrichmentWarm()) return true;
+  }
+  return false;
+}

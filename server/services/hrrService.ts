@@ -103,6 +103,7 @@ interface PlayerData {
   position: string;
   battingPosition: number;
   handedness: 'R' | 'L' | 'S';
+  gamesPlayed?: number; // Phase AQ: real GP from MLB API (was always missing, causing gamesPlayed=40 fallback)
   stats: PlayerStats;
   recentForm?: {
     last15Games: {
@@ -248,7 +249,8 @@ export function generateHRRProjections(
       const playerData = playerDataMap.get(matchup.playerId);
       if (!playerData) return null;
 
-      const gamesPlayed = 40; // Early-mid season baseline
+      // Phase AQ: use real gamesPlayed from MLB API (was hardcoded 40 — inflated stats for low-GP players)
+      const gamesPlayed = (playerData.gamesPlayed && playerData.gamesPlayed >= 5) ? playerData.gamesPlayed : 40;
       const parkFactor = parkFactors.get(matchup.team) || 1.0;
 
       // Step 1: Calculate per-game averages from real season stats

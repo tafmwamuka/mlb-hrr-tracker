@@ -892,9 +892,10 @@ export const aiPicksRouter = router({
       }
 
       // Filter matchups through VS gate before HRR projections
-      // Internal mlbMatchupService scores: STRONG>=7.0, MODERATE>=5.5
-      const HRR_STRONG_THRESHOLD = 7.0;
-      const HRR_MODERATE_THRESHOLD = 5.5;
+      // Phase AQ calibration: STRONG 7.0→6.0, MODERATE 5.5→4.5
+      // Previous thresholds only let 2/269 players through (0.7% pass rate)
+      const HRR_STRONG_THRESHOLD = 6.0;
+      const HRR_MODERATE_THRESHOLD = 4.5;
       const gatedMatchups = vsGradeMap.size > 0
         ? matchups.filter(m => {
             const vsScore = vsGradeMap.get(m.playerName) ?? null;

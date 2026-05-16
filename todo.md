@@ -1134,3 +1134,20 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] findSavantHitter() function removed from aiPicks.ts
 - [x] getMockSavantData import removed from aiPicks.ts and hrrPicksService.ts
 - [x] TypeScript: 0 errors after all removals
+
+## Phase AQ — Fix Moniak Permanent Top Pick (May 16)
+- [ ] Add per-player score debug logging to rankAIPicks to see every factor for every player
+- [ ] Trace Moniak's exact factor breakdown vs other players in today's lineup
+- [ ] Fix root cause of Moniak domination
+- [ ] Verify multiple different players appear as picks after fix
+
+## Phase AQ — Fix Moniak Permanent Bias / VS Gate Calibration (May 16)
+- [x] Added per-player SCORE debug logging to aiRankingService (traces all 10 factors per player)
+- [x] Root cause 1: COL park factor 1.20 hit formula ceiling (100/100) — fixed formula range 0.40→0.50 so COL=1.20 maps to 80 not 100
+- [x] Root cause 2: VS gate STRONG threshold 7.0 only let 2/269 players through (0.7% pass rate) — recalibrated to 6.0 confirmed / 5.0 projected
+- [x] Root cause 3: enrichment cache warms 17s after startup, picks run within 2s — all vsGrade=null on first request
+- [x] Fix: pollForWarmEnrichment() helper added to enrichmentCache — waits up to 25s for real data before scoring
+- [x] hrrPicksService now calls pollForWarmEnrichment() before every scoring run
+- [x] HRR VS gate in aiPicks.ts also recalibrated: STRONG 7.0→6.0, MODERATE 5.5→4.5
+- [x] factorBreakdown parkFactors display also uses corrected formula
+- [x] TypeScript: 0 errors

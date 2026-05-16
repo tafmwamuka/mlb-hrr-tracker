@@ -21,7 +21,7 @@ import { generateHRRProjections } from './hrrService';
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from './poissonModel';
 import { getAdaptedLineupData } from './lineupAdapter';
 import { getDataDate } from './mlbLineupService';
-import { getEnrichmentData } from './enrichmentCache';
+import { getEnrichmentData, pollForWarmEnrichment } from './enrichmentCache';
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
@@ -138,6 +138,15 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   const lineupData = await getAdaptedLineupData();
   const dataDate = await getDataDate();
 
+  // Phase AQ: wait up to 25s for enrichment cache to warm before scoring
+  // Prevents cold-cache runs where vsGradeMap is empty and all scores default to neutral
+  const wasWarm = await pollForWarmEnrichment(25_000);
+  if (!wasWarm) {
+    console.warn('[HRRPicks] Enrichment cache not warm after 25s — proceeding with neutral data');
+  } else {
+    console.log('[HRRPicks] Enrichment cache warm — proceeding with real data');
+  }
+
   const enrichment = await getEnrichmentData(
     lineupData.matchups.map(m => ({
       playerId: m.playerId,
@@ -222,8 +231,11 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   // STRONG >= 7.0, MODERATE >= 5.5 (with secondary signals), < 5.5 excluded
   // For projected lineups, lower thresholds to avoid empty slates from incomplete pitcher data
   const isProjectedLineup = (lineupData.lineupSource as string) !== 'confirmed';
-  const STRONG_THRESHOLD = isProjectedLineup ? 5.5 : 7.0;
-  const MODERATE_THRESHOLD = isProjectedLineup ? 4.0 : 5.5;
+  // Phase AQ calibration: STRONG threshold lowered from 7.0→6.0 (confirmed) and 5.5→5.0 (projected)
+  // Previous thresholds were too strict: only 2/269 players qualified as STRONG (0.7% pass rate)
+  // New thresholds: ~8-12% of players qualify as STRONG, ~15-20% as MODERATE
+  const STRONG_THRESHOLD = isProjectedLineup ? 5.0 : 6.0;
+  const MODERATE_THRESHOLD = isProjectedLineup ? 3.5 : 4.5;
   if (isProjectedLineup) {
     console.log(`[HRRPicks] Projected lineups — VS gate thresholds lowered (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD})`);
   }

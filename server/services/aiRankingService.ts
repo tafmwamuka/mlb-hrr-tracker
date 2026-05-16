@@ -347,8 +347,9 @@ function calculateParkWeatherScore(
   parkFactor: number,
   weather?: { temperature: number; windSpeed: number; windDirection: string }
 ): number {
-  // Park factor: 1.20 = 100, 1.00 = 50, 0.80 = 0
-  const parkScore = Math.min(100, Math.max(0, ((parkFactor - 0.80) / 0.40) * 100));
+  // Park factor: 1.30 = 100, 1.00 = 60, 0.80 = 20 (wider range prevents ceiling effect)
+  // Old formula (0.40 range) caused COL=1.20 to hit 100/100 — unfair ceiling
+  const parkScore = Math.min(100, Math.max(0, ((parkFactor - 0.80) / 0.50) * 100));
 
   if (!weather) return parkScore;
 
@@ -753,6 +754,9 @@ export function rankAIPicks(
         // ── Final score (S4: include edge boost) ──────────────────────────────
       const overallScore = Math.min(100, Math.max(0, Math.round(baseScore + bpBoost + softPenalty + edgeBoost)));
 
+      // Phase AQ: per-player score debug logging — helps trace why one player dominates
+      console.log(`[rankAIPicks] SCORE ${matchup.playerName} (${matchup.team} bat${matchup.battingPosition}): overall=${overallScore} base=${Math.round(baseScore)} bpBoost=${Math.round(bpBoost)} penalty=${Math.round(softPenalty)} | teamImplied=${Math.round(teamImpliedScore)} lineup=${Math.round(lineupSpotScore)} obpXwOBA=${Math.round(obpXwOBAScore)} pitcher=${Math.round(pitcherWeaknessScore)} form=${Math.round(recentFormScore)} dayNight=${Math.round(dayNightScore)} park=${Math.round(parkWeatherScore)} bullpen=${Math.round(bullpenWeaknessScore)} platoon=${Math.round(platoonScore)} barrel=${Math.round(hardContactScore)} vsGrade=${vsGrade !== null ? Math.round(vsGrade * 10) / 10 : 'null'} GP=${playerData.gamesPlayed ?? 40}`);
+
       // ── Build reasons (WHY THIS PLAY QUALIFIES) ───────────────────────────
       const reasons: string[] = [];
       if (vsGrade !== null && vsGrade >= 9.5) reasons.push(`Elite matchup grade (VS ${Math.round(vsGrade)}/10 — xwOBA + ERA edge)`);
@@ -876,7 +880,7 @@ export function rankAIPicks(
           // Legacy aliases for backward compat
           rc: Math.round(rcToScore(matchup.rc)),
           playerStats: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100)),
-          parkFactors: Math.round(Math.min(100, ((parkFactor - 0.8) / 0.4) * 100)),
+          parkFactors: Math.round(Math.min(100, ((parkFactor - 0.8) / 0.5) * 100)),
           hrTargets: hrTargets ? gradeToScore(hrTargets.grade) : 50,
           pitcherMatchup: Math.round(pitcherWeaknessScore),
           battingPosition: Math.round(lineupSpotScore),
