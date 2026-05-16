@@ -81,13 +81,13 @@ interface MoneyPick {
     favorableCount: number;
   } | null;
   overallScore?: number; // Matrix score (0-100)
-  vsGrade?: number; // BallparkPal VS grade (0-10)
+  vsGrade?: number; // VS Gate score (0-10)
   gameTotalOU?: number | null; // Vegas over/under line
   // Phase R new fields
   grade?: 'elite' | 'strong' | 'watchlist';
   reasons?: string[];    // WHY THIS PLAY QUALIFIES
   riskFlags?: string[];  // RISK FLAGS
-  bpBoost?: number;      // BallparkPal boost/penalty
+  bpBoost?: number;      // VS Gate boost/penalty
   baseScore?: number;    // Score before BP boost
   isBestBet?: boolean;   // True when surfaced as Best Bet Today (weak slate fallback)
   leanTier?: boolean;    // True when score is 68-73 (informational only)
@@ -1202,7 +1202,7 @@ export function MoneyPicksTab() {
       {/* Disclaimer */}
       <div className="text-center py-3">
         <p className="text-[10px] text-[oklch(0.35_0.015_255)] leading-relaxed">
-          Probabilities from Poisson model using Statcast + Ballpark.com data. Streaks based on model projections. Always bet responsibly.
+          Probabilities from Poisson model using Statcast + Diamond Edge VS Gate data. Streaks based on model projections. Always bet responsibly.
         </p>
       </div>
 

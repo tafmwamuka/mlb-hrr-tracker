@@ -1,14 +1,14 @@
 /**
  * Game Totals Service
  * Fetches MLB game over/under lines from The Odds API (primary source).
- * Falls back to aggregate RC sum from ballparkpal matchup data when API unavailable.
+ * Falls back to aggregate RC sum from model data when API unavailable.
  *
  * The game total (O/U) is the best single proxy for projected scoring environment.
  * A game with O/U 10.5 is objectively a higher-scoring environment than one at 7.0.
  * This directly boosts the probability of hits/runs/RBI for players in that game.
  */
 
-// BallparkMatchup no longer needed — ballparkpal removed
+// VS gate handles matchup scoring internally
 
 export interface GameTotal {
   /** e.g. "Giants @ Dodgers" or "SF @ LAD" */
@@ -128,7 +128,7 @@ async function fetchOddsApiTotals(apiKey: string): Promise<Map<string, { overUnd
   }
 }
 
-// RC Aggregate Fallback removed — ballparkpal no longer available
+// RC Aggregate Fallback removed — not needed
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
@@ -147,7 +147,7 @@ function normalizeToScore(values: number[]): number[] {
 
 /**
  * Simple team-based input for game totals (replaces BallparkMatchup[]).
- * Used when ballparkpal RC data is unavailable.
+ * Used when RC data is unavailable.
  */
 export interface TeamMatchupRef {
   batter: string;
@@ -203,7 +203,7 @@ export async function fetchGameTotals(
   }
 
   // Fill in any teams not covered by Odds API with a neutral default score
-  // (ballparkpal RC aggregate removed — no longer available)
+  // // RC aggregate not used
   const coveredTeams = new Set(Array.from(result.keys()));
   for (const m of matchups) {
     if (!coveredTeams.has(m.team)) {

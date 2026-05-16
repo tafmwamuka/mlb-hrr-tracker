@@ -5,7 +5,7 @@
  * - Real player season stats (per-game averages)
  * - Park factor adjustments
  * - Savant metrics (xwOBA, Hard Hit%, etc.)
- * - Ballpark.com RC data
+ * - Diamond Edge model RC data
  * - Batting position weighting
  * - Day/night splits (MLB Stats API)
  * - theLAB streak & edge data
@@ -217,7 +217,7 @@ export function calculateHRRConfidence(
   // Combined data quality (0-30 points): Savant + Ballpark combined score
   const dataScore = (combinedScore / 100) * 30;
   
-  // RC component (0-15 points): ballpark.com matchup quality
+  // RC component (0-15 points): matchup quality score
   const rcComponent = (rcScore / 100) * 15;
   
   // Batting position (0-15 points): middle of order = more opportunities

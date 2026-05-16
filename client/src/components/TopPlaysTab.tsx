@@ -1,6 +1,6 @@
 /**
  * Top Plays Tab — Premium Sports App Experience
- * Rich graphics, interactive animations, detailed reasoning from ballpark.com data
+ * Rich graphics, interactive animations, detailed reasoning from Diamond Edge VS gate
  * Shows AI's best picks with visual confidence meters, factor breakdowns, and matchup context
  */
 
@@ -366,7 +366,7 @@ function HeroPickCard({ pick, index }: { pick: any; index: number }) {
                   {/* Data source note */}
                   <div className="text-center pt-2">
                     <p className="text-[10px] text-[oklch(0.40_0.015_255)]">
-                      Analysis powered by Ballpark.com RC + Baseball Savant Statcast
+                      Analysis powered by Diamond Edge VS Gate + Baseball Savant Statcast
                     </p>
                   </div>
                 </div>
@@ -451,7 +451,7 @@ function StandardPickCard({ pick, index }: { pick: any; index: number }) {
                 <FactorBar label="Pitcher" value={pick.factorBreakdown?.pitcherMatchup ?? Math.round(pick.confidence * 0.80)} max={100} color={statConfig.color} delay={0.1} />
               </div>
               <p className="text-[10px] text-[oklch(0.35_0.015_255)] text-center">
-                Powered by ballpark.com matchup analysis
+                Powered by Diamond Edge VS gate · xwOBA matchup analysis
               </p>
             </div>
           </motion.div>
@@ -475,7 +475,7 @@ export function TopPlaysTab() {
             transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
           />
           <p className="text-sm text-[oklch(0.50_0.015_255)]">Analyzing matchups...</p>
-          <p className="text-[10px] text-[oklch(0.35_0.015_255)] mt-1">Crunching ballpark.com data</p>
+          <p className="text-[10px] text-[oklch(0.35_0.015_255)] mt-1">Crunching Diamond Edge VS gate data</p>
         </div>
       </div>
     );
@@ -539,7 +539,7 @@ export function TopPlaysTab() {
       {/* Footer */}
       <div className="text-center py-4">
         <p className="text-[10px] text-[oklch(0.35_0.015_255)]">
-          All picks are OVER props • Combined: Ballpark.com RC + Baseball Savant Statcast
+          All picks are OVER props • Combined: Diamond Edge VS Gate + Baseball Savant Statcast
         </p>
       </div>
     </div>

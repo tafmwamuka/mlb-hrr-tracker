@@ -6,7 +6,6 @@ import { propsRouter } from "./routers/props";
 import { adminRouter } from "./routers/admin";
 import { favoritesRouter } from "./routers/favorites";
 import { gamesRouter } from "./routers/games";
-import { ballparkRouter } from "./routers/ballpark";
 import { notificationsRouter } from "./routers/notifications";
 import { settingsRouter } from "./routers/settings";
 import { searchRouter } from "./routers/search";
@@ -30,7 +29,6 @@ export const appRouter = router({
   }),
   props: propsRouter,
   games: gamesRouter,
-  ballpark: ballparkRouter,
   results: resultsRouter,
   aiPicks: aiPicksRouter,
   search: searchRouter,

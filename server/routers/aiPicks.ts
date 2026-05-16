@@ -614,7 +614,7 @@ function enrichPicksWithSavant(picks: AIPick[]): AIPick[] {
       hitter, pitcher, pick.statType === 'slg' ? 'rbi' : pick.statType
     );
     
-    // Combined score: 50% ballpark RC + 50% Savant
+    // Combined score: 50% Diamond Edge model score + 50% Baseball Savant xwOBA/barrel metrics
     const combinedScore = Math.round((pick.overallScore * 0.5) + (savantScore * 0.5));
     
     return {
@@ -649,7 +649,7 @@ export const aiPicksRouter = router({
       const lineupData = await getAdaptedLineupData();
       const dataDate = await getDataDate();
 
-      // Get enrichment data early so we can use ballparkpal starters as fallback
+      // Get enrichment data early (lineup + Statcast + VS grades + bullpen)
       const enrichment = await getEnrichmentData(
         lineupData.matchups.map(m => ({
           playerId: m.playerId,
@@ -748,7 +748,7 @@ export const aiPicksRouter = router({
       const lineupData = await getAdaptedLineupData();
       const dataDate = await getDataDate();
 
-      // Get enrichment data early so we can use ballparkpal starters as fallback
+      // Get enrichment data early (lineup + Statcast + VS grades + bullpen)
       const enrichment2 = await getEnrichmentData(
         lineupData.matchups.map(m => ({
           playerId: m.playerId,
@@ -845,7 +845,7 @@ export const aiPicksRouter = router({
       const lineupData = await getAdaptedLineupData();
       const dataDate = await getDataDate();
 
-      // Get enrichment data early so we can use ballparkpal starters as fallback
+      // Get enrichment data early (lineup + Statcast + VS grades + bullpen)
       const enrichment3 = await getEnrichmentData(
         lineupData.matchups.map(m => ({ playerId: m.playerId, playerName: m.playerName, team: m.team, gameTime: m.gameTime, pitcherId: m.pitcher.id ?? null, pitcherHand: m.pitcher.handedness ?? null }))
       ).catch(() => ({

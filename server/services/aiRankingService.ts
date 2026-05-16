@@ -13,7 +13,7 @@
  *   Platoon Advantage    5%  — batter vs pitcher handedness advantage
  *   Hard Contact/Barrel  4%  — Statcast barrel% percentile
  *
- * BallparkPal (vsGrade):
+ * VS Gate (vsGrade):
  *   Grade 10 → +15 pts boost on final score
  *   Grade 9  → +10 pts boost
  *   Grade 8  → +5  pts boost
@@ -49,7 +49,7 @@
  * Auto-Fail Rules (pick excluded regardless of score):
  *   - Team game total < 3.5 (very low-scoring environment)
  *   - Batting 9th with team total < 4.5
- *   - BallparkPal kProb ≥ 30% (high strikeout risk from BP data)
+ *   - VS Gate kProb ≥ 30% (high strikeout risk from BP data)
  *
  * Soft Penalties (applied to score before quality gate):
  *   - Batting 7th or lower: -3 pts
@@ -110,7 +110,7 @@ interface MatchupData {
     era: number;
     workload?: number; // Recent innings pitched
   };
-  rc: number; // Runs Created from ballpark.com
+  rc: number; // Runs Created (Diamond Edge model)
   confidence: number; // 0-100
   platoonSplit?: {
     vsRHP: number; // Avg vs RHP
@@ -156,7 +156,7 @@ export interface AIPick {
   reasons: string[];           // "WHY THIS PLAY QUALIFIES" bullet points
   riskFlags: string[];         // "RISK FLAGS" bullet points
   grade: PickGrade;            // 'elite' | 'strong' | 'watchlist'
-  bpBoost: number;             // BallparkPal boost/penalty applied (+15 to -10)
+  bpBoost: number;             // VS Gate boost/penalty applied (+15 to -10)
   factorBreakdown: {
     teamImpliedRuns: number;   // Game O/U environment (0-100)
     lineupSpot: number;        // Batting position weight (0-100)
@@ -182,7 +182,7 @@ export interface AIPick {
   };
   // S2: Projected plate appearances
   projectedPA?: number; // Projected PA this game (e.g. 4.8 for 3-hole)
-  // VS / BallparkPal data
+  // VS Gate data
   vsGrade?: number; // 0-10 normalized vsGrade
   gameTotalOU?: number | null; // Vegas over/under line (e.g. 9.5)
   gameTotalScore?: number; // Normalized 0-100 game environment score
@@ -502,7 +502,7 @@ function calculateRecentFormScore(
 }
 
 /**
- * Calculate BallparkPal boost/penalty from vsGrade (0-10 normalized scale)
+ * Calculate VS Gate boost/penalty from vsGrade (0-10 normalized scale)
  * Phase W calibration: reduced influence so BP doesn't act as a hidden hard gate.
  * Grade 10 → +12, Grade 9 → +8, Grade 8 → +4, Grade 7 → 0, Grade 6 → -4, Grade ≤5 → -6
  */
@@ -532,7 +532,7 @@ function getPickGrade(score: number): PickGrade {
 /**
  * Rank AI picks using the Phase R/S scoring model.
  *
- * BallparkPal is now a BOOST/PENALTY on the final score, not a hard gate.
+ * VS Gate is a BOOST/PENALTY on the final score, not a hard gate.
  * The only hard exclusion is when ALL 4 negatives are present simultaneously.
  *
  * S3: Real bullpen fatigue replaces ERA-proxy for Factor 8.

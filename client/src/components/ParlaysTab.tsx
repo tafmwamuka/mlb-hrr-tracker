@@ -1,6 +1,6 @@
 /**
  * Parlays Tab — Smart Parlay Suggestions (Savant + Ballpark Combined)
- * Uses combined Savant Statcast + Ballpark.com RC data for the safest selections
+ * Uses combined Savant Statcast + Diamond Edge VS Gate data for the safest selections
  * Shows 2-leg (safe) and 3-leg parlay options with detailed reasoning
  */
 
@@ -138,7 +138,7 @@ function buildParlays(picks: any[]): Parlay[] {
         combinedConfidence: combined,
         avgCombinedScore: avgScore,
         riskLevel: "low",
-        reasoning: `Both legs backed by elite Savant Statcast data + Ballpark.com RC analysis. ${savantFactors1[0] || "Strong matchup"} (${eligible2Leg[i].playerName}) paired with ${savantFactors2[0] || "favorable conditions"} (${eligible2Leg[j].playerName}). Different games reduce correlation risk.`,
+        reasoning: `Both legs backed by elite Savant Statcast data + Diamond Edge VS Gate analysis. ${savantFactors1[0] || "Strong matchup"} (${eligible2Leg[i].playerName}) paired with ${savantFactors2[0] || "favorable conditions"} (${eligible2Leg[j].playerName}). Different games reduce correlation risk.`,
       });
       usedFor2Leg.add(i);
       usedFor2Leg.add(j);
@@ -580,7 +580,7 @@ export function ParlaysTab() {
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[oklch(1_0_0/3%)] border border-[oklch(1_0_0/6%)]">
         <BarChart3 size={12} className="text-blue-400" />
         <span className="text-[10px] text-[oklch(0.55_0.015_255)]">
-          Parlays built from <span className="text-blue-400 font-semibold">Savant Statcast</span> + <span className="text-emerald-400 font-semibold">Ballpark.com RC</span> combined scoring
+          Parlays built from <span className="text-blue-400 font-semibold">Savant Statcast</span> + <span className="text-emerald-400 font-semibold">Diamond Edge VS Gate</span> combined scoring
         </span>
       </div>
 
@@ -682,7 +682,7 @@ export function ParlaysTab() {
         <div className="flex items-start gap-2">
           <Lock size={12} className="text-[oklch(0.40_0.015_255)] mt-0.5 shrink-0" />
           <p className="text-[10px] text-[oklch(0.40_0.015_255)] leading-relaxed">
-            Parlay suggestions use combined Savant Statcast metrics (xwOBA, Hard Hit%, EV, Barrel%) + Ballpark.com RC analysis.
+            Parlay suggestions use combined Savant Statcast metrics (xwOBA, Hard Hit%, EV, Barrel%) + Diamond Edge VS Gate analysis.
             Past performance does not guarantee future results. All picks are OVER props only.
             Please gamble responsibly — if you or someone you know has a gambling problem, call 1-800-GAMBLER.
           </p>

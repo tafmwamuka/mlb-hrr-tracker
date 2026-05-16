@@ -311,7 +311,7 @@ export function AllPlaysTab() {
             transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
           />
           <p className="text-sm text-[oklch(0.50_0.015_255)]">Loading all plays...</p>
-          <p className="text-[10px] text-[oklch(0.35_0.015_255)] mt-1">Combining Ballpark.com + Savant data</p>
+          <p className="text-[10px] text-[oklch(0.35_0.015_255)] mt-1">Combining Diamond Edge VS Gate + Savant data</p>
         </div>
       </div>
     );
@@ -381,7 +381,7 @@ export function AllPlaysTab() {
       {/* Footer */}
       <div className="text-center py-3">
         <p className="text-[10px] text-[oklch(0.35_0.015_255)]">
-          All picks are OVER props • Combined: Ballpark.com RC + Baseball Savant Statcast
+          All picks are OVER props • Combined: Diamond Edge VS Gate + Baseball Savant Statcast
         </p>
       </div>
     </div>

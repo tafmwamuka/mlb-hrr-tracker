@@ -219,7 +219,7 @@ function PickCard({ pick, rank, savantData }: { pick: MatchupPlay; rank: number;
               </div>
             )}
 
-            {/* Ballpark.com Section */}
+            {/* Diamond Edge Section */}
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <BarChart3 size={12} className="text-emerald-400" />
@@ -254,7 +254,7 @@ function PickCard({ pick, rank, savantData }: { pick: MatchupPlay; rank: number;
             </div>
 
             <p className="text-xs text-slate-500 italic">
-              Combined analysis: Savant Statcast measures quality of contact and expected outcomes. Ballpark.com RC measures matchup-specific offensive production. Together they provide the most complete picture.
+              Combined analysis: Savant Statcast measures quality of contact and expected outcomes. Diamond Edge VS Gate measures matchup-specific offensive production. Together they provide the most complete picture.
             </p>
           </div>
         )}
@@ -266,8 +266,9 @@ function PickCard({ pick, rank, savantData }: { pick: MatchupPlay; rank: number;
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Props() {
   const [, navigate] = useLocation();
-  const { data: matchups, isLoading } = trpc.ballpark.getTodayMatchups.useQuery();
-  const { data: aiData } = trpc.aiPicks.getComprehensivePicks.useQuery();
+  const { data: aiData, isLoading } = trpc.aiPicks.getComprehensivePicks.useQuery();
+  // Use aiPicks as the source of truth (replaces legacy trpc.ballpark.getTodayMatchups)
+  const matchups = aiData?.picks ?? [];
 
   // Build a map of savant data by player name for quick lookup
   const savantMap = new Map<string, any>();
@@ -291,7 +292,7 @@ export default function Props() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-white">AI Predictions</h1>
-                <p className="text-sm text-slate-400">Savant Statcast + Ballpark.com combined analysis</p>
+                <p className="text-sm text-slate-400">Savant Statcast + Diamond Edge VS Gate analysis</p>
               </div>
             </div>
             <button
@@ -310,8 +311,8 @@ export default function Props() {
               <div className="text-sm text-slate-400 leading-relaxed">
                 <span className="text-slate-300 font-medium">How it works:</span> We combine{" "}
                 <span className="text-blue-400">Baseball Savant Statcast</span> data (xwOBA, Hard Hit%, EV, Barrel%) with{" "}
-                <span className="text-emerald-400">Ballpark.com</span> RC matchup analysis to identify the strongest OVER props.
-                Savant measures quality of contact; Ballpark measures matchup-specific production.
+                <span className="text-emerald-400">Diamond Edge VS Gate</span> xwOBA matchup analysis to identify the strongest OVER props.
+                Savant measures quality of contact; VS Gate scores pitcher suppression vs batter xwOBA.
               </div>
             </div>
           </div>
@@ -329,9 +330,9 @@ export default function Props() {
           <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-3 text-center">
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-[10px] text-slate-500 uppercase font-semibold">Ballpark</span>
+              <span className="text-[10px] text-slate-500 uppercase font-semibold">VS Gate</span>
             </div>
-            <p className="text-xs font-bold text-white">RC Data</p>
+            <p className="text-xs font-bold text-white">xwOBA</p>
           </div>
           <div className="rounded-xl bg-slate-800/30 border border-slate-700/50 p-3 text-center">
             <div className="flex items-center justify-center gap-1.5 mb-1">
@@ -355,24 +356,32 @@ export default function Props() {
             <Zap className="w-4 h-4 text-amber-400" />
             Today's Picks
           </h2>
-          <span className="text-xs text-slate-500">{matchups?.length || 0} matchups analyzed</span>
+          <span className="text-xs text-slate-500">{matchups.length} picks analyzed</span>
         </div>
 
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
-            <p className="text-sm text-slate-400">Analyzing Savant + Ballpark data...</p>
+            <p className="text-sm text-slate-400">Analyzing Savant + Diamond Edge VS Gate data...</p>
           </div>
-        ) : matchups && matchups.length > 0 ? (
+        ) : matchups.length > 0 ? (
           <div className="space-y-3">
-            {matchups.map((pick: MatchupPlay) => {
-              // Try to find Savant data for this player
-              const savantData = savantMap.get(pick.batter.name.toLowerCase());
+            {matchups.map((pick: any, idx: number) => {
+              // Map aiPicks format to MatchupPlay format for PickCard
+              const mappedPick: MatchupPlay = {
+                batter: { name: pick.playerName, id: String(pick.playerId ?? idx), team: pick.teamName ?? '', handedness: pick.batsHand ?? 'R' },
+                pitcher: { name: pick.pitcherName ?? 'TBD', id: String(pick.pitcherId ?? 0), team: pick.opponentTeam ?? '' },
+                matchup: { vs: `${pick.batsHand ?? 'R'} vs ${pick.pitcherHand ?? 'R'}` },
+                stats: { rc: pick.overallScore ?? 0, hr: 0, xb: 0, oneB: 0, bb: 0, k: 0 },
+                confidence: pick.confidence ?? 0,
+                rank: idx + 1,
+              };
+              const savantData = savantMap.get(pick.playerName?.toLowerCase());
               return (
                 <PickCard
-                  key={`${pick.batter.id}-${pick.rank}`}
-                  pick={pick}
-                  rank={pick.rank}
+                  key={`${pick.playerId ?? idx}-${idx}`}
+                  pick={mappedPick}
+                  rank={idx + 1}
                   savantData={savantData}
                 />
               );
@@ -389,7 +398,7 @@ export default function Props() {
         {/* Footer note */}
         <div className="mt-8 text-center">
           <p className="text-xs text-slate-600">
-            All predictions are OVER props only. Data from Baseball Savant Statcast + Ballpark.com matchup analysis. Refreshed daily.
+            All predictions are OVER props only. Data from Baseball Savant Statcast + Diamond Edge matchup analysis. Refreshed daily.
           </p>
         </div>
       </div>

@@ -10,7 +10,7 @@ import { propPredictions } from "../../drizzle/schema";
  * The scheduled task agent:
  * 1. Fetches today's MLB schedule from statsapi.mlb.com
  * 2. Scrapes Baseball Savant data (xwOBA, Hard Hit%, EV, Barrel%)
- * 3. Fetches ballpark.com RC matchup data
+ * 3. Fetches Diamond Edge VS gate matchup data
  * 4. Generates AI picks with combined scoring
  * 5. POSTs the results here to update the database
  */

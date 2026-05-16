@@ -623,7 +623,7 @@ export function HRRTab() {
       {/* Disclaimer */}
       <div className="text-center py-3">
         <p className="text-[10px] text-[oklch(0.35_0.015_255)] leading-relaxed">
-          Probabilities from Poisson model using Statcast + Ballpark.com data.
+          Probabilities from Poisson model using Statcast + Diamond Edge VS Gate data.
           {hasOddsData ? " Live odds from major US sportsbooks." : " Sportsbook odds update when available."}
           {" "}Always bet responsibly.
         </p>
