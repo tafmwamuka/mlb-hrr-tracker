@@ -1582,7 +1582,6 @@ export const aiPicksRouter = router({
         timestamp: new Date(),
         totalCandidates: candidates.length,
         qualifiedCount: candidates.filter(c => c.passesGate).length,
-        ballparkPalActive: false,
       };
     } catch (error) {
       console.error('Error generating scoring matrix:', error);
@@ -1594,7 +1593,6 @@ export const aiPicksRouter = router({
         timestamp: new Date(),
         totalCandidates: 0,
         qualifiedCount: 0,
-        ballparkPalActive: false,
         error: 'Failed to generate scoring matrix',
       };
     }

@@ -36,8 +36,6 @@ interface MoneyPick {
   expectedRBI: number;
   expectedTotal: number;
   reasoning: string;
-  ballparkReasoning: string;
-  rcScore: number;
   parkFactor: number;
   overProbability: number;
   pickQuality: string;
@@ -894,13 +892,15 @@ function MoneyPickCard({
                   </div>
                 )}
 
-                {/* Ballpark reasoning */}
-                <div className="p-2.5 rounded-lg" style={{ background: "oklch(0.12 0.018 255)" }}>
-                  <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)]">PROJECTION BASIS</span>
-                  <p className="text-[10px] text-[oklch(0.55_0.015_255)] mt-1 leading-relaxed">
-                    {pick.ballparkReasoning}
-                  </p>
-                </div>
+                {/* Projection reasoning */}
+                {pick.reasoning && (
+                  <div className="p-2.5 rounded-lg" style={{ background: "oklch(0.12 0.018 255)" }}>
+                    <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)]">PROJECTION BASIS</span>
+                    <p className="text-[10px] text-[oklch(0.55_0.015_255)] mt-1 leading-relaxed">
+                      {pick.reasoning}
+                    </p>
+                  </div>
+                )}
 
                 {/* ── Score Component Breakdown ─────────────────────────────────────── */}
                 {pick.overallScore != null && (
@@ -1217,8 +1217,6 @@ export function MoneyPicksTab() {
           expectedRBI: pick.expectedRBI,
           expectedTotal: pick.expectedTotal,
           reasoning: pick.reasoning,
-          ballparkReasoning: pick.ballparkReasoning,
-          rcScore: pick.rcScore,
           parkFactor: pick.parkFactor,
           overProbability: pick.overProbability ?? pick.hrrConfidence,
           pickQuality: pick.pickQuality ?? "lean",

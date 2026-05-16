@@ -38,8 +38,7 @@ export interface EnrichedMoneyPick {
   expectedRBI: number;
   expectedTotal: number;
   reasoning: string;
-  ballparkReasoning: string;
-  rcScore: number;
+  // ballparkReasoning and rcScore removed (Phase AZ — BallparkPal blocked, RC removed)
   parkFactor: number;
   lineSource: string;
   bookOdds: string | null;

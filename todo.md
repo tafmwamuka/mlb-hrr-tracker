@@ -1259,3 +1259,12 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [ ] Update Manus scheduled task detail — remove references to saveBallparkPalData (procedure doesn't exist), remove stale 75% threshold references, align timing with 3-pull system (7AM morning, 1PM midday, 7PM final)
 - [ ] Remove/disable daily-props.ts legacy job — it generates mock data for 3 hardcoded players with random over/under, completely misaligned with current system
 - [ ] TypeScript: 0 errors
+
+## Phase AZ: Remove BallparkPal + RC from Pipeline
+- [ ] Remove all BallparkPal fetch calls from enrichmentCache.ts and any service that calls ballparkpal.com
+- [ ] Remove RC score factor from aiRankingService.ts scoring weights
+- [ ] Rebalance remaining 9 factors to sum to 100% (redistribute RC's weight)
+- [ ] Remove rcScore, ballparkReasoning, ballparkPalActive fields from pick schemas and interfaces
+- [ ] Remove BallparkPal from scheduled task detail
+- [ ] Remove RC display from MoneyPicksTab score breakdown panel
+- [ ] TypeScript: 0 errors

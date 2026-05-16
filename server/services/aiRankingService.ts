@@ -153,7 +153,6 @@ export interface AIPick {
   confidence: number;
   statConfidence: { hits: number; runs: number; rbi: number; slg: number };
   reasoning: string;
-  ballparkReasoning?: string; // Explicit ballpark-based reasoning
   // Phase R: structured reasons and risk flags
   reasons: string[];           // "WHY THIS PLAY QUALIFIES" bullet points
   riskFlags: string[];         // "RISK FLAGS" bullet points
@@ -170,11 +169,9 @@ export interface AIPick {
     bullpenWeakness: number;   // Bullpen proxy score (0-100)
     platoonAdvantage: number;  // Handedness advantage (0-100)
     hardContactBarrel: number; // Barrel% percentile (0-100)
-    // Legacy fields kept for backward compat
-    rc?: number;
+    // Legacy fields kept for backward compat (rc/hrTargets removed Phase AZ)
     playerStats?: number;
     parkFactors?: number;
-    hrTargets?: number;
     pitcherMatchup?: number;
     battingPosition?: number;
     dayNightSplit_?: number;
@@ -877,7 +874,6 @@ export function rankAIPicks(
         line,
         confidence: overallScore,
         reasoning,
-        ballparkReasoning,
         reasons,
         riskFlags,
         grade,
@@ -899,11 +895,9 @@ export function rankAIPicks(
           bullpenWeakness: Math.round(bullpenWeaknessScore),
           platoonAdvantage: Math.round(platoonScore),
           hardContactBarrel: Math.round(hardContactScore),
-          // Legacy aliases for backward compat
-          rc: Math.round(rcToScore(matchup.rc)),
+          // Legacy aliases (rc/hrTargets removed Phase AZ)
           playerStats: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100)),
           parkFactors: Math.round(Math.min(100, ((parkFactor - 0.8) / 0.5) * 100)),
-          hrTargets: hrTargets ? gradeToScore(hrTargets.grade) : 50,
           pitcherMatchup: Math.round(pitcherWeaknessScore),
           battingPosition: Math.round(lineupSpotScore),
           streakBonus: Math.round(recentFormScore),
