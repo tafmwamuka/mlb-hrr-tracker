@@ -101,7 +101,7 @@ interface MoneyPick {
   leanTier?: boolean;    // True when score is 68-73 (informational only)
   gameTime?: string | null; // ISO game start time (UTC)
   // Phase AK/AM: Stability system fields
-  pickStatus?: 'confirmed' | 'preliminary' | 'confidence_reduced' | 'locked_confirmed';
+  pickStatus?: 'confirmed' | 'preliminary' | 'confidence_reduced' | 'locked_confirmed' | 'final_official';
   lastUpdated?: string | null; // ISO timestamp of last score update
   scoreChanged?: boolean;       // true when confirmed-locked pick score dropped >15 pts
   scoreDrop?: number;           // how many pts the score dropped since lock
@@ -595,14 +595,14 @@ function MoneyPickCard({
             {pick.lineSource}
           </div>
 
-          {/* Phase AK: Pick Status chip */}
-          {pick.pickStatus === 'confidence_reduced' ? (
+          {/* Phase AS: Pick Status chip — PRELIMINARY / CONFIRMED / FINAL OFFICIAL PLAY */}
+          {pick.pickStatus === 'final_official' ? (
             <div
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
-              style={{ background: "oklch(0.68 0.22 25 / 12%)", color: "oklch(0.78 0.18 25)", border: "1px solid oklch(0.68 0.22 25 / 30%)" }}
-              title="Score temporarily reduced — pick retained within 30-min lock window"
+              style={{ background: "oklch(0.82 0.17 85 / 18%)", color: "oklch(0.82 0.17 85)", border: "1px solid oklch(0.82 0.17 85 / 50%)" }}
+              title="Final Official Play — evening lock active"
             >
-              ⚠️ CONF. REDUCED
+              🔥 FINAL OFFICIAL PLAY
             </div>
           ) : pick.pickStatus === 'locked_confirmed' ? (
             <div
@@ -616,15 +616,25 @@ function MoneyPickCard({
             <div
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
               style={{ background: "oklch(0.72 0.18 165 / 12%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 30%)" }}
+              title="Midday confirmed board — official lineups locked in"
             >
-              ✓ OFFICIAL
+              ✓ CONFIRMED
+            </div>
+          ) : pick.pickStatus === 'confidence_reduced' ? (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+              style={{ background: "oklch(0.68 0.22 25 / 12%)", color: "oklch(0.78 0.18 25)", border: "1px solid oklch(0.68 0.22 25 / 30%)" }}
+              title="Confidence slightly reduced — monitoring odds shift"
+            >
+              ⚠️ MONITORING ODDS SHIFT
             </div>
           ) : pick.pickStatus === 'preliminary' ? (
             <div
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
-              style={{ background: "oklch(0.82 0.17 85 / 10%)", color: "oklch(0.82 0.17 85)", border: "1px solid oklch(0.82 0.17 85 / 25%)" }}
+              style={{ background: "oklch(0.72 0.10 220 / 10%)", color: "oklch(0.72 0.10 220)", border: "1px solid oklch(0.72 0.10 220 / 25%)" }}
+              title="Preliminary pick — projected lineups, morning pull"
             >
-              ~ PROJ
+              📌 PRELIMINARY
             </div>
           ) : null}
 
@@ -936,6 +946,23 @@ export function MoneyPicksTab() {
   const _lineupSource = (data as any)?.lineupSource ?? 'projected';
   const isProjected = (_lineupSource as string) !== 'confirmed';
 
+  // Phase AS: Slate phase from server (preliminary / confirmed / final)
+  const slatePhase: 'preliminary' | 'confirmed' | 'final' = (data as any)?.slatePhase ?? (isProjected ? 'preliminary' : 'confirmed');
+  const officialPullPhase: string = (data as any)?.officialPullPhase ?? slatePhase;
+  const officialPullTime: string | null = (data as any)?.officialPullTime ?? null;
+
+  const slatePhaseBadge = (() => {
+    if (slatePhase === 'final') return { label: '🔥 FINAL OFFICIAL BOARD', color: 'oklch(0.82 0.17 85)', bg: 'oklch(0.82 0.17 85 / 12%)', border: 'oklch(0.82 0.17 85 / 40%)' };
+    if (slatePhase === 'confirmed') return { label: '✓ MIDDAY CONFIRMED BOARD', color: 'oklch(0.72 0.18 165)', bg: 'oklch(0.72 0.18 165 / 12%)', border: 'oklch(0.72 0.18 165 / 35%)' };
+    return { label: '📌 PRELIMINARY BOARD', color: 'oklch(0.72 0.10 220)', bg: 'oklch(0.72 0.10 220 / 10%)', border: 'oklch(0.72 0.10 220 / 30%)' };
+  })();
+
+  const nextPullLabel = (() => {
+    if (slatePhase === 'preliminary') return 'Next official pull: 1 PM ET';
+    if (slatePhase === 'confirmed') return 'Next official pull: 7 PM ET';
+    return 'Evening lock active — final board';
+  })();
+
   // Phase AK: Use server-side stability-aware moneyPicks array when available,
   // falling back to client-side filtering of raw picks for backward compatibility.
   const moneyPicks: MoneyPick[] = useMemo(() => {
@@ -1194,17 +1221,17 @@ export function MoneyPicksTab() {
             )}
           </div>
           <div className="flex flex-col items-end gap-1.5">
-            {/* Lineup source badge */}
+            {/* Phase AS: Slate phase badge */}
             <div
               className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-bold tracking-wide"
-              style={isProjected
-                ? { background: "oklch(0.20 0.08 60 / 0.3)", border: "1px solid oklch(0.75 0.15 60 / 0.5)", color: "oklch(0.82 0.17 85)" }
-                : { background: "oklch(0.15 0.08 165 / 0.3)", border: "1px solid oklch(0.72 0.18 165 / 0.5)", color: "oklch(0.72 0.18 165)" }
-              }
+              style={{ background: slatePhaseBadge.bg, border: `1px solid ${slatePhaseBadge.border}`, color: slatePhaseBadge.color }}
+              title={nextPullLabel}
             >
-              <div className={`w-1.5 h-1.5 rounded-full ${isProjected ? 'bg-[oklch(0.82_0.17_85)] animate-pulse' : 'bg-[oklch(0.72_0.18_165)]'}`} />
-              {isProjected ? 'PROJECTED' : 'CONFIRMED'}
+              <div className={`w-1.5 h-1.5 rounded-full ${slatePhase === 'preliminary' ? 'animate-pulse' : ''}`} style={{ background: slatePhaseBadge.color }} />
+              {slatePhaseBadge.label}
             </div>
+            {/* Next pull hint */}
+            <div className="text-[8px] text-right" style={{ color: 'oklch(0.40 0.015 255)' }}>{nextPullLabel}</div>
 
             {/* Phase AL: Manual Refresh button */}
             <button

@@ -610,6 +610,58 @@ const SCORE_CHANGE_THRESHOLD = 15;            // flag confirmed picks that drop 
 const GAME_GRACE_MS = 5 * 60 * 1000;         // keep picks 5 min after game start
 const lockedPicksStore = new Map<string, LockedPick>();
 
+// ─── Official Pull Store ─────────────────────────────────────────────────────
+// Diamond Edge uses a structured 3-pull system:
+//   Pull #1 — Morning Initial  : first pull of the day (projected lineups, early odds)
+//   Pull #2 — Midday (1 PM ET) : confirmed lineups, stabilized odds
+//   Pull #3 — Final (7 PM ET)  : evening slate lock, final confirmations
+//
+// Between official pulls:
+//   - Picks from the last official board stay visible
+//   - Score drops ≤8 pts do NOT remove a pick
+//   - Edge changes ≤2% do NOT trigger a reshuffle
+//   - Only major events (scratch, 8+ score drop, pitcher change) override
+//
+// slatePhase labels:
+//   'preliminary'    — before 1 PM ET (morning pull active)
+//   'confirmed'      — 1–7 PM ET (midday pull active)
+//   'final'          — after 7 PM ET (evening lock active)
+
+type SlatePhase = 'preliminary' | 'confirmed' | 'final';
+
+interface OfficialPullRecord {
+  phase: SlatePhase;
+  pulledAt: number;           // ms timestamp
+  slateDate: string;          // YYYY-MM-DD ET date
+  officialPicks: any[];       // the locked official board from this pull
+}
+
+let officialPullStore: OfficialPullRecord | null = null;
+
+/** Return which pull phase applies right now (ET time) */
+function getSlatePhase(nowET: Date): SlatePhase {
+  const h = nowET.getHours();
+  const m = nowET.getMinutes();
+  const totalMinutes = h * 60 + m;
+  if (totalMinutes >= 19 * 60) return 'final';       // 7:00 PM ET+
+  if (totalMinutes >= 13 * 60) return 'confirmed';   // 1:00 PM ET+
+  return 'preliminary';                               // before 1 PM ET
+}
+
+/** True if we should trigger a new official pull (phase boundary crossed or new day) */
+function shouldTriggerOfficialPull(nowET: Date, slateDate: string): boolean {
+  if (!officialPullStore) return true;                         // first pull of the day
+  if (officialPullStore.slateDate !== slateDate) return true;  // new day
+  const currentPhase = getSlatePhase(nowET);
+  if (officialPullStore.phase !== currentPhase) return true;   // phase boundary crossed
+  return false;
+}
+
+/** True if a pick is a major downgrade (scratch, 8+ score drop) */
+function isMajorDowngrade(currentScore: number, scoreAtLock: number): boolean {
+  return scoreAtLock - currentScore >= 8;
+}
+
 function cleanExpiredLocks(nowMs: number) {
   for (const [key, lp] of Array.from(lockedPicksStore.entries())) {
     if (lp.lockType === 'confirmed') {
@@ -1025,99 +1077,118 @@ export const aiPicksRouter = router({
         return nowMs3 < gameStartMs + GRACE_MS3;
       });
 
-      // ── STAGE 3c: Money picks filter — at least one alternate line at 75%+ ──────
+      // ── STAGE 3c: Money picks selection — pure relative ranking, NO probability gates ──
+      // Phase AS: All 75% / 65% / 55% thresholds removed.
+      // Take top 5–8 pre-game picks by overallScore (same as hrrPicksService).
+      const MAX_MONEY_PICKS_3 = 8;
+      const MIN_MONEY_PICKS_3 = 5;
       const qualifyingPicks3 = preGamePicks3
-        .map((pick: any) => {
-          const qualifyingLines = (pick.alternateLines || [])
-            .filter((a: any) => a.overProb >= 75)
-            .sort((a: any, b: any) => b.line - a.line);
-          if (qualifyingLines.length === 0) return null;
-          const recommended = qualifyingLines[0];
-          return {
-            ...pick,
-            recommendedLine: recommended.line,
-            recommendedProb: recommended.overProb,
-          };
-        })
-        .filter((p: any): p is NonNullable<typeof p> => p !== null);
+        .slice(0, Math.min(Math.max(preGamePicks3.length, MIN_MONEY_PICKS_3), MAX_MONEY_PICKS_3))
+        .map((pick: any) => ({
+          ...pick,
+          recommendedLine: pick.fairLine ?? pick.hrrLine ?? 1.5,
+          recommendedProb: pick.overProbability ?? 55,
+        }));
 
-      // ── STAGE 3d: Pick Stability — apply lock window + score buffer ───────────
-      cleanExpiredLocks(nowMs3);
+      // ── STAGE 3d: Official Pull Store — 3-pull stability system ──────────────────
+      // Determine current ET time and slate phase
+      const nowET3 = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const todayETDate3 = `${nowET3.getFullYear()}-${String(nowET3.getMonth() + 1).padStart(2, '0')}-${String(nowET3.getDate()).padStart(2, '0')}`;
+      const currentSlatePhase: SlatePhase = getSlatePhase(nowET3);
       const currentLineupSource = lineupData.lineupSource;
 
-      // Register/update all currently qualifying picks in the lock store
-      for (const pick of qualifyingPicks3 as any[]) {
-        const existing = lockedPicksStore.get(pick.playerName);
-        // Upgrade to confirmed lock if lineups are now confirmed
-        const newLockType: 'time' | 'confirmed' =
-          currentLineupSource === 'confirmed' ? 'confirmed' : (existing?.lockType ?? 'time');
-        // Find game time for this pick (for confirmed lock expiry)
-        const pickGameTime: string | null = pick.gameTime ?? null;
-        lockedPicksStore.set(pick.playerName, {
-          playerName: pick.playerName,
-          team: pick.team,
-          qualifiedAt: existing?.qualifiedAt ?? nowMs3,
-          lastScore: pick.overallScore ?? 0,
-          scoreAtLock: existing?.scoreAtLock ?? (pick.overallScore ?? 0),
-          lastRecommendedLine: pick.recommendedLine,
-          lastRecommendedProb: pick.recommendedProb,
-          lineupSource: currentLineupSource,
-          lockType: newLockType,
-          gameTime: pickGameTime ?? existing?.gameTime ?? null,
-        });
-      }
+      // Also run the per-pick confirmed-lineup lock for game-start expiry
+      cleanExpiredLocks(nowMs3);
 
-      // Determine which previously-locked picks should still be shown
-      const qualifyingNames3 = new Set(qualifyingPicks3.map((p: any) => p.playerName));
-      const retainedPicks: any[] = [];
-      for (const [, lp] of Array.from(lockedPicksStore.entries())) {
-        if (qualifyingNames3.has(lp.playerName)) continue; // already in current picks
+      // Decide whether to issue a new official pull or serve the existing board
+      const isNewOfficialPull = shouldTriggerOfficialPull(nowET3, todayETDate3);
 
-        // Time-lock expiry check (confirmed locks are handled by cleanExpiredLocks)
-        if (lp.lockType !== 'confirmed' && nowMs3 - lp.qualifiedAt > PICK_LOCK_WINDOW_MS) continue;
+      let moneyPicks3: any[];
 
-        // Find the current enriched pick for this player (may have dropped below threshold)
-        const currentPick = preGamePicks3.find((p: any) => p.playerName === lp.playerName);
-        if (!currentPick) continue;
-        const currentScore = (currentPick as any).overallScore ?? 0;
+      if (isNewOfficialPull) {
+        // ── NEW OFFICIAL PULL: build fresh board from top-ranked picks ──────────────
+        console.log(`[HRRPicks] Official pull triggered — phase: ${currentSlatePhase}`);
 
-        if (lp.lockType === 'confirmed') {
-          // Confirmed lock: always retain regardless of score drop
-          const scoreDrop = lp.scoreAtLock - currentScore;
-          const scoreChanged = scoreDrop > SCORE_CHANGE_THRESHOLD;
-          retainedPicks.push({
-            ...(currentPick as any),
-            recommendedLine: lp.lastRecommendedLine,
-            recommendedProb: lp.lastRecommendedProb,
-            pickStatus: 'locked_confirmed' as const,
-            scoreChanged,
-            scoreDrop: Math.round(scoreDrop),
+        // Register all new qualifying picks in the per-pick lock store
+        for (const pick of qualifyingPicks3 as any[]) {
+          const existing = lockedPicksStore.get(pick.playerName);
+          const newLockType: 'time' | 'confirmed' =
+            currentLineupSource === 'confirmed' ? 'confirmed' : (existing?.lockType ?? 'time');
+          lockedPicksStore.set(pick.playerName, {
+            playerName: pick.playerName,
+            team: pick.team,
+            qualifiedAt: existing?.qualifiedAt ?? nowMs3,
+            lastScore: pick.overallScore ?? 0,
+            scoreAtLock: existing?.scoreAtLock ?? (pick.overallScore ?? 0),
+            lastRecommendedLine: pick.recommendedLine,
+            lastRecommendedProb: pick.recommendedProb,
+            lineupSource: currentLineupSource,
+            lockType: newLockType,
+            gameTime: pick.gameTime ?? existing?.gameTime ?? null,
           });
-        } else {
-          // Time lock: retain only within score buffer
-          if (lp.lastScore - currentScore <= SCORE_BUFFER) {
-            retainedPicks.push({
-              ...(currentPick as any),
-              recommendedLine: lp.lastRecommendedLine,
-              recommendedProb: lp.lastRecommendedProb,
-              pickStatus: 'confidence_reduced' as const,
-            });
-          }
         }
-      }
 
-      // Merge current qualifying picks + retained picks
-      const moneyPicks3 = [
-        ...qualifyingPicks3.map((p: any) => ({
+        moneyPicks3 = qualifyingPicks3.map((p: any) => ({
           ...p,
-          pickStatus: currentLineupSource === 'confirmed' ? 'confirmed' as const : 'preliminary' as const,
+          pickStatus: currentSlatePhase === 'final'
+            ? 'final_official' as const
+            : currentSlatePhase === 'confirmed'
+              ? 'confirmed' as const
+              : 'preliminary' as const,
           lastUpdated: new Date().toISOString(),
-        })),
-        ...retainedPicks.map((p: any) => ({
-          ...p,
-          lastUpdated: new Date().toISOString(),
-        })),
-      ];
+        }));
+
+        // Save this as the new official board
+        officialPullStore = {
+          phase: currentSlatePhase,
+          pulledAt: nowMs3,
+          slateDate: todayETDate3,
+          officialPicks: moneyPicks3,
+        };
+        console.log(`[HRRPicks] Official board saved: ${moneyPicks3.length} picks (phase=${currentSlatePhase})`);
+
+      } else {
+        // ── BETWEEN OFFICIAL PULLS: serve stable board with minor live updates ─────
+        // Keep the official board but:
+        //   - Remove picks where game has started (handled by cleanExpiredLocks)
+        //   - Remove picks with major downgrade (score drop ≥8 pts)
+        //   - Update displayed edge/odds without reshuffling
+        //   - Add any new picks that scored very well (score > top official pick + 5)
+        const officialBoard = officialPullStore?.officialPicks ?? qualifyingPicks3;
+        const currentScoreMap = new Map<string, number>();
+        for (const p of preGamePicks3 as any[]) {
+          currentScoreMap.set(p.playerName, p.overallScore ?? 0);
+        }
+
+        // Filter out scratched / major-downgrade picks from official board
+        const stableBoard = officialBoard.filter((p: any) => {
+          const currentScore = currentScoreMap.get(p.playerName);
+          if (currentScore === undefined) return false; // player no longer in lineup (scratched)
+          if (isMajorDowngrade(currentScore, p.overallScore ?? p.scoreAtLock ?? currentScore)) return false;
+          return true;
+        }).map((p: any) => {
+          // Update live odds/edge display without changing pick order
+          const livePick = preGamePicks3.find((lp: any) => lp.playerName === p.playerName);
+          const currentScore = currentScoreMap.get(p.playerName) ?? p.overallScore;
+          const scoreDrop = (p.overallScore ?? 0) - currentScore;
+          let pickStatus = p.pickStatus;
+          if (scoreDrop >= 5 && scoreDrop < 8) pickStatus = 'confidence_reduced' as const;
+          return {
+            ...p,
+            // Update live data but keep original recommended line
+            bookOdds: livePick?.bookOdds ?? p.bookOdds,
+            bookOddsProvider: livePick?.bookOddsProvider ?? p.bookOddsProvider,
+            bookImpliedProb: livePick?.bookImpliedProb ?? p.bookImpliedProb,
+            edge: livePick?.edge ?? p.edge,
+            overProbability: livePick?.overProbability ?? p.overProbability,
+            pickStatus,
+            lastUpdated: new Date().toISOString(),
+          };
+        });
+
+        moneyPicks3 = stableBoard;
+        console.log(`[HRRPicks] Serving stable board (${officialPullStore?.phase} pull): ${moneyPicks3.length} picks`);
+      }
 
       // ── STAGE 4: Sort by matrix score first, then Poisson quality ────────────
       // Primary sort: matrix overallScore (same ranking as All Plays / Top Plays)
@@ -1176,10 +1247,10 @@ export const aiPicksRouter = router({
           emptySlateReasons.push('No matchups passed the VS quality gate today.');
         } else {
           const topScore = enrichedPicks[0]?.overallScore ?? 0;
-          if (topScore < 68) {
-            emptySlateReasons.push(`Best available score is ${topScore.toFixed(1)} — below the 68 minimum threshold.`);
+          if (topScore < 55) {
+            emptySlateReasons.push(`Best available score is ${topScore.toFixed(1)} — all players scored below minimum quality level.`);
           } else {
-            emptySlateReasons.push(`Top candidate scored ${topScore.toFixed(1)} — no picks reached the 75%+ probability threshold.`);
+            emptySlateReasons.push(`Top candidate scored ${topScore.toFixed(1)} — lean tier picks available.`);
           }
           const highPitcherCount = matrixPicks.filter((p: AIPick) => ((p as any).factors?.pitcherWeakness ?? 0) < 3).length;
           if (highPitcherCount > matrixPicks.length * 0.6) {
@@ -1209,6 +1280,10 @@ export const aiPicksRouter = router({
         topCandidates,
         emptySlateReasons,
         bestAvailableScore,
+        // Phase AS: slate phase for UI labels
+        slatePhase: currentSlatePhase,
+        officialPullPhase: officialPullStore?.phase ?? currentSlatePhase,
+        officialPullTime: officialPullStore?.pulledAt ? new Date(officialPullStore.pulledAt).toISOString() : null,
       };
     } catch (error) {
       console.error("Error generating HRR picks:", error);

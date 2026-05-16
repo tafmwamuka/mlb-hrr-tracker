@@ -1176,3 +1176,15 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Fix enrichmentCache to build pitcherERAByTeam map and pass to fetchGameTotals
 - [x] Update emptySlateReasons to remove stale 75%/68 threshold references
 - [x] TypeScript: 0 errors confirmed
+
+## Phase AS: Structured 3-Pull Stability System
+- [x] Create officialPullStore in aiPicks.ts — tracks pull type (morning/midday/final), timestamp, and locked official picks
+- [x] Implement getOfficialPullType() — returns 'morning' | 'midday' | 'final' based on ET time (before 1PM / 1-7PM / after 7PM)
+- [x] Add shouldTriggerOfficialPull() — only rebuilds board at pull boundaries or major matrix change (score drop 8+, scratch, pitcher change)
+- [x] Implement stability buffer: picks from last official pull stay unless score drops 8+ pts or major event
+- [x] Implement edge stability: ±2% edge change does NOT trigger reshuffle — only updates displayed edge
+- [x] Add slatePhase field to HRRPicksResult: 'preliminary' | 'confirmed' | 'final'
+- [x] Update pick status labels in MoneyPicksTab: PRELIMINARY (before 1PM) / CONFIRMED (1-7PM) / FINAL OFFICIAL PLAY (after 7PM)
+- [x] Add slate phase banner to Money Picks header showing current phase and next pull time
+- [x] Ensure slate-wide evaluation: all games scored before top picks selected (already done via enrichedPicks sort)
+- [x] TypeScript: 0 errors
