@@ -100,9 +100,11 @@ interface MoneyPick {
   isBestBet?: boolean;   // True when surfaced as Best Bet Today (weak slate fallback)
   leanTier?: boolean;    // True when score is 68-73 (informational only)
   gameTime?: string | null; // ISO game start time (UTC)
-  // Phase AK: Stability system fields
-  pickStatus?: 'confirmed' | 'preliminary' | 'confidence_reduced';
+  // Phase AK/AM: Stability system fields
+  pickStatus?: 'confirmed' | 'preliminary' | 'confidence_reduced' | 'locked_confirmed';
   lastUpdated?: string | null; // ISO timestamp of last score update
+  scoreChanged?: boolean;       // true when confirmed-locked pick score dropped >15 pts
+  scoreDrop?: number;           // how many pts the score dropped since lock
 }
 
 // S/A/B/C Tier system based on overallScore — Phase W calibration: S=83+, A=74-82, B/Lean=68-73
@@ -602,6 +604,14 @@ function MoneyPickCard({
             >
               ⚠️ CONF. REDUCED
             </div>
+          ) : pick.pickStatus === 'locked_confirmed' ? (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+              style={{ background: "oklch(0.72 0.18 165 / 18%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 50%)" }}
+              title="Locked on confirmed lineup — retained until game start"
+            >
+              🔒 LOCKED
+            </div>
           ) : pick.pickStatus === 'confirmed' ? (
             <div
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
@@ -617,6 +627,17 @@ function MoneyPickCard({
               ~ PROJ
             </div>
           ) : null}
+
+          {/* Phase AM: Score-change warning for confirmed-locked picks */}
+          {pick.pickStatus === 'locked_confirmed' && pick.scoreChanged && (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+              style={{ background: "oklch(0.68 0.22 25 / 12%)", color: "oklch(0.78 0.18 25)", border: "1px solid oklch(0.68 0.22 25 / 30%)" }}
+              title={`Score dropped ${pick.scoreDrop ?? '?'} pts since lock — pick retained (confirmed lineup)`}
+            >
+              ⚠️ SCORE CHANGED −{pick.scoreDrop}
+            </div>
+          )}
 
           {/* Phase AK: Last updated timestamp */}
           {pick.lastUpdated && (() => {
@@ -879,10 +900,12 @@ export function MoneyPicksTab() {
     refetchOnMount: false,       // use cached data immediately on remount
   });
 
-  // Phase AL: manual refresh — clears lock store then re-fetches
+  // Phase AL/AM: manual refresh — clears time-locked picks, preserves confirmed locks
   const [lastManualRefresh, setLastManualRefresh] = useState<Date | null>(null);
+  const [skippedConfirmedNames, setSkippedConfirmedNames] = useState<string[]>([]);
   const clearLocksMutation = trpc.aiPicks.clearPickLocks.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      setSkippedConfirmedNames(result.skippedNames ?? []);
       // Invalidate cache so the next fetch is truly fresh
       await utils.aiPicks.getHRRPicks.invalidate();
       await refetch();
@@ -893,6 +916,7 @@ export function MoneyPicksTab() {
 
   const handleManualRefresh = () => {
     if (isManualRefreshing) return;
+    setSkippedConfirmedNames([]);
     clearLocksMutation.mutate();
   };
   const { data: yesterdayData } = trpc.results.getYesterdayResults.useQuery(undefined, {
@@ -1215,6 +1239,17 @@ export function MoneyPicksTab() {
                 </div>
               );
             })()}
+
+            {/* Phase AM: Confirmed-lock preservation notice */}
+            {lastManualRefresh && !isManualRefreshing && skippedConfirmedNames.length > 0 && (
+              <div
+                className="flex items-start gap-1 px-2 py-1 rounded-md text-[9px] leading-tight max-w-[140px]"
+                style={{ background: "oklch(0.72 0.18 165 / 8%)", border: "1px solid oklch(0.72 0.18 165 / 25%)", color: "oklch(0.72 0.18 165)" }}
+                title={`Confirmed picks preserved: ${skippedConfirmedNames.join(', ')}`}
+              >
+                🔒 {skippedConfirmedNames.length} confirmed pick{skippedConfirmedNames.length > 1 ? 's' : ''} kept
+              </div>
+            )}
 
             {oddsUpdatedLabel && (
               <div className="flex items-center gap-1">

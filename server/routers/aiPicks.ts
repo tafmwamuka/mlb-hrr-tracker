@@ -639,27 +639,46 @@ function enrichPicksWithSavant(picks: AIPick[]): AIPick[] {
 }
 
 // ─── Pick Stability System ───────────────────────────────────────────────────
-// Retains picks that previously qualified for up to 30 minutes even if the
-// enrichment cache temporarily returns cold/neutral data.
-// Score buffer: if a pick drops ≤5 pts below threshold, keep it with a status label.
+// Two lock modes:
+//   'time'      — projected lineup: retained for 30 min, then re-evaluated
+//   'confirmed' — official lineup:  retained permanently until game start
+// Score buffer: if a pick drops ≤5 pts, keep it (any lock type).
+// Score-change warning: if a confirmed pick drops >15 pts, flag it.
 interface LockedPick {
   playerName: string;
   team: string;
   qualifiedAt: number;          // timestamp when first qualified
   lastScore: number;            // last known overallScore
+  scoreAtLock: number;          // score when the pick was first locked
   lastRecommendedLine: number;  // last known recommended line
   lastRecommendedProb: number;  // last known recommended probability
   lineupSource: 'confirmed' | 'projected';
+  lockType: 'time' | 'confirmed'; // 'confirmed' = permanent until game start
+  gameTime: string | null;        // ISO game start time for expiry check
 }
 
-const PICK_LOCK_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const PICK_LOCK_WINDOW_MS = 30 * 60 * 1000; // 30 minutes (time locks only)
 const SCORE_BUFFER = 5;                       // allow 5-pt drop before removing
+const SCORE_CHANGE_THRESHOLD = 15;            // flag confirmed picks that drop >15 pts
+const GAME_GRACE_MS = 5 * 60 * 1000;         // keep picks 5 min after game start
 const lockedPicksStore = new Map<string, LockedPick>();
 
 function cleanExpiredLocks(nowMs: number) {
   for (const [key, lp] of Array.from(lockedPicksStore.entries())) {
-    if (nowMs - lp.qualifiedAt > PICK_LOCK_WINDOW_MS) {
-      lockedPicksStore.delete(key);
+    if (lp.lockType === 'confirmed') {
+      // Confirmed locks: only expire after game start + grace period
+      if (lp.gameTime) {
+        const gameStartMs = new Date(lp.gameTime).getTime();
+        if (nowMs > gameStartMs + GAME_GRACE_MS) {
+          lockedPicksStore.delete(key);
+        }
+      }
+      // No gameTime = keep indefinitely (will be cleaned next day)
+    } else {
+      // Time locks: expire after 30 minutes
+      if (nowMs - lp.qualifiedAt > PICK_LOCK_WINDOW_MS) {
+        lockedPicksStore.delete(key);
+      }
     }
   }
 }
@@ -1077,14 +1096,22 @@ export const aiPicksRouter = router({
       // Register/update all currently qualifying picks in the lock store
       for (const pick of qualifyingPicks3 as any[]) {
         const existing = lockedPicksStore.get(pick.playerName);
+        // Upgrade to confirmed lock if lineups are now confirmed
+        const newLockType: 'time' | 'confirmed' =
+          currentLineupSource === 'confirmed' ? 'confirmed' : (existing?.lockType ?? 'time');
+        // Find game time for this pick (for confirmed lock expiry)
+        const pickGameTime: string | null = pick.gameTime ?? null;
         lockedPicksStore.set(pick.playerName, {
           playerName: pick.playerName,
           team: pick.team,
           qualifiedAt: existing?.qualifiedAt ?? nowMs3,
           lastScore: pick.overallScore ?? 0,
+          scoreAtLock: existing?.scoreAtLock ?? (pick.overallScore ?? 0),
           lastRecommendedLine: pick.recommendedLine,
           lastRecommendedProb: pick.recommendedProb,
           lineupSource: currentLineupSource,
+          lockType: newLockType,
+          gameTime: pickGameTime ?? existing?.gameTime ?? null,
         });
       }
 
@@ -1093,19 +1120,37 @@ export const aiPicksRouter = router({
       const retainedPicks: any[] = [];
       for (const [, lp] of Array.from(lockedPicksStore.entries())) {
         if (qualifyingNames3.has(lp.playerName)) continue; // already in current picks
-        if (nowMs3 - lp.qualifiedAt > PICK_LOCK_WINDOW_MS) continue; // expired
+
+        // Time-lock expiry check (confirmed locks are handled by cleanExpiredLocks)
+        if (lp.lockType !== 'confirmed' && nowMs3 - lp.qualifiedAt > PICK_LOCK_WINDOW_MS) continue;
+
         // Find the current enriched pick for this player (may have dropped below threshold)
         const currentPick = preGamePicks3.find((p: any) => p.playerName === lp.playerName);
         if (!currentPick) continue;
         const currentScore = (currentPick as any).overallScore ?? 0;
-        // Score buffer: retain if drop is within 5 pts
-        if (lp.lastScore - currentScore <= SCORE_BUFFER) {
+
+        if (lp.lockType === 'confirmed') {
+          // Confirmed lock: always retain regardless of score drop
+          const scoreDrop = lp.scoreAtLock - currentScore;
+          const scoreChanged = scoreDrop > SCORE_CHANGE_THRESHOLD;
           retainedPicks.push({
             ...(currentPick as any),
             recommendedLine: lp.lastRecommendedLine,
             recommendedProb: lp.lastRecommendedProb,
-            pickStatus: 'confidence_reduced' as const,
+            pickStatus: 'locked_confirmed' as const,
+            scoreChanged,
+            scoreDrop: Math.round(scoreDrop),
           });
+        } else {
+          // Time lock: retain only within score buffer
+          if (lp.lastScore - currentScore <= SCORE_BUFFER) {
+            retainedPicks.push({
+              ...(currentPick as any),
+              recommendedLine: lp.lastRecommendedLine,
+              recommendedProb: lp.lastRecommendedProb,
+              pickStatus: 'confidence_reduced' as const,
+            });
+          }
         }
       }
 
@@ -1461,14 +1506,33 @@ export const aiPicksRouter = router({
   }),
 
   /**
-   * Phase AL: Manual refresh — clears the pick lock store so the next
-   * getHRRPicks call re-evaluates all picks from scratch without the
-   * 30-minute retention window.
+   * Phase AL/AM: Manual refresh — clears time-locked picks so the next
+   * getHRRPicks call re-evaluates them from scratch.
+   * Confirmed locks (official lineup) are preserved and returned as skippedConfirmed.
    */
   clearPickLocks: publicProcedure.mutation(() => {
-    const count = lockedPicksStore.size;
-    lockedPicksStore.clear();
-    console.log(`[HRR] clearPickLocks: cleared ${count} locked pick(s) by user request`);
-    return { success: true, clearedCount: count, clearedAt: new Date().toISOString() };
+    let clearedCount = 0;
+    let skippedConfirmed = 0;
+    const skippedNames: string[] = [];
+    for (const [key, lp] of Array.from(lockedPicksStore.entries())) {
+      if (lp.lockType === 'confirmed') {
+        skippedConfirmed++;
+        skippedNames.push(lp.playerName);
+      } else {
+        lockedPicksStore.delete(key);
+        clearedCount++;
+      }
+    }
+    console.log(
+      `[HRR] clearPickLocks: cleared ${clearedCount} time-locked pick(s), ` +
+      `preserved ${skippedConfirmed} confirmed-locked pick(s): [${skippedNames.join(', ')}]`
+    );
+    return {
+      success: true,
+      clearedCount,
+      skippedConfirmed,
+      skippedNames,
+      clearedAt: new Date().toISOString(),
+    };
   }),
 });

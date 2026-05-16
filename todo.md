@@ -1089,3 +1089,15 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Show "✓ Refreshed just now" label after success
 - [x] Button disabled and shows "Refreshing…" while in-flight
 - [x] Tooltip explains lock-window bypass behavior
+
+## Phase AM — Confirmed Lineup Permanent Lock (May 16)
+- [x] Extend LockedPick interface: add lockType ('time' | 'confirmed'), scoreAtLock, gameTime
+- [x] cleanExpiredLocks: skip confirmed locks (never expire by time, only by game start + 5 min grace)
+- [x] Retention logic: confirmed locks always retained regardless of score drop
+- [x] Score-change warning: if confirmed pick score drops >15 pts, add scoreChanged + scoreDrop fields
+- [x] pickStatus: add 'locked_confirmed' status for permanently locked picks
+- [x] Lock upgrade: projected picks automatically upgrade to confirmed lock when lineups confirm
+- [x] clearPickLocks mutation: skip confirmed locks, return skippedConfirmed + skippedNames
+- [x] Force Refresh UI: show '🔒 X confirmed picks kept' banner after refresh
+- [x] MoneyPickCard: show 🔒 LOCKED badge for locked_confirmed picks
+- [x] MoneyPickCard: show ⚠️ SCORE CHANGED −N badge when scoreChanged flag is set
