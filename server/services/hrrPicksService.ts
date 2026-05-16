@@ -398,21 +398,31 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     return isPreGame;
   });
 
-  // Filter to money picks: at least one alternate line at 75%+
-  const moneyPicks: EnrichedMoneyPick[] = preGamePicks
-    .map((pick: any) => {
-      const qualifyingLines = (pick.alternateLines || [])
-        .filter((a: any) => a.overProb >= 75)
-        .sort((a: any, b: any) => b.line - a.line);
-      if (qualifyingLines.length === 0) return null;
-      const recommended = qualifyingLines[0];
-      return {
-        ...pick,
-        recommendedLine: recommended.line,
-        recommendedProb: recommended.overProb,
-      } as EnrichedMoneyPick;
-    })
-    .filter((p: any): p is EnrichedMoneyPick => p !== null);
+  // ── Money Picks selection: pure relative ranking, NO probability thresholds ──
+  // Phase AR final: Remove ALL probability gates (75%, 65%, 55%).
+  // Just take the top 5–8 pre-game picks by overallScore.
+  // recommendedLine = model's fair line (no probability filter required).
+  // This guarantees picks always appear as long as there are pre-game players.
+  const MAX_MONEY_PICKS = 8;
+  const MIN_MONEY_PICKS = 5;
+
+  const withRecommendedLine = preGamePicks.map((pick: any) => {
+    // Use the model's fair line directly — no probability threshold needed
+    const recommendedLine = pick.fairLine ?? pick.hrrLine ?? 1.5;
+    const recommendedProb = pick.overProbability ?? 55;
+    return { ...pick, recommendedLine, recommendedProb };
+  });
+
+  // Take top picks by score — between MIN and MAX, or all if fewer than MAX
+  const targetCount = Math.min(
+    Math.max(withRecommendedLine.length, MIN_MONEY_PICKS),
+    MAX_MONEY_PICKS
+  );
+  const moneyPicksRaw = withRecommendedLine.slice(0, targetCount);
+
+  const moneyPicks: EnrichedMoneyPick[] = moneyPicksRaw.map((pick: any) => ({
+    ...pick,
+  } as EnrichedMoneyPick));
 
   // Targeted Odds API fetch: only call for events containing our final picks
   let hasOddsData = false;
@@ -466,10 +476,10 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       emptySlateReasons.push('No matchups passed the VS quality gate today.');
     } else {
       const topScore = enrichedPicks[0]?.overallScore ?? 0;
-      if (topScore < 68) {
-        emptySlateReasons.push(`Best available score is ${topScore.toFixed(1)} — below the 68 minimum threshold.`);
-      } else if (topScore < 83) {
-        emptySlateReasons.push(`Top candidate scored ${topScore.toFixed(1)} — qualifies as Lean but no S/A tier plays today.`);
+      if (topScore < 55) {
+        emptySlateReasons.push(`Best available score is ${topScore.toFixed(1)} — all players scored below minimum quality level.`);
+      } else if (topScore < 75) {
+        emptySlateReasons.push(`Top candidate scored ${topScore.toFixed(1)} — lean tier picks available.`);
       }
       const highPitcherCount = matrixPicks.filter((p: any) => (p.factors?.pitcherWeakness ?? 0) < 3).length;
       if (highPitcherCount > matrixPicks.length * 0.6) {
@@ -480,7 +490,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
         emptySlateReasons.push('Low game totals (under 8 runs) limiting offensive upside.');
       }
       if (emptySlateReasons.length === 0) {
-        emptySlateReasons.push('No picks reached the 75%+ probability threshold on any alternate line.');
+        emptySlateReasons.push('No pre-game picks available on the current slate.');
       }
     }
   }

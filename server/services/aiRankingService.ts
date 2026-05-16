@@ -517,12 +517,12 @@ function calculateRecentFormScore(
  */
 function calculateBPBoost(vsGrade: number | null): number {
   if (vsGrade === null) return 0; // No data = neutral
-  if (vsGrade >= 9.5) return 12;  // Grade 10
-  if (vsGrade >= 8.5) return 8;   // Grade 9
-  if (vsGrade >= 7.5) return 4;   // Grade 8
-  if (vsGrade >= 6.5) return 0;   // Grade 7
-  if (vsGrade >= 5.5) return -4;  // Grade 6
-  return -6;                       // Grade 5 or below
+  if (vsGrade >= 9.0) return 15;  // Grade 9-10: elite matchup
+  if (vsGrade >= 7.5) return 10;  // Grade 7.5-9: strong matchup
+  if (vsGrade >= 6.0) return 5;   // Grade 6-7.5: good matchup
+  if (vsGrade >= 4.5) return 0;   // Grade 4.5-6: neutral
+  if (vsGrade >= 3.0) return -3;  // Grade 3-4.5: slightly unfavorable
+  return -6;                       // Grade < 3: clearly bad matchup
 }
 
 /**
@@ -987,21 +987,22 @@ export function rankAIPicks(
       rank: index + 1,
     }));
 
-  // ── Quality gate: 4 Elite (83+) + 6 Strong (74-82) + 3 Lean (68-73) = max 13 picks ──
-  // Phase W calibration: S=83+, A=74-82, B/Lean=68-73, hidden below 68
-  // If none qualify, return empty array (UI shows "No official HRR play today")
-  // For projected lineups, lower thresholds by 8 pts to account for incomplete enrichment data
+  // ── Quality gate: expanded tiers with guaranteed minimum ──
+  // Phase AR: Lowered thresholds so more players qualify across all tiers.
+  // Guaranteed minimum: if fewer than 5 picks qualify, fill from top scorers.
+  // For projected lineups, lower thresholds by 8 pts.
   const isProjected = lineupSource === 'projected' || lineupSource === 'mixed';
   const THRESHOLD_REDUCTION = isProjected ? 8 : 0;
-  const ELITE_THRESHOLD = 83 - THRESHOLD_REDUCTION;   // 75 for projected, 83 for confirmed
-  const STRONG_THRESHOLD = 74 - THRESHOLD_REDUCTION;  // 66 for projected, 74 for confirmed
-  const LEAN_THRESHOLD = 68 - THRESHOLD_REDUCTION;    // 60 for projected, 68 for confirmed
+  const ELITE_THRESHOLD = 78 - THRESHOLD_REDUCTION;   // 70 for projected, 78 for confirmed
+  const STRONG_THRESHOLD = 68 - THRESHOLD_REDUCTION;  // 60 for projected, 68 for confirmed
+  const LEAN_THRESHOLD = 55 - THRESHOLD_REDUCTION;    // 47 for projected, 55 for confirmed
   if (isProjected) {
     console.log(`[rankAIPicks] Projected lineups detected — thresholds lowered by ${THRESHOLD_REDUCTION} pts (Elite≥${ELITE_THRESHOLD}, Strong≥${STRONG_THRESHOLD}, Lean≥${LEAN_THRESHOLD})`);
   }
   const MAX_ELITE = 4;
   const MAX_STRONG = 6;
-  const MAX_LEAN = 3;
+  const MAX_LEAN = 6;  // expanded from 3 to 6 to guarantee 5-8 picks
+  const GUARANTEED_MIN = 5; // always surface at least this many picks
 
   // S5: Correlation cap — prevent over-stacking same game or same team
   // Max 3 picks per game (gamePk), max 4 picks per team
@@ -1050,24 +1051,23 @@ export function rankAIPicks(
     rank: index + 1,
   }));
 
-  console.log(`[rankAIPicks] Quality gate (S5 correlation cap): ${picks.length} scored → ${elitePicks.length} Elite (83+) + ${strongPicks.length} Strong (74-82) + ${leanPicks.length} Lean (68-73) = ${qualityPicks.length} picks`);
+  console.log(`[rankAIPicks] Quality gate: ${picks.length} scored → ${elitePicks.length} Elite (≥${ELITE_THRESHOLD}) + ${strongPicks.length} Strong (≥${STRONG_THRESHOLD}) + ${leanPicks.length} Lean (≥${LEAN_THRESHOLD}) = ${qualityPicks.length} picks`);
 
-  // ── Relative Slate Strength: Best Bet Today fallback ───────────────────────────
-  // If the slate is weak (no official plays qualify) but there is at least one
-  // scored candidate, surface the top-scoring player as "Best Bet Today".
-  // This prevents dead slates while preserving quality discipline.
-  if (qualityPicks.length === 0 && picks.length > 0) {
-    const topPick = picks[0]; // Already sorted by score descending
-    if (topPick.overallScore >= 60) {
-      // Mark as Best Bet Today — informational, not an official recommendation
-      const bestBetPick = {
-        ...topPick,
-        isBestBet: true,
-        rank: 1,
-      };
-      console.log(`[rankAIPicks] No official plays — surfacing Best Bet Today: ${bestBetPick.playerName} (score=${bestBetPick.overallScore})`);
-      return [bestBetPick];
-    }
+  // ── Guaranteed minimum: always return at least GUARANTEED_MIN picks ────────────────────────────────────
+  // If fewer than GUARANTEED_MIN picks passed the quality gate, fill from the
+  // top-scoring remaining candidates (no threshold, pure relative ranking).
+  // This ensures the site always shows 5-8 picks regardless of slate strength.
+  if (qualityPicks.length < GUARANTEED_MIN && picks.length > 0) {
+    const qualityPickIds = new Set(qualityPicks.map(p => p.playerId));
+    const remaining = picksWithGamePk
+      .filter(p => !qualityPickIds.has(p.playerId))
+      .slice(0, GUARANTEED_MIN - qualityPicks.length);
+    const filledPicks = [...qualityPicks, ...remaining].map((pick, index) => ({
+      ...pick,
+      rank: index + 1,
+    }));
+    console.log(`[rankAIPicks] Guaranteed minimum: filled ${remaining.length} picks from top scorers → total ${filledPicks.length}`);
+    return filledPicks;
   }
 
   return qualityPicks;

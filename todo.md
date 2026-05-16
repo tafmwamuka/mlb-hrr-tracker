@@ -1151,3 +1151,28 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] HRR VS gate in aiPicks.ts also recalibrated: STRONG 7.0→6.0, MODERATE 5.5→4.5
 - [x] factorBreakdown parkFactors display also uses corrected formula
 - [x] TypeScript: 0 errors
+
+## Phase AR — Guarantee Real Picks / Speed Overhaul (May 16)
+- [ ] Remove VS gate as a hard filter — use it as a scoring bonus only, never a blocker
+- [ ] Remove 75% absolute score threshold — use relative ranking (top N players by score)
+- [ ] Guarantee minimum 5 picks, target 8-12 picks from today's 15 games
+- [ ] Remove pollForWarmEnrichment blocking wait — score immediately, enrich progressively
+- [ ] Add picks loading skeleton so page feels instant even before picks load
+- [ ] Parallelize all enrichment fetches that are still sequential
+- [ ] Reduce picks cache TTL to 3 min so refreshes feel responsive
+- [ ] Add "Best of the Day" tier: always pick top 3 players regardless of score
+- [ ] Speed: reduce statcast Python script timeout from 30s to 15s
+- [ ] Speed: add parallel game-level processing instead of sequential player loop
+
+## Phase AR: Remove All Probability Thresholds + Guaranteed 5-8 Picks
+- [x] Remove 75% Poisson probability gate from hrrPicksService.ts
+- [x] Remove 65% PREFERRED_PROB and 55% FAIR_PROB tier logic from hrrPicksService.ts
+- [x] Replace tier1/tier2 logic with pure top-N relative ranking (slice top 5-8 by overallScore)
+- [x] Lower quality gate thresholds in aiRankingService.ts: Elite≥78, Strong≥68, Lean≥55 (was 83/74/68)
+- [x] Expand MAX_LEAN from 3 to 6 to allow more lean-tier picks
+- [x] Add GUARANTEED_MIN=5 fallback in aiRankingService — always fills from top scorers if fewer than 5 pass gate
+- [x] Fix calculateBPBoost so vsGrade 1-5 returns 0 (neutral) not -6
+- [x] Add pitcher-ERA-based game total fallback to gameTotalsService when Odds API fails
+- [x] Fix enrichmentCache to build pitcherERAByTeam map and pass to fetchGameTotals
+- [x] Update emptySlateReasons to remove stale 75%/68 threshold references
+- [x] TypeScript: 0 errors confirmed

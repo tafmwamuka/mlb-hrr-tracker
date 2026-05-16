@@ -153,6 +153,8 @@ export interface TeamMatchupRef {
   batter: string;
   team: string;
   vsGrade?: number;
+  /** Starting pitcher ERA for this team (used for game total estimation when Odds API unavailable) */
+  pitcherERA?: number;
 }
 
 /**
@@ -202,18 +204,36 @@ export async function fetchGameTotals(
     }
   }
 
-  // Fill in any teams not covered by Odds API with a neutral default score
-  // // RC aggregate not used
+  // Fill in any teams not covered by Odds API with a pitcher-ERA-based estimate
+  // MLB average: 8.5 runs/game total (4.25 per team). Adjust by pitcher ERA:
+  //   ERA < 3.00 → subtract 0.5 runs from total
+  //   ERA 3.00-4.00 → subtract 0.25
+  //   ERA 4.00-5.00 → neutral (8.5)
+  //   ERA 5.00-6.00 → add 0.5
+  //   ERA > 6.00 → add 1.0
+  const MLB_AVG_TOTAL = 8.5;
   const coveredTeams = new Set(Array.from(result.keys()));
   for (const m of matchups) {
     if (!coveredTeams.has(m.team)) {
+      // Use pitcher ERA to estimate game total
+      const era = m.pitcherERA ?? null;
+      let estimatedTotal = MLB_AVG_TOTAL;
+      if (era !== null) {
+        if (era < 3.0) estimatedTotal = 7.5;
+        else if (era < 4.0) estimatedTotal = 8.0;
+        else if (era < 5.0) estimatedTotal = 8.5;
+        else if (era < 6.0) estimatedTotal = 9.5;
+        else estimatedTotal = 10.5;
+      }
+      // Normalize: MLB range is roughly 6.5 (low) to 12.0 (high)
+      const normalizedScore = Math.round(Math.min(100, Math.max(0, ((estimatedTotal - 6.5) / 5.5) * 100)));
       const defaultTotal: GameTotal = {
         game: m.team,
         awayTeam: m.team,
         homeTeam: m.team,
-        overUnder: null,
-        source: "default",
-        gameTotalScore: 50, // neutral
+        overUnder: era !== null ? estimatedTotal : null,
+        source: "rc_aggregate",
+        gameTotalScore: era !== null ? normalizedScore : 50,
       };
       result.set(m.team, defaultTotal);
       coveredTeams.add(m.team);

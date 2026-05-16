@@ -192,10 +192,23 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
       `BAD(<5.5): ${vsScores.filter(v => v < 5.5).length}`);
 
     // Stage 3: Fetch game totals from Odds API
+    // PlayerRef doesn't have pitcherERA, so we build a team→ERA map from
+    // the lineup data fetched fresh here for ERA-based game total estimation
+    let pitcherERAByTeam = new Map<string, number>();
+    try {
+      const { getAdaptedLineupData } = await import('./lineupAdapter');
+      const ld = await getAdaptedLineupData();
+      for (const m of ld.matchups) {
+        if (m.pitcher?.era && m.pitcher.era > 0 && !pitcherERAByTeam.has(m.team)) {
+          pitcherERAByTeam.set(m.team, m.pitcher.era);
+        }
+      }
+    } catch { /* ignore — will use neutral fallback */ }
     const teamMatchups = players.map(p => ({
       batter: p.playerName,
       team: p.team,
       vsGrade: vsGradeMap.get(p.playerName) ?? 5,
+      pitcherERA: pitcherERAByTeam.get(p.team),
     }));
     const gameTotalsMap = await withTimeout(
       fetchGameTotals(oddsApiKey, teamMatchups),
