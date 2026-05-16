@@ -120,17 +120,8 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const todaySlate = `${nowET.getFullYear()}-${String(nowET.getMonth() + 1).padStart(2, '0')}-${String(nowET.getDate()).padStart(2, '0')}`;
   if (picksCache && picksCache.slateDate === todaySlate && Date.now() - picksCache.ts < PICKS_CACHE_TTL) {
-    // Smart invalidation: if any cached pick's game has now started, bust the cache
-    const GRACE_MS = 5 * 60 * 1000;
-    const nowMs = Date.now();
-    const hasStartedGame = picksCache.result.moneyPicks.some((p: any) => {
-      if (!p.gameTime) return false;
-      return nowMs >= new Date(p.gameTime).getTime() + GRACE_MS;
-    });
-    if (hasStartedGame) {
-      console.log('[HRRPicks] Cache busted — at least one pick\'s game has started');
-      picksCache = null;
-    } else {
+    // Phase AX: No cache-bust for game start — picks stay permanently
+    {
       console.log(`[HRRPicks] Serving from cache (age: ${Math.round((Date.now() - picksCache.ts) / 1000)}s)`);
       return picksCache.result;
     }
@@ -384,30 +375,12 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     return b.overProbability - a.overProbability;
   });
 
-  // Pre-game gate: only show picks for games that have NOT yet started.
-  const nowMs = Date.now();
-  const GRACE_MS = 5 * 60 * 1000;
-
-  const preGamePicks = enrichedPicks.filter((pick: any) => {
-    if (!pick.gameTime) return true;
-    const gameStartMs = new Date(pick.gameTime).getTime();
-    const cutoff = gameStartMs + GRACE_MS;
-    const isPreGame = nowMs < cutoff;
-    if (!isPreGame) {
-      console.log(`[HRRPicks] Dropping ${pick.playerName} — game started at ${new Date(gameStartMs).toISOString()}`);
-    }
-    return isPreGame;
-  });
-
+  // Phase AX: No pre-game gate — all picks kept regardless of game start time.
   // ── Money Picks selection: pure relative ranking, NO probability thresholds ──
-  // Phase AR final: Remove ALL probability gates (75%, 65%, 55%).
-  // Just take the top 5–8 pre-game picks by overallScore.
-  // recommendedLine = model's fair line (no probability filter required).
-  // This guarantees picks always appear as long as there are pre-game players.
   const MAX_MONEY_PICKS = 8;
   const MIN_MONEY_PICKS = 5;
 
-  const withRecommendedLine = preGamePicks.map((pick: any) => {
+  const withRecommendedLine = enrichedPicks.map((pick: any) => {
     // Use the model's fair line directly — no probability threshold needed
     const recommendedLine = pick.fairLine ?? pick.hrrLine ?? 1.5;
     const recommendedProb = pick.overProbability ?? 55;

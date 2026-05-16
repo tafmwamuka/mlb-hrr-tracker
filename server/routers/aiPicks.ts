@@ -757,33 +757,14 @@ function lockGame(gameId: string, picks: any[], reason: 'early_auto_lock' | 'sch
   }
 }
 
-/** Clean up game lock records for games that have started + grace period */
-function cleanExpiredGameLocks(nowMs: number): void {
-  for (const [gameId, record] of Array.from(gameLockStore.entries())) {
-    if (nowMs > record.firstPitchMs + GAME_GRACE_MS) {
-      gameLockStore.delete(gameId);
-    }
-  }
+/** Phase AX: Game lock records are never cleaned — picks stay permanently */
+function cleanExpiredGameLocks(_nowMs: number): void {
+  // No-op: picks are never removed due to game start
 }
 
-function cleanExpiredLocks(nowMs: number) {
-  for (const [key, lp] of Array.from(lockedPicksStore.entries())) {
-    if (lp.lockType === 'confirmed') {
-      // Confirmed locks: only expire after game start + grace period
-      if (lp.gameTime) {
-        const gameStartMs = new Date(lp.gameTime).getTime();
-        if (nowMs > gameStartMs + GAME_GRACE_MS) {
-          lockedPicksStore.delete(key);
-        }
-      }
-      // No gameTime = keep indefinitely (will be cleaned next day)
-    } else {
-      // Time locks: expire after 30 minutes
-      if (nowMs - lp.qualifiedAt > PICK_LOCK_WINDOW_MS) {
-        lockedPicksStore.delete(key);
-      }
-    }
-  }
+/** Phase AX: Locked picks are never expired — all plays stay on the board */
+function cleanExpiredLocks(_nowMs: number) {
+  // No-op: picks are never removed due to game start or lock expiry
 }
 
 export const aiPicksRouter = router({
@@ -1172,14 +1153,10 @@ export const aiPicksRouter = router({
         };
       });
 
-      // ── STAGE 3b: Pre-game gate — drop picks for games already started ─────────
+      // ── STAGE 3b: No expiry — all picks kept regardless of game start time ───────
+      // Phase AX: Picks are NEVER removed due to game start. All plays stay on the board.
       const nowMs3 = Date.now();
-      const GRACE_MS3 = 5 * 60 * 1000;
-      const preGamePicks3 = enrichedPicks.filter((pick: any) => {
-        if (!pick.gameTime) return true;
-        const gameStartMs = new Date(pick.gameTime).getTime();
-        return nowMs3 < gameStartMs + GRACE_MS3;
-      });
+      const preGamePicks3 = enrichedPicks;
 
       // ── STAGE 3c: Money picks selection — pure relative ranking, NO probability gates ──
       // Phase AS: All 75% / 65% / 55% thresholds removed.
