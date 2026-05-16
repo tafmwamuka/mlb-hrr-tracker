@@ -1210,3 +1210,27 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Collapse empty sections (no picks in that window)
 - [x] Preserve existing card sort order within each section
 - [x] TypeScript: 0 errors
+
+## Phase AV: ChatGPT GPT Action Integration
+- [ ] Add GPT_API_KEY secret to environment
+- [ ] Create server/routers/gpt.ts with GET /api/gpt/picks endpoint (API key auth)
+- [ ] Endpoint returns: board phase, slate date, money picks with HRR score/tier/matchup/pitcher/weather/lineup spot/edge
+- [ ] Endpoint returns: best plays, safest plays, stacks, expired/removed picks sections
+- [ ] Filter out games already started (first pitch in past)
+- [ ] Register /api/gpt route in server/_core/index.ts
+- [ ] Generate openapi.json spec for the GPT Action
+- [ ] Write Custom GPT setup guide with system prompt + action config
+- [ ] TypeScript: 0 errors
+
+## Phase AV: Full System Spec Implementation
+- [ ] Add game environment grade (A+/A/B/C/D) to pick cards and game cards
+- [ ] Add score component breakdown panel to pick cards (Recent Form 20%, Pitcher Weakness 25%, etc.)
+- [ ] Add sportsbook value comparison table to pick cards (bet365/FanDuel/DK odds + BEST VALUE badge)
+- [ ] Add correlation rating field to pick cards
+- [ ] Add correlated stacks section to Money Picks board
+- [ ] Add safe plays section (safest hits/runs/RBI by OBP + contact + lineup spot)
+- [ ] Add high-upside HRR ladders section
+- [ ] Add game environment grades section (best game environments ranked)
+- [ ] Add structured output sections: Official Locked / Confirmed / Preliminary / Safe / High Upside / Stacks / Sportsbook Value / Game Environment / Monitoring / Removed
+- [ ] Add game status indicators: 🟢 OPEN / 🟡 LOCKING SOON / 🔒 LOCKED / ⚫ STARTED / 🔴 REMOVED
+- [ ] TypeScript: 0 errors

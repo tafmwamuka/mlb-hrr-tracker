@@ -12,6 +12,7 @@ import {
   TrendingDown, CalendarDays, BarChart2, ChevronRight
 } from "lucide-react";
 import { SaferPlayTip } from "@/components/SaferPlayTip";
+import { StructuredPickSections } from "@/components/StructuredPickSections";
 import { PerformanceGraph } from "@/components/PerformanceGraph";
 import { BestEdgeCard } from "@/components/BestEdgeCard";
 import { DataHealthBar } from "@/components/DataHealthBar";
@@ -880,6 +881,87 @@ function MoneyPickCard({
                   </p>
                 </div>
 
+                {/* ── Score Component Breakdown ─────────────────────────────────────── */}
+                {pick.overallScore != null && (
+                  <div className="p-2.5 rounded-xl" style={{ background: 'oklch(0.12 0.018 255)', border: '1px solid oklch(1 0 0 / 6%)' }}>
+                    <div className="text-[9px] font-bold tracking-widest uppercase mb-2" style={{ color: 'oklch(0.55 0.015 255)' }}>Score Component Breakdown</div>
+                    <div className="space-y-1.5">
+                      {([
+                        { label: 'Pitcher Weakness', key: 'pitcherWeakness', weight: 25, color: 'oklch(0.68 0.22 25)' },
+                        { label: 'Recent Form',      key: 'recentForm',      weight: 20, color: 'oklch(0.82 0.17 85)' },
+                        { label: 'Lineup Spot',      key: 'lineupSpot',      weight: 15, color: 'oklch(0.72 0.18 165)' },
+                        { label: 'OBP / xwOBA',      key: 'obpXwOBA',        weight: 14, color: 'oklch(0.72 0.18 165)' },
+                        { label: 'Vegas Total',      key: 'teamImpliedRuns', weight: 10, color: 'oklch(0.72 0.10 220)' },
+                        { label: 'Park + Weather',   key: 'parkWeather',     weight: 8,  color: 'oklch(0.72 0.10 220)' },
+                        { label: 'Day/Night Split',  key: 'dayNightSplit',   weight: 8,  color: 'oklch(0.65 0.12 240)' },
+                        { label: 'Bullpen Matchup',  key: 'bullpenWeakness', weight: 6,  color: 'oklch(0.65 0.12 240)' },
+                        { label: 'Platoon Edge',     key: 'platoonAdvantage',weight: 5,  color: 'oklch(0.65 0.12 240)' },
+                        { label: 'Barrel / Hard Hit',key: 'hardContactBarrel',weight: 4, color: 'oklch(0.65 0.12 240)' },
+                      ] as Array<{ label: string; key: string; weight: number; color: string }>).map(({ label, key, weight, color }) => {
+                        const raw = (pick as any).factorBreakdown?.[key] ?? null;
+                        const pct = raw != null ? Math.min(100, Math.max(0, raw)) : null;
+                        return (
+                          <div key={key} className="flex items-center gap-2">
+                            <div className="text-[9px] text-[oklch(0.45_0.015_255)] w-28 shrink-0 truncate">{label}</div>
+                            <div className="flex-1 h-[4px] rounded-full" style={{ background: 'oklch(0.20 0.02 255)' }}>
+                              {pct != null && (
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                              )}
+                            </div>
+                            <div className="text-[9px] font-bold w-6 text-right shrink-0" style={{ color }}>
+                              {pct != null ? pct : '—'}
+                            </div>
+                            <div className="text-[8px] text-[oklch(0.35_0.015_255)] w-5 shrink-0">{weight}%</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Game Environment Grade ────────────────────────────────────────────── */}
+                {(() => {
+                  const env = getGameEnvGrade(pick.gameTotalOU, pick.parkFactor ?? 1.0);
+                  return (
+                    <div className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: env.bg, border: `1px solid ${env.color}30` }}>
+                      <div className="text-2xl font-black" style={{ color: env.color }}>{env.grade}</div>
+                      <div>
+                        <div className="text-[9px] font-bold tracking-widest uppercase" style={{ color: env.color }}>Game Environment</div>
+                        <div className="text-[10px] text-[oklch(0.55_0.015_255)]">{env.label}</div>
+                        {pick.gameTotalOU != null && (
+                          <div className="text-[9px] text-[oklch(0.45_0.015_255)] mt-0.5">O/U {pick.gameTotalOU} · Park {((pick.parkFactor ?? 1) * 100 - 100).toFixed(0)}% {(pick.parkFactor ?? 1) >= 1 ? 'hitter-friendly' : 'pitcher-friendly'}</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* ── Sportsbook Value ─────────────────────────────────────────────────── */}
+                {pick.odds && (
+                  <div className="p-2.5 rounded-xl" style={{ background: 'oklch(0.12 0.018 255)', border: '1px solid oklch(1 0 0 / 6%)' }}>
+                    <div className="text-[9px] font-bold tracking-widest uppercase mb-2" style={{ color: 'oklch(0.55 0.015 255)' }}>Sportsbook Value</div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-[9px] text-[oklch(0.45_0.015_255)]">
+                          {pick.oddsProvider === 'fanduel' ? 'FanDuel' :
+                           pick.oddsProvider === 'draftkings' ? 'DraftKings' :
+                           pick.oddsProvider === 'bet365' ? 'bet365' :
+                           pick.oddsProvider === 'betmgm' ? 'BetMGM' :
+                           (pick.oddsProvider ?? 'Sportsbook').toUpperCase()}
+                        </div>
+                        <div className="text-base font-bold text-white">{pick.odds}</div>
+                      </div>
+                      {pick.edge > 0 && (
+                        <div className="px-2.5 py-1.5 rounded-lg text-center" style={{ background: 'oklch(0.72 0.18 165 / 15%)', border: '1px solid oklch(0.72 0.18 165 / 40%)' }}>
+                          <div className="text-[8px] font-bold tracking-widest" style={{ color: 'oklch(0.72 0.18 165)' }}>✅ BEST VALUE</div>
+                          <div className="text-sm font-black" style={{ color: 'oklch(0.72 0.18 165)' }}>+{pick.edge}%</div>
+                          <div className="text-[8px] text-[oklch(0.45_0.015_255)]">edge vs fair</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Book comparison */}
                 {pick.bookImpliedProb && (
                   <div className="p-2.5 rounded-lg" style={{ background: "oklch(0.12 0.018 255)" }}>
@@ -904,6 +986,39 @@ function MoneyPickCard({
       </div>
     </motion.div>
   );
+}
+
+// ── Game environment grade helper ──────────────────────────────────────────────
+function getGameEnvGrade(gameTotalOU: number | null | undefined, parkFactor: number, weather?: { temperature?: number; windSpeed?: number; windDirection?: string } | null): { grade: string; label: string; color: string; bg: string } {
+  let score = 0;
+  // O/U contribution
+  if (gameTotalOU != null) {
+    if (gameTotalOU >= 10) score += 3;
+    else if (gameTotalOU >= 9) score += 2;
+    else if (gameTotalOU >= 8) score += 1;
+    else if (gameTotalOU < 7) score -= 1;
+    else if (gameTotalOU < 6) score -= 2;
+  }
+  // Park factor
+  if (parkFactor >= 1.10) score += 2;
+  else if (parkFactor >= 1.05) score += 1;
+  else if (parkFactor <= 0.90) score -= 2;
+  else if (parkFactor <= 0.95) score -= 1;
+  // Weather
+  if (weather) {
+    if ((weather.temperature ?? 72) >= 75) score += 1;
+    if ((weather.temperature ?? 72) < 50) score -= 1;
+    const wd = (weather.windDirection ?? '').toLowerCase();
+    const isOut = wd.includes('out') || wd === 's' || wd === 'sw' || wd === 'se';
+    const isIn = wd.includes('in') || wd === 'n' || wd === 'ne' || wd === 'nw';
+    if (isOut && (weather.windSpeed ?? 0) > 8) score += 1;
+    if (isIn && (weather.windSpeed ?? 0) > 8) score -= 1;
+  }
+  if (score >= 5) return { grade: 'A+', label: 'Elite HR Environment', color: 'oklch(0.82 0.17 85)', bg: 'oklch(0.82 0.17 85 / 12%)' };
+  if (score >= 3) return { grade: 'A',  label: 'Strong Offense Environment', color: 'oklch(0.72 0.18 165)', bg: 'oklch(0.72 0.18 165 / 10%)' };
+  if (score >= 1) return { grade: 'B',  label: 'Neutral Environment', color: 'oklch(0.72 0.10 220)', bg: 'oklch(0.72 0.10 220 / 8%)' };
+  if (score >= -1) return { grade: 'C', label: 'Pitcher Leaning', color: 'oklch(0.68 0.22 25)', bg: 'oklch(0.68 0.22 25 / 8%)' };
+  return { grade: 'D', label: 'Poor Offensive Environment', color: 'oklch(0.55 0.015 255)', bg: 'oklch(0.18 0.02 255)' };
 }
 
 function MetricBox({ label, value, good }: { label: string; value: string; good: boolean }) {
@@ -1663,6 +1778,14 @@ export function MoneyPicksTab() {
           Probabilities from Poisson model using Statcast + Diamond Edge VS Gate data. Streaks based on model projections. Always bet responsibly.
         </p>
       </div>
+
+      {/* ── Structured Output Sections ─────────────────────────────────────── */}
+      {filteredPicks.length > 0 && (
+        <StructuredPickSections
+          picks={filteredPicks}
+          removedPicks={(data as any)?.removedPicks ?? []}
+        />
+      )}
 
       {/* Scoring Matrix Panel */}
       <div className="rounded-2xl overflow-hidden border" style={{ background: "oklch(0.13 0.022 255)", borderColor: "oklch(1 0 0 / 8%)" }}>
