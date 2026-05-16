@@ -1063,3 +1063,20 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Import Tooltip/TooltipTrigger/TooltipContent from @/components/ui/tooltip
 - [x] Build VS Gate tooltip badge (⚡ VS X/10) in MoneyPickCard — color-coded by tier (STRONG/MODERATE/BAD)
 - [x] Tooltip shows: Batter xwOBA (color-coded), Pitcher xwOBA-against (color-coded), xwOBA Delta, VS Gate Score/tier, 1-line interpretation
+
+## Phase AJ — Fix Static BUL/PLT/HRD Scores (May 16)
+- [x] Fix PLT: enrich lineupAdapter with real batter handedness from MLB API /people/{id}
+- [x] Fix PLT: enrich lineupAdapter with real pitcher handedness from MLB API /people/{id}
+- [x] In-memory handedness cache to avoid repeated API calls per player
+- [x] PLT score now uses real L/R handedness for platoon advantage calculation
+- [x] BUL/HRD scores flow from warm Statcast + bullpen cache
+
+## Phase AK — Money Picks Stability System (May 16)
+- [x] Add score stability buffer: if a pick previously qualified and score drops ≤5 pts below threshold, keep it visible with "Confidence Slightly Reduced" status
+- [x] Add pick lock window: once a pick is OFFICIAL, lock it for 30 min minimum visibility unless lineup removal/injury/massive odds shift
+- [x] Add status labels to picks: ✓ OFFICIAL / ~ PROJ / ⚠️ CONF. REDUCED
+- [x] Add Preliminary vs Confirmed pick state: PRELIMINARY before confirmed lineups, CONFIRMED after
+- [x] Add "Last Updated" timestamp to each pick card (Xm ago format)
+- [x] Server returns dedicated moneyPicks array (stability-aware, separate from raw picks)
+- [x] MoneyPicksTab reads from moneyPicks array with backward-compat fallback
+- [x] LockedPick interface and constants at module level (TypeScript clean)

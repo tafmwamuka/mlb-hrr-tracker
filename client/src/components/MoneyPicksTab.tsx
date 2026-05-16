@@ -100,6 +100,9 @@ interface MoneyPick {
   isBestBet?: boolean;   // True when surfaced as Best Bet Today (weak slate fallback)
   leanTier?: boolean;    // True when score is 68-73 (informational only)
   gameTime?: string | null; // ISO game start time (UTC)
+  // Phase AK: Stability system fields
+  pickStatus?: 'confirmed' | 'preliminary' | 'confidence_reduced';
+  lastUpdated?: string | null; // ISO timestamp of last score update
 }
 
 // S/A/B/C Tier system based on overallScore — Phase W calibration: S=83+, A=74-82, B/Lean=68-73
@@ -589,6 +592,44 @@ function MoneyPickCard({
           <div className="px-2 py-0.5 rounded text-[10px] text-[oklch(0.50_0.015_255)]" style={{ background: "oklch(0.18 0.02 255)" }}>
             {pick.lineSource}
           </div>
+
+          {/* Phase AK: Pick Status chip */}
+          {pick.pickStatus === 'confidence_reduced' ? (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+              style={{ background: "oklch(0.68 0.22 25 / 12%)", color: "oklch(0.78 0.18 25)", border: "1px solid oklch(0.68 0.22 25 / 30%)" }}
+              title="Score temporarily reduced — pick retained within 30-min lock window"
+            >
+              ⚠️ CONF. REDUCED
+            </div>
+          ) : pick.pickStatus === 'confirmed' ? (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+              style={{ background: "oklch(0.72 0.18 165 / 12%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 30%)" }}
+            >
+              ✓ OFFICIAL
+            </div>
+          ) : pick.pickStatus === 'preliminary' ? (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+              style={{ background: "oklch(0.82 0.17 85 / 10%)", color: "oklch(0.82 0.17 85)", border: "1px solid oklch(0.82 0.17 85 / 25%)" }}
+            >
+              ~ PROJ
+            </div>
+          ) : null}
+
+          {/* Phase AK: Last updated timestamp */}
+          {pick.lastUpdated && (() => {
+            const diffMs = Date.now() - new Date(pick.lastUpdated).getTime();
+            const diffMin = Math.round(diffMs / 60000);
+            const label = diffMin < 1 ? 'just now' : diffMin === 1 ? '1m ago' : `${diffMin}m ago`;
+            return (
+              <div className="flex items-center gap-0.5 text-[9px]" style={{ color: "oklch(0.38 0.015 255)" }}>
+                <Clock size={8} />
+                {label}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Expected breakdown - visual bars */}
@@ -853,18 +894,25 @@ export function MoneyPicksTab() {
   const _lineupSource = (data as any)?.lineupSource ?? 'projected';
   const isProjected = (_lineupSource as string) !== 'confirmed';
 
-  // Filter picks to only those with at least one alternate line at 75%+
+  // Phase AK: Use server-side stability-aware moneyPicks array when available,
+  // falling back to client-side filtering of raw picks for backward compatibility.
   const moneyPicks: MoneyPick[] = useMemo(() => {
-    return (data?.picks || [])
+    // Prefer the server-computed moneyPicks (includes lock window + score buffer)
+    const sourceArray = (data as any)?.moneyPicks ?? (data?.picks || []);
+    return sourceArray
       .map((pick: any) => {
         const alternateLines: AlternateLine[] = pick.alternateLines || [];
+        // If pick came from server moneyPicks, recommendedLine/Prob are already set;
+        // otherwise compute them client-side for backward compat.
         const qualifyingLines = alternateLines
           .filter((a: AlternateLine) => a.overProb >= 75)
           .sort((a: AlternateLine, b: AlternateLine) => b.line - a.line);
 
-        if (qualifyingLines.length === 0) return null;
+        const recommended = pick.recommendedLine != null
+          ? { line: pick.recommendedLine, overProb: pick.recommendedProb }
+          : qualifyingLines[0];
 
-        const recommended = qualifyingLines[0];
+        if (!recommended) return null;
         // Use real streak from backend if available, otherwise generate from probability
         const streakInfo = pick.streakInfo ?? null;
         const dayNightSplit = pick.dayNightSplit ?? null;
@@ -932,6 +980,9 @@ export function MoneyPicksTab() {
           baseScore: pick.baseScore ?? undefined,
           gameTime: (pick as any).gameTime ?? null,
           vsGateData: pick.vsGateData ?? null,
+          // Phase AK: stability fields
+          pickStatus: pick.pickStatus ?? undefined,
+          lastUpdated: pick.lastUpdated ?? null,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)

@@ -638,6 +638,32 @@ function enrichPicksWithSavant(picks: AIPick[]): AIPick[] {
   });
 }
 
+// ─── Pick Stability System ───────────────────────────────────────────────────
+// Retains picks that previously qualified for up to 30 minutes even if the
+// enrichment cache temporarily returns cold/neutral data.
+// Score buffer: if a pick drops ≤5 pts below threshold, keep it with a status label.
+interface LockedPick {
+  playerName: string;
+  team: string;
+  qualifiedAt: number;          // timestamp when first qualified
+  lastScore: number;            // last known overallScore
+  lastRecommendedLine: number;  // last known recommended line
+  lastRecommendedProb: number;  // last known recommended probability
+  lineupSource: 'confirmed' | 'projected';
+}
+
+const PICK_LOCK_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const SCORE_BUFFER = 5;                       // allow 5-pt drop before removing
+const lockedPicksStore = new Map<string, LockedPick>();
+
+function cleanExpiredLocks(nowMs: number) {
+  for (const [key, lp] of Array.from(lockedPicksStore.entries())) {
+    if (nowMs - lp.qualifiedAt > PICK_LOCK_WINDOW_MS) {
+      lockedPicksStore.delete(key);
+    }
+  }
+}
+
 export const aiPicksRouter = router({
   /**
    * Get TOP 5 picks - independently scored using combined Savant + Ballpark data
@@ -1019,6 +1045,83 @@ export const aiPicksRouter = router({
         };
       });
 
+      // ── STAGE 3b: Pre-game gate — drop picks for games already started ─────────
+      const nowMs3 = Date.now();
+      const GRACE_MS3 = 5 * 60 * 1000;
+      const preGamePicks3 = enrichedPicks.filter((pick: any) => {
+        if (!pick.gameTime) return true;
+        const gameStartMs = new Date(pick.gameTime).getTime();
+        return nowMs3 < gameStartMs + GRACE_MS3;
+      });
+
+      // ── STAGE 3c: Money picks filter — at least one alternate line at 75%+ ──────
+      const qualifyingPicks3 = preGamePicks3
+        .map((pick: any) => {
+          const qualifyingLines = (pick.alternateLines || [])
+            .filter((a: any) => a.overProb >= 75)
+            .sort((a: any, b: any) => b.line - a.line);
+          if (qualifyingLines.length === 0) return null;
+          const recommended = qualifyingLines[0];
+          return {
+            ...pick,
+            recommendedLine: recommended.line,
+            recommendedProb: recommended.overProb,
+          };
+        })
+        .filter((p: any): p is NonNullable<typeof p> => p !== null);
+
+      // ── STAGE 3d: Pick Stability — apply lock window + score buffer ───────────
+      cleanExpiredLocks(nowMs3);
+      const currentLineupSource = lineupData.lineupSource;
+
+      // Register/update all currently qualifying picks in the lock store
+      for (const pick of qualifyingPicks3 as any[]) {
+        const existing = lockedPicksStore.get(pick.playerName);
+        lockedPicksStore.set(pick.playerName, {
+          playerName: pick.playerName,
+          team: pick.team,
+          qualifiedAt: existing?.qualifiedAt ?? nowMs3,
+          lastScore: pick.overallScore ?? 0,
+          lastRecommendedLine: pick.recommendedLine,
+          lastRecommendedProb: pick.recommendedProb,
+          lineupSource: currentLineupSource,
+        });
+      }
+
+      // Determine which previously-locked picks should still be shown
+      const qualifyingNames3 = new Set(qualifyingPicks3.map((p: any) => p.playerName));
+      const retainedPicks: any[] = [];
+      for (const [, lp] of Array.from(lockedPicksStore.entries())) {
+        if (qualifyingNames3.has(lp.playerName)) continue; // already in current picks
+        if (nowMs3 - lp.qualifiedAt > PICK_LOCK_WINDOW_MS) continue; // expired
+        // Find the current enriched pick for this player (may have dropped below threshold)
+        const currentPick = preGamePicks3.find((p: any) => p.playerName === lp.playerName);
+        if (!currentPick) continue;
+        const currentScore = (currentPick as any).overallScore ?? 0;
+        // Score buffer: retain if drop is within 5 pts
+        if (lp.lastScore - currentScore <= SCORE_BUFFER) {
+          retainedPicks.push({
+            ...(currentPick as any),
+            recommendedLine: lp.lastRecommendedLine,
+            recommendedProb: lp.lastRecommendedProb,
+            pickStatus: 'confidence_reduced' as const,
+          });
+        }
+      }
+
+      // Merge current qualifying picks + retained picks
+      const moneyPicks3 = [
+        ...qualifyingPicks3.map((p: any) => ({
+          ...p,
+          pickStatus: currentLineupSource === 'confirmed' ? 'confirmed' as const : 'preliminary' as const,
+          lastUpdated: new Date().toISOString(),
+        })),
+        ...retainedPicks.map((p: any) => ({
+          ...p,
+          lastUpdated: new Date().toISOString(),
+        })),
+      ];
+
       // ── STAGE 4: Sort by matrix score first, then Poisson quality ────────────
       // Primary sort: matrix overallScore (same ranking as All Plays / Top Plays)
       // Secondary sort: Poisson pick quality + over probability
@@ -1061,13 +1164,9 @@ export const aiPicksRouter = router({
       };
 
       // Compute topCandidates (top 3 near-miss picks that didn't make money picks)
-      const qualifyingNames = new Set(
-        enrichedPicks
-          .filter(p => (p.alternateLines || []).some((a: any) => a.overProb >= 75))
-          .map(p => p.playerName)
-      );
+      const moneyPickNames3 = new Set(moneyPicks3.map((p: any) => p.playerName));
       const topCandidates = enrichedPicks
-        .filter(p => !qualifyingNames.has(p.playerName))
+        .filter(p => !moneyPickNames3.has(p.playerName))
         .slice(0, 3);
 
       // Compute bestAvailableScore
@@ -1075,7 +1174,7 @@ export const aiPicksRouter = router({
 
       // Compute emptySlateReasons
       const emptySlateReasons: string[] = [];
-      if (qualifyingNames.size === 0) {
+      if (moneyPicks3.length === 0) {
         if (enrichedPicks.length === 0) {
           emptySlateReasons.push('No matchups passed the VS quality gate today.');
         } else {
@@ -1095,6 +1194,7 @@ export const aiPicksRouter = router({
       return {
         success: true,
         picks: enrichedPicks,
+        moneyPicks: moneyPicks3,
         lineupSource: lineupData.lineupSource,
         dataDate,
         timestamp: new Date(),
