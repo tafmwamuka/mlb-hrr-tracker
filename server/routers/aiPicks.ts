@@ -1033,13 +1033,17 @@ export const aiPicksRouter = router({
       // Previous thresholds only let 2/269 players through (0.7% pass rate)
       const HRR_STRONG_THRESHOLD = 6.0;
       const HRR_MODERATE_THRESHOLD = 4.5;
-      const gatedMatchups = vsGradeMap.size > 0
-        ? matchups.filter(m => {
+      // Phase BA fix: skip VS gate when vsGradeMap is empty or all neutral (5.0 fallback)
+      const allNeutral3 = vsGradeMap.size > 0 && Array.from(vsGradeMap.values()).every(v => v === 5.0);
+      const skipVsGate3 = vsGradeMap.size === 0 || allNeutral3;
+
+      const gatedMatchups = skipVsGate3
+        ? matchups
+        : matchups.filter(m => {
             const vsScore = vsGradeMap.get(m.playerName) ?? null;
-            if (vsScore === null) return false; // Exclude if no entry
-            if (vsScore >= HRR_STRONG_THRESHOLD) return true; // STRONG: always in
+            if (vsScore === null) return true; // no entry = neutral, let through
+            if (vsScore >= HRR_STRONG_THRESHOLD) return true;
             if (vsScore >= HRR_MODERATE_THRESHOLD) {
-              // MODERATE: enter only with good matchup context
               const playerData = players.get(m.playerId);
               const batterHand = playerData?.handedness ?? 'R';
               const pitcherHand = m.pitcher?.handedness ?? 'R';
@@ -1050,9 +1054,8 @@ export const aiPicksRouter = router({
               const isBarrelThreat = savantEntry ? savantEntry.barrelPct >= 8.0 : false;
               return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat;
             }
-            return false; // Below MODERATE_THRESHOLD: excluded
-          })
-        : matchups;
+            return false;
+          });
 
       console.log(`[HRR] VS Gate (internal mlbMatchup, STRONG>=${HRR_STRONG_THRESHOLD}, MOD>=${HRR_MODERATE_THRESHOLD}): ${matchups.length} → ${gatedMatchups.length} matchups passed`);
 
@@ -1264,14 +1267,22 @@ export const aiPicksRouter = router({
           };
         });
 
-        // Save this as the new official board
-        officialPullStore = {
-          phase: currentSlatePhase,
-          pulledAt: nowMs3,
-          slateDate: todayETDate3,
-          officialPicks: moneyPicks3,
-        };
-        console.log(`[HRRPicks] Official board saved: ${moneyPicks3.length} picks (phase=${currentSlatePhase}, earlyLocked=${earlyLockedGameIds.size} games)`);
+        // Phase BA fix: never save an empty board as the official pull.
+        // If the new build produced 0 picks (e.g. enrichment hiccup), keep the previous board.
+        if (moneyPicks3.length > 0) {
+          officialPullStore = {
+            phase: currentSlatePhase,
+            pulledAt: nowMs3,
+            slateDate: todayETDate3,
+            officialPicks: moneyPicks3,
+          };
+          console.log(`[HRRPicks] Official board saved: ${moneyPicks3.length} picks (phase=${currentSlatePhase}, earlyLocked=${earlyLockedGameIds.size} games)`);
+        } else if (officialPullStore?.officialPicks?.length) {
+          moneyPicks3 = officialPullStore.officialPicks;
+          console.warn(`[HRRPicks] New official pull returned 0 picks — keeping previous board (${moneyPicks3.length} picks)`);
+        } else {
+          console.warn(`[HRRPicks] New official pull returned 0 picks and no previous board exists`);
+        }
 
       } else {
         // ── BETWEEN OFFICIAL PULLS: serve stable board with minor live updates ─────
@@ -1286,11 +1297,16 @@ export const aiPicksRouter = router({
           currentScoreMap.set(p.playerName, p.overallScore ?? 0);
         }
 
-        // Filter out scratched / major-downgrade picks from official board
+        // Phase BA fix: only remove picks for CONFIRMED scratches (player not in any lineup at all).
+        // Previously, picks were removed if they didn't appear in the latest scoring run — this caused
+        // cycling when VS gate dropped players intermittently.
+        // Now: keep picks unless (a) player is truly absent from all lineups, OR (b) major downgrade.
+        const allLineupPlayerNames = new Set(lineupData.matchups.map((m: any) => m.playerName));
         const stableBoard = officialBoard.filter((p: any) => {
+          // Only remove if player is completely absent from today's lineup data (confirmed scratch)
+          if (!allLineupPlayerNames.has(p.playerName)) return false;
           const currentScore = currentScoreMap.get(p.playerName);
-          if (currentScore === undefined) return false; // player no longer in lineup (scratched)
-          if (isMajorDowngrade(currentScore, p.overallScore ?? p.scoreAtLock ?? currentScore)) return false;
+          if (currentScore !== undefined && isMajorDowngrade(currentScore, p.overallScore ?? p.scoreAtLock ?? currentScore)) return false;
           return true;
         }).map((p: any) => {
           // Update live odds/edge display without changing pick order

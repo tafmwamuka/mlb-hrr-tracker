@@ -101,7 +101,7 @@ export interface HRRPicksResult {
 // ─── Picks-level in-memory cache ────────────────────────────────────────────
 // Avoids re-running the full pipeline (VS gate + matrix scoring + Poisson) on
 // every request. TTL is 5 minutes; invalidated automatically when a game starts.
-const PICKS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const PICKS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes — extended to reduce cycling (Phase BA)
 let picksCache: { result: HRRPicksResult; ts: number; slateDate: string } | null = null;
 
 export function invalidatePicksCache() {
@@ -234,10 +234,16 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     console.log(`[HRRPicks] Projected lineups — VS gate thresholds lowered (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD})`);
   }
 
-  const gatedMatchups = vsGradeMap.size > 0
-    ? matchups.filter((m: any) => {
+  // Phase BA fix: when vsGradeMap is empty OR all scores are neutral (5.0 fallback),
+  // skip the VS gate entirely so the quality gate + guaranteed minimum can still produce picks.
+  const allNeutral = vsGradeMap.size > 0 && Array.from(vsGradeMap.values()).every(v => v === 5.0);
+  const skipVsGate = vsGradeMap.size === 0 || allNeutral;
+
+  const gatedMatchups = skipVsGate
+    ? matchups
+    : matchups.filter((m: any) => {
         const vsScore = vsGradeMap.get(m.playerName) ?? null;
-        if (vsScore === null) return false;
+        if (vsScore === null) return true; // no entry = neutral, let through
         if (vsScore >= STRONG_THRESHOLD) return true;
         if (vsScore >= MODERATE_THRESHOLD) {
           const playerData = players.get(m.playerId);
@@ -251,10 +257,9 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
           return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat;
         }
         return false;
-      })
-    : matchups;
+      });
 
-  console.log(`[HRRPicks] VS Gate (internal mlbMatchup, STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD}): ${matchups.length} → ${gatedMatchups.length} matchups passed`);
+  console.log(`[HRRPicks] VS Gate (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD}, skip=${skipVsGate}): ${matchups.length} → ${gatedMatchups.length} matchups passed`);
 
   const hrTargetsMap = getMockHRTargets();
 
