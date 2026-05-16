@@ -6,7 +6,7 @@
 import { router, publicProcedure } from "../_core/trpc";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import type { AIPick } from "../services/aiRankingService";
-import { getMockSavantData, calculateCombinedScore, type SavantHitter, type SavantPitcher } from "../services/savantService";
+// Phase AP: getMockSavantData removed — savant enrichment now uses real statcastCache only
 import { generateHRRProjections } from "../services/hrrService";
 import { americanToImpliedProbability } from "../services/oddsApiService";
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from "../services/poissonModel";
@@ -581,62 +581,9 @@ const MOCK_MATCHUPS = [
   },
 ];
 
-// Map player names to Savant data for enrichment
-function findSavantHitter(playerName: string, savantGames: ReturnType<typeof getMockSavantData>): { hitter: SavantHitter; pitcher: SavantPitcher | null } | null {
-  for (const game of savantGames) {
-    // Check home hitters (facing away pitcher)
-    const homeHitter = game.homeHitters.find(h => 
-      h.name.toLowerCase().includes(playerName.toLowerCase().split(' ').pop() || '') ||
-      playerName.toLowerCase().includes(h.name.toLowerCase().split(' ').pop() || '')
-    );
-    if (homeHitter) return { hitter: homeHitter, pitcher: game.awayPitcher };
-    
-    // Check away hitters (facing home pitcher)
-    const awayHitter = game.awayHitters.find(h => 
-      h.name.toLowerCase().includes(playerName.toLowerCase().split(' ').pop() || '') ||
-      playerName.toLowerCase().includes(h.name.toLowerCase().split(' ').pop() || '')
-    );
-    if (awayHitter) return { hitter: awayHitter, pitcher: game.homePitcher };
-  }
-  return null;
-}
-
-// Enrich picks with Savant data
-function enrichPicksWithSavant(picks: AIPick[]): AIPick[] {
-  const savantGames = getMockSavantData();
-  
-  return picks.map(pick => {
-    const savantMatch = findSavantHitter(pick.playerName, savantGames);
-    if (!savantMatch) return pick;
-    
-    const { hitter, pitcher } = savantMatch;
-    const { score: savantScore, factors: savantFactors } = calculateCombinedScore(
-      hitter, pitcher, pick.statType === 'slg' ? 'rbi' : pick.statType
-    );
-    
-    // Combined score: 50% Diamond Edge model score + 50% Baseball Savant xwOBA/barrel metrics
-    const combinedScore = Math.round((pick.overallScore * 0.5) + (savantScore * 0.5));
-    
-    return {
-      ...pick,
-      confidence: Math.min(98, Math.max(pick.confidence, combinedScore)),
-      savantMetrics: {
-        xwOBA: hitter.xwOBA,
-        hardHitPct: hitter.hardHitPct,
-        exitVelocity: hitter.exitVelocity,
-        barrelPct: hitter.barrelPct,
-        kPct: hitter.kPct,
-        bbPct: hitter.bbPct,
-        xBA: hitter.xBA,
-        xSLG: hitter.xSLG,
-        sprintSpeed: hitter.sprintSpeed,
-        savantScore,
-        savantFactors,
-      },
-      combinedScore,
-    };
-  });
-}
+// Phase AP: findSavantHitter and enrichPicksWithSavant removed.
+// Mock Savant data was causing player-specific scoring bias.
+// Real Statcast data flows through statcastCache via rankAIPicks.
 
 // ─── Pick Stability System ───────────────────────────────────────────────────
 // Two lock modes:
@@ -747,8 +694,8 @@ export const aiPicksRouter = router({
         lineupData.lineupSource // lower thresholds for projected lineups
       );
       
-      // Enrich with Savant data
-      const enrichedPicks = enrichPicksWithSavant(allPicks);
+      // Phase AP: mock Savant enrichment removed — picks use real statcastCache data from rankAIPicks
+      const enrichedPicks = allPicks;
       
       // Re-sort by combinedScore (Savant + Ballpark) for top picks
       // Stat priority tiebreaker: Hits > Runs > RBI (RBI is riskiest)
@@ -849,7 +796,8 @@ export const aiPicksRouter = router({
       );
       
       // Enrich all picks with Savant data
-      const enrichedPicks = enrichPicksWithSavant(picks);
+      // Phase AP: mock Savant enrichment removed
+      const enrichedPicks = picks;
       
       // Re-sort with stat priority tiebreaker: Hits > Runs > RBI (RBI is riskiest)
       const STAT_SORT_PRIORITY_ALL: Record<string, number> = { hits: 3, runs: 2, rbi: 1, slg: 0 };
@@ -925,18 +873,21 @@ export const aiPicksRouter = router({
 
       // Get park factors
       const parkFactors = getMockParkFactors();
-      
-      // Build Savant data map for enrichment
-      const savantGames = getMockSavantData();
+
+      // Phase AP: Build barrel threat map from REAL statcastCache (no mock data)
       const savantMap = new Map<string, { xwOBA: number; hardHitPct: number; exitVelocity: number; barrelPct: number }>();
-      for (const game of savantGames) {
-        for (const hitter of [...game.homeHitters, ...game.awayHitters]) {
-          savantMap.set(hitter.name, {
-            xwOBA: hitter.xwOBA,
-            hardHitPct: hitter.hardHitPct,
-            exitVelocity: hitter.exitVelocity,
-            barrelPct: hitter.barrelPct,
-          });
+      const scData = (statcastCache3 as any)?.data;
+      if (scData && scData.size > 0) {
+        for (const [, entry] of scData) {
+          const pName = (entry as any).player_name ?? (entry as any).playerName;
+          if (pName) {
+            savantMap.set(pName, {
+              xwOBA: (entry as any).xwoba ?? 0,
+              hardHitPct: (entry as any).hard_hit_percent ?? 0,
+              exitVelocity: (entry as any).launch_speed ?? 0,
+              barrelPct: (entry as any).barrel_batted_rate ?? 0,
+            });
+          }
         }
       }
 

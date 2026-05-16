@@ -1070,16 +1070,12 @@ export function rankAIPicks(
 }
 
 /**
- * Mock HR Targets data for development
+ * Phase AP: getMockHRTargets returns an empty Map.
+ * Hardcoded player grades were removed to eliminate scoring bias.
+ * HR target grades are derived from real Statcast barrel/xwOBA data via statcastCache.
  */
 export function getMockHRTargets(): Map<string, HRTargetData> {
-  const data = new Map<string, HRTargetData>();
-  data.set("Juan Soto", { grade: "A+", hrProbability: 92, threatScore: 95 });
-  data.set("Aaron Judge", { grade: "A+", hrProbability: 90, threatScore: 94 });
-  data.set("B. Buxton", { grade: "A", hrProbability: 85, threatScore: 88 });
-  data.set("J. Soto", { grade: "A+", hrProbability: 92, threatScore: 95 });
-  data.set("C. Raleigh", { grade: "B+", hrProbability: 78, threatScore: 80 });
-  return data;
+  return new Map<string, HRTargetData>();
 }
 
 /**

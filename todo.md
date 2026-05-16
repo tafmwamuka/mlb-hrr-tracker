@@ -1123,3 +1123,14 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] FIX 5: lineupAdapter.toPlayerData() now passes player.gamesPlayed into PlayerData
 - [x] FIX 6: statScores now use per-game rates (hitsPerGame/runsPerGame/rbiPerGame) not raw season totals
 - [x] FIX 7: statConfidence also normalized by real gamesPlayed vs MLB avg benchmarks (0.9 H/G, 0.55 R/G, 0.55 RBI/G)
+
+## Phase AP — Remove All Hardcoded Player Bias & theLAB (May 16)
+- [x] Delete theLabService.ts entirely (was already disconnected from pipeline)
+- [x] getMockHRTargets() now returns empty Map — hardcoded Judge/Soto/Buxton grades removed
+- [x] hrrPicksService: VS gate isBarrelThreat now uses real statcastCache.data instead of getMockSavantData()
+- [x] aiPicks.ts getHRRPicks: barrel threat map now uses statcastCache3.data instead of getMockSavantData()
+- [x] aiPicks.ts getAIPicks: barrel threat map now uses real statcastCache.data
+- [x] enrichPicksWithSavant() function removed from aiPicks.ts
+- [x] findSavantHitter() function removed from aiPicks.ts
+- [x] getMockSavantData import removed from aiPicks.ts and hrrPicksService.ts
+- [x] TypeScript: 0 errors after all removals

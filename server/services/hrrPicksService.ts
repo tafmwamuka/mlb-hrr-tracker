@@ -16,7 +16,7 @@
 
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from './aiRankingService';
 import { fetchOddsForPicks, americanToImpliedProbability, removeVig } from './oddsApiService';
-import { getMockSavantData } from './savantService';
+// Phase AP: getMockSavantData removed — barrel threat check now uses real statcastCache
 import { generateHRRProjections } from './hrrService';
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from './poissonModel';
 import { getAdaptedLineupData } from './lineupAdapter';
@@ -200,17 +200,21 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
 
   const parkFactors = getMockParkFactors();
 
-  // Build Savant map
-  const savantGames = getMockSavantData();
+  // Phase AP: Build barrel threat map from REAL statcastCache (no mock data)
+  // statcastCache is a StatcastCache object with a .data Map keyed by playerId
   const savantMap = new Map<string, { xwOBA: number; hardHitPct: number; exitVelocity: number; barrelPct: number }>();
-  for (const game of savantGames) {
-    for (const hitter of [...game.homeHitters, ...game.awayHitters]) {
-      savantMap.set(hitter.name, {
-        xwOBA: hitter.xwOBA,
-        hardHitPct: hitter.hardHitPct,
-        exitVelocity: hitter.exitVelocity,
-        barrelPct: hitter.barrelPct,
-      });
+  const statcastData = (statcastCache as any)?.data;
+  if (statcastData && statcastData.size > 0) {
+    for (const [, entry] of statcastData) {
+      const playerName = (entry as any).player_name ?? (entry as any).playerName;
+      if (playerName) {
+        savantMap.set(playerName, {
+          xwOBA: (entry as any).xwoba ?? 0,
+          hardHitPct: (entry as any).hard_hit_percent ?? 0,
+          exitVelocity: (entry as any).launch_speed ?? 0,
+          barrelPct: (entry as any).barrel_batted_rate ?? 0,
+        });
+      }
     }
   }
 
