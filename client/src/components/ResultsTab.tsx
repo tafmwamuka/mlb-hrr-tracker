@@ -497,8 +497,8 @@ export function ResultsTab() {
       probability: r.probability,
       actualValue: r.actualValue ?? null,
       result: (r.hit === true ? "hit" : r.hit === false ? "miss" : "pending") as "pending" | "hit" | "miss",
-      odds: r.bookOdds ?? null,
-      oddsProvider: r.bookOddsProvider ?? null,
+      odds: r.bookOdds != null ? String(r.bookOdds) : null,
+      oddsProvider: r.bookOddsProvider != null ? String(r.bookOddsProvider) : null,
       streakLabel: r.streakInfo ? (r.streakInfo.isOnStreak ? `${r.streakInfo.streakLength}-game streak` : null) : null,
       dayNightLabel: r.dayNightSplit ? (r.dayNightSplit.gameTimeType === 'day' ? 'Day Game' : 'Night Game') : null,
       // Phase AE: tracking fields
