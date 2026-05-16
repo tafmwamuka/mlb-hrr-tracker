@@ -406,10 +406,15 @@ export function ResultsTab() {
       probability: r.probability,
       actualValue: r.actualValue ?? null,
       result: (r.hit === true ? "hit" : r.hit === false ? "miss" : "pending") as "pending" | "hit" | "miss",
-      odds: null,
-      oddsProvider: null,
-      streakLabel: null,
-      dayNightLabel: null,
+      odds: r.bookOdds ?? null,
+      oddsProvider: r.bookOddsProvider ?? null,
+      streakLabel: r.streakInfo ? (r.streakInfo.isOnStreak ? `${r.streakInfo.streakLength}-game streak` : null) : null,
+      dayNightLabel: r.dayNightSplit ? (r.dayNightSplit.gameTimeType === 'day' ? 'Day Game' : 'Night Game') : null,
+      // Phase AE: tracking fields
+      tier: r.overallScore >= 83 ? 'S' : r.overallScore >= 74 ? 'A' : r.overallScore >= 68 ? 'Lean' : null,
+      edge: r.edge ?? null,
+      closingLineValue: null, // CLV calculated post-game
+      matrixScore: r.overallScore ?? null,
     }));
 
     storeDailyResults.mutate(
@@ -846,9 +851,12 @@ export function ResultsTab() {
       </div>
 
       {/* Footer */}
-      <div className="text-center py-6 sm:py-8 px-4">
+      <div className="text-center py-6 sm:py-8 px-4 space-y-2">
         <p className="text-[10px] sm:text-[11px] text-[oklch(0.35_0.015_255)] leading-relaxed">
           Auto-refreshes every 2 minutes during games. Last updated: {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </p>
+        <p className="text-[9px] text-[oklch(0.30_0.015_255)] leading-relaxed max-w-xs mx-auto">
+          Tier, edge, and matrix score tracking began May 15, 2025. Historical records before this date do not include these fields.
         </p>
       </div>
     </div>

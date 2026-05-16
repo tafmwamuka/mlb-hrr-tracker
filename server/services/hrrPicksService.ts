@@ -71,6 +71,17 @@ export interface EnrichedMoneyPick {
   recommendedProb: number;
 }
 
+export interface EnrichmentStatus {
+  lineups: 'ok' | 'pending' | 'failed';
+  odds: 'ok' | 'partial' | 'pending' | 'failed';
+  statcast: 'ok' | 'partial' | 'failed';
+  streaks: 'ok' | 'partial' | 'failed';
+  dayNight: 'ok' | 'partial' | 'failed';
+  bullpen: 'ok' | 'partial' | 'failed';
+  isPartialEnrichment: boolean;
+  lastUpdated: string;
+}
+
 export interface HRRPicksResult {
   moneyPicks: EnrichedMoneyPick[];
   allMatrixPicks: any[];
@@ -81,6 +92,10 @@ export interface HRRPicksResult {
   slateDate: string;
   isStaleSlate: boolean;
   firstPitchTime: string | null;
+  enrichmentStatus: EnrichmentStatus;
+  topCandidates: any[]; // top 3 near-miss picks even when no official picks qualify
+  emptySlateReasons: string[]; // why no official picks qualified
+  bestAvailableScore: number | null;
 }
 
 // ─── Picks-level in-memory cache ────────────────────────────────────────────
@@ -153,6 +168,18 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   const todayETDate = `${todayET.getFullYear()}-${String(todayET.getMonth() + 1).padStart(2, '0')}-${String(todayET.getDate()).padStart(2, '0')}`;
   const isStaleSlate = dataDate !== todayETDate && todayET.getHours() >= 5;
 
+  // Build enrichment status
+  const enrichmentStatus: EnrichmentStatus = {
+    lineups: matchups.length > 0 ? 'ok' : 'pending',
+    odds: (enrichment as any).isWarm ? 'ok' : 'partial',
+    statcast: (enrichment as any).statcastCache?.data?.size > 0 ? 'ok' : 'partial',
+    streaks: (enrichment as any).mlbStreakMap?.size > 0 ? 'ok' : 'partial',
+    dayNight: (enrichment as any).dayNightSplitsMap?.size > 0 ? 'ok' : 'partial',
+    bullpen: (enrichment as any).bullpenFatigueMap?.size > 0 ? 'ok' : 'partial',
+    isPartialEnrichment: !(enrichment as any).isWarm,
+    lastUpdated: new Date().toISOString(),
+  };
+
   if (matchups.length === 0) {
     return {
       moneyPicks: [],
@@ -164,6 +191,10 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       slateDate: todayETDate,
       isStaleSlate,
       firstPitchTime: null,
+      enrichmentStatus: { ...enrichmentStatus, lineups: 'pending' },
+      topCandidates: [],
+      emptySlateReasons: ['Lineups not yet posted for today\'s slate.'],
+      bestAvailableScore: null,
     };
   }
 
@@ -397,6 +428,47 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     }
   }
 
+  // Compute topCandidates: top 3 picks from enrichedPicks that did NOT make moneyPicks (near-misses)
+  const moneyPickNames = new Set(moneyPicks.map((p: any) => p.playerName));
+  const topCandidates = enrichedPicks
+    .filter((p: any) => !moneyPickNames.has(p.playerName))
+    .slice(0, 3);
+
+  // Compute bestAvailableScore from all enriched picks
+  const bestAvailableScore = enrichedPicks.length > 0 ? (enrichedPicks[0]?.overallScore ?? null) : null;
+
+  // Compute emptySlateReasons when no money picks qualified
+  const emptySlateReasons: string[] = [];
+  if (moneyPicks.length === 0) {
+    if (enrichedPicks.length === 0) {
+      emptySlateReasons.push('No matchups passed the VS quality gate today.');
+    } else {
+      const topScore = enrichedPicks[0]?.overallScore ?? 0;
+      if (topScore < 68) {
+        emptySlateReasons.push(`Best available score is ${topScore.toFixed(1)} — below the 68 minimum threshold.`);
+      } else if (topScore < 83) {
+        emptySlateReasons.push(`Top candidate scored ${topScore.toFixed(1)} — qualifies as Lean but no S/A tier plays today.`);
+      }
+      const highPitcherCount = matrixPicks.filter((p: any) => (p.factors?.pitcherWeakness ?? 0) < 3).length;
+      if (highPitcherCount > matrixPicks.length * 0.6) {
+        emptySlateReasons.push('Strong pitching matchups across the slate are suppressing scores.');
+      }
+      const lowOUCount = matrixPicks.filter((p: any) => (p.gameTotalOU ?? 9) < 8).length;
+      if (lowOUCount > matrixPicks.length * 0.5) {
+        emptySlateReasons.push('Low game totals (under 8 runs) limiting offensive upside.');
+      }
+      if (emptySlateReasons.length === 0) {
+        emptySlateReasons.push('No picks reached the 75%+ probability threshold on any alternate line.');
+      }
+    }
+  }
+
+  // Update enrichmentStatus with final odds availability
+  const finalEnrichmentStatus: EnrichmentStatus = {
+    ...enrichmentStatus,
+    odds: hasOddsData ? 'ok' : (enrichmentStatus.odds === 'ok' ? 'partial' : enrichmentStatus.odds),
+  };
+
   const result: HRRPicksResult = {
     moneyPicks,
     allMatrixPicks: matrixPicks,
@@ -407,6 +479,10 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     slateDate: todayETDate,
     isStaleSlate,
     firstPitchTime: null,
+    enrichmentStatus: finalEnrichmentStatus,
+    topCandidates,
+    emptySlateReasons,
+    bestAvailableScore,
   };
 
   picksCache = { result, ts: Date.now(), slateDate: todayETDate };

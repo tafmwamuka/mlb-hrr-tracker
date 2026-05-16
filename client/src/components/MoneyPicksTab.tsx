@@ -14,6 +14,7 @@ import {
 import { SaferPlayTip } from "@/components/SaferPlayTip";
 import { PerformanceGraph } from "@/components/PerformanceGraph";
 import { BestEdgeCard } from "@/components/BestEdgeCard";
+import { DataHealthBar } from "@/components/DataHealthBar";
 
 interface AlternateLine {
   line: number;
@@ -262,7 +263,7 @@ function MoneyPickCard({
             </div>
           </div>
 
-          {/* Recommended line + probability */}
+          {/* Recommended line + probability + odds source */}
           <div className="flex flex-col items-end gap-1">
             <div
               className="px-3 py-2 rounded-xl text-sm font-bold"
@@ -274,35 +275,73 @@ function MoneyPickCard({
             >
               HRR O {pick.recommendedLine}
             </div>
-            {/* Odds display — sportsbook or model-derived */}
+
+            {/* Issue 4: Odds source tag — LIVE ODDS vs MODEL ESTIMATE */}
             {pick.odds ? (
-              <div
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
-                style={{ background: "oklch(0.82 0.17 85 / 12%)", border: "1px solid oklch(0.82 0.17 85 / 30%)" }}
-              >
-                <DollarSign size={10} style={{ color: "oklch(0.82 0.17 85)" }} />
-                <span className="text-xs font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
-                  {pick.odds}
-                </span>
-                <span
-                  className="text-[9px] font-semibold uppercase tracking-wide"
-                  style={{ color: pick.oddsProvider ? "oklch(0.72 0.18 165)" : "oklch(0.45 0.015 255)" }}
-                  title={pick.oddsProvider ? `Odds from ${pick.oddsProvider}` : "Model-derived odds"}
+              /* LIVE ODDS: real sportsbook data */
+              <div className="flex flex-col items-end gap-0.5">
+                <div
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-widest uppercase"
+                  style={{ background: "oklch(0.72 0.18 165 / 12%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 30%)" }}
                 >
-                  {pick.oddsProvider
-                    ? (pick.oddsProvider === 'fanduel' ? 'FD' :
-                       pick.oddsProvider === 'draftkings' ? 'DK' :
-                       pick.oddsProvider === 'betmgm' ? 'MGM' :
-                       pick.oddsProvider.toUpperCase().slice(0, 4))
-                    : 'MDL'}
-                </span>
+                  <div className="w-1 h-1 rounded-full bg-[oklch(0.72_0.18_165)] animate-pulse" />
+                  LIVE ODDS
+                </div>
+                <div
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
+                  style={{ background: "oklch(0.82 0.17 85 / 12%)", border: "1px solid oklch(0.82 0.17 85 / 30%)" }}
+                >
+                  <DollarSign size={10} style={{ color: "oklch(0.82 0.17 85)" }} />
+                  <span className="text-xs font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
+                    {pick.odds}
+                  </span>
+                  <span
+                    className="text-[9px] font-semibold uppercase tracking-wide"
+                    style={{ color: "oklch(0.72 0.18 165)" }}
+                    title={`Odds from ${pick.oddsProvider}`}
+                  >
+                    {pick.oddsProvider === 'fanduel' ? 'FD' :
+                     pick.oddsProvider === 'draftkings' ? 'DK' :
+                     pick.oddsProvider === 'betmgm' ? 'MGM' :
+                     (pick.oddsProvider ?? '').toUpperCase().slice(0, 4)}
+                  </span>
+                </div>
+                {/* Three-line breakdown: Book / Fair / Edge */}
+                <div className="flex items-center gap-1.5 text-[9px]">
+                  <span className="text-[oklch(0.40_0.015_255)]">Book</span>
+                  <span className="font-bold text-white">{pick.bookImpliedProb ? `${Math.round(pick.bookImpliedProb * 100)}%` : '—'}</span>
+                  <span className="text-[oklch(0.30_0.015_255)]">·</span>
+                  <span className="text-[oklch(0.40_0.015_255)]">Fair</span>
+                  <span className="font-bold" style={{ color: probColor }}>{pick.recommendedProb}%</span>
+                  <span className="text-[oklch(0.30_0.015_255)]">·</span>
+                  <span className="font-bold" style={{ color: pick.edge > 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)' }}>
+                    {pick.edge > 0 ? '+' : ''}{pick.edge}%
+                  </span>
+                </div>
               </div>
             ) : (
-              <div className="flex items-center gap-1">
-                <CheckCircle2 size={10} style={{ color: probColor }} />
-                <span className="text-xs font-bold" style={{ color: probColor }}>
-                  {pick.recommendedProb}%
-                </span>
+              /* MODEL ESTIMATE: no live sportsbook data */
+              <div className="flex flex-col items-end gap-0.5">
+                <div
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-widest uppercase"
+                  style={{ background: "oklch(0.72 0.10 220 / 10%)", color: "oklch(0.72 0.10 220)", border: "1px solid oklch(0.72 0.10 220 / 25%)" }}
+                >
+                  MODEL EST.
+                </div>
+                <div className="flex items-center gap-1">
+                  <CheckCircle2 size={10} style={{ color: probColor }} />
+                  <span className="text-xs font-bold" style={{ color: probColor }}>
+                    {pick.recommendedProb}%
+                  </span>
+                </div>
+                {/* Three-line breakdown: Model / Fair / Edge */}
+                <div className="flex items-center gap-1.5 text-[9px]">
+                  <span className="text-[oklch(0.40_0.015_255)]">Model</span>
+                  <span className="font-bold" style={{ color: probColor }}>{pick.recommendedProb}%</span>
+                  <span className="text-[oklch(0.30_0.015_255)]">·</span>
+                  <span className="text-[oklch(0.40_0.015_255)]">Fair</span>
+                  <span className="font-bold text-white">{pick.fairLine ?? pick.recommendedLine}</span>
+                </div>
               </div>
             )}
           </div>
@@ -886,8 +925,13 @@ export function MoneyPicksTab() {
     );
   }
 
+  const enrichmentStatus = (data as any)?.enrichmentStatus ?? null;
+
   return (
     <div className="p-4 space-y-4 pb-32">
+      {/* Data Health Bar — Issue 6 */}
+      <DataHealthBar enrichmentStatus={enrichmentStatus} />
+
       {/* Stale slate warning */}
       {isStaleSlate && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "oklch(0.20 0.08 60 / 0.25)", border: "1px solid oklch(0.75 0.15 60 / 0.4)" }}>
@@ -1045,29 +1089,98 @@ export function MoneyPicksTab() {
 
       {/* Money Pick Cards */}
       {filteredPicks.length === 0 ? (
-        <div className="text-center py-12">
+        <div className="space-y-3">
           {moneyPicks.length === 0 ? (
-            // Quality gate: no picks scored 68+ today
+            // Quality gate: no picks scored 68+ today — Smart Empty-Slate UX
             <>
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "oklch(0.16 0.03 255)" }}>
-                <Shield size={28} style={{ color: "oklch(0.45 0.015 255)" }} />
+              {/* Partial enrichment banner */}
+              {(data as any)?.enrichmentStatus?.isPartialEnrichment && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "oklch(0.14 0.04 60 / 0.3)", border: "1px solid oklch(0.82 0.17 85 / 30%)" }}>
+                  <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />
+                  <span className="text-xs" style={{ color: "oklch(0.82 0.17 85)" }}>Advanced enrichment still loading — scores may improve shortly</span>
+                </div>
+              )}
+
+              {/* Why No Plays Qualified */}
+              <div className="rounded-2xl p-4" style={{ background: "oklch(0.13 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Shield size={14} style={{ color: "oklch(0.45 0.015 255)" }} />
+                  <span className="text-xs font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Why No Plays Qualified</span>
+                </div>
+
+                {/* Best available score */}
+                {(data as any)?.bestAvailableScore != null && (
+                  <div className="flex items-center gap-2 mb-3 p-2.5 rounded-xl" style={{ background: "oklch(0.16 0.025 255)" }}>
+                    <BarChart2 size={12} style={{ color: "oklch(0.72 0.10 220)" }} />
+                    <span className="text-xs text-[oklch(0.60_0.015_255)]">
+                      Best available: <strong className="text-white">{(data as any).bestAvailableScore.toFixed(1)}</strong>
+                      {(data as any).bestAvailableScore >= 83
+                        ? <span style={{ color: 'oklch(0.82 0.17 85)' }}> — S Tier but no qualifying line</span>
+                        : (data as any).bestAvailableScore >= 74
+                        ? <span style={{ color: 'oklch(0.82 0.17 85)' }}> — A Tier but no qualifying line</span>
+                        : <span className="text-[oklch(0.45_0.015_255)]"> — below 74 threshold</span>
+                      }
+                    </span>
+                  </div>
+                )}
+
+                {/* Reasons list */}
+                {((data as any)?.emptySlateReasons ?? []).length > 0 && (
+                  <ul className="space-y-1.5 mb-3">
+                    {((data as any).emptySlateReasons as string[]).map((reason: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <div className="w-1 h-1 rounded-full mt-1.5 shrink-0" style={{ background: "oklch(0.50 0.015 255)" }} />
+                        <span className="text-xs text-[oklch(0.55_0.015_255)] leading-relaxed">{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="flex items-center gap-2 pt-2 border-t border-[oklch(1_0_0/6%)]">
+                  <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />
+                  <span className="text-[10px] text-[oklch(0.45_0.015_255)]">Refreshes automatically as lineups confirm</span>
+                </div>
               </div>
-              <h3 className="text-white font-bold text-base mb-2">No Official HRR Play Today</h3>
-              <p className="text-[oklch(0.50_0.015_255)] text-sm max-w-xs mx-auto leading-relaxed">
-                Our 10-factor model hasn't found a qualifying play yet. Official plays require S Tier (83+) or A Tier (74+) to appear here.
-              </p>
-              <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
-                <div className="w-2 h-2 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse" />
-                <span className="text-[oklch(0.55_0.015_255)] text-xs">Refreshes as lineups confirm</span>
-              </div>
+
+              {/* Top Candidates (near-miss watchlist) */}
+              {((data as any)?.topCandidates ?? []).length > 0 && (
+                <div className="rounded-2xl p-4" style={{ background: "oklch(0.13 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingUp size={13} style={{ color: "oklch(0.72 0.10 220)" }} />
+                    <span className="text-xs font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Watchlist — Near Miss Candidates</span>
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded" style={{ background: "oklch(0.72 0.10 220 / 12%)", color: "oklch(0.72 0.10 220)" }}>INFORMATIONAL</span>
+                  </div>
+                  <div className="space-y-2">
+                    {((data as any).topCandidates as any[]).map((cand: any, i: number) => {
+                      const score = cand.overallScore ?? cand.hrrConfidence ?? 0;
+                      const tier = getScoreTier(score);
+                      return (
+                        <div key={i} className="flex items-center justify-between p-2.5 rounded-xl" style={{ background: "oklch(0.16 0.022 255)" }}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-white truncate">{cand.playerName}</span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: tier.bg, color: tier.color, border: `1px solid ${tier.border}` }}>{tier.label}</span>
+                            </div>
+                            <div className="text-[10px] text-[oklch(0.45_0.015_255)] mt-0.5">{cand.team} vs {cand.pitcherTeam} · #{cand.battingPosition}</div>
+                          </div>
+                          <div className="text-right shrink-0 ml-3">
+                            <div className="text-base font-bold" style={{ color: tier.color }}>{score.toFixed(0)}</div>
+                            <div className="text-[9px] text-[oklch(0.40_0.015_255)]">score</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             // Filter too strict
-            <>
+            <div className="text-center py-12">
               <DollarSign size={40} className="mx-auto mb-3" style={{ color: "oklch(0.35 0.015 255)" }} />
               <p className="text-[oklch(0.45_0.015_255)] text-sm">No plays at this confidence level</p>
               <p className="text-[oklch(0.35_0.015_255)] text-xs mt-1">Try lowering the filter</p>
-            </>
+            </div>
           )}
         </div>
       ) : (
@@ -1126,59 +1239,64 @@ export function MoneyPicksTab() {
                   </div>
                 ) : matrixData?.candidates && matrixData.candidates.length > 0 ? (
                   <div className="space-y-1">
-                    {/* Header row */}
-                    <div className="grid gap-1 mb-2 px-2" style={{ gridTemplateColumns: '1fr 36px 28px 28px 28px 28px 28px 28px 28px 28px 28px 28px' }}>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)]">Player</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center">Score</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Team Implied Runs">TIR</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Lineup Spot">LU</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="OBP/xwOBA">OBP</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Pitcher Weakness">PIT</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Recent Form">FRM</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Day/Night Split">D/N</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Park+Weather">PRK</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Bullpen">BUL</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Platoon">PLT</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Hard Contact/Barrel">HRD</span>
-                    </div>
-                    {/* Divider */}
-                    <div className="h-px mb-2" style={{ background: "oklch(1 0 0 / 8%)" }} />
-                    {/* Candidate rows */}
-                    {matrixData.candidates.map((c: any, i: number) => {
-                      const tier = getScoreTier(c.overallScore);
-                      const passes = c.passesGate;
-                      return (
-                        <div
-                          key={i}
-                          className="grid gap-1 px-2 py-1.5 rounded-lg items-center"
-                          style={{
-                            gridTemplateColumns: '1fr 36px 28px 28px 28px 28px 28px 28px 28px 28px 28px 28px',
-                            background: passes ? 'oklch(0.15 0.025 165 / 30%)' : 'oklch(1 0 0 / 2%)',
-                            opacity: passes ? 1 : 0.55,
-                          }}
-                        >
-                          {/* Player name + team */}
-                          <div className="min-w-0">
-                            <div className="text-[11px] font-semibold text-white truncate">{c.playerName}</div>
-                            <div className="text-[9px] text-[oklch(0.45_0.015_255)]">{c.team} #{c.battingPosition} vs {c.pitcherTeam}</div>
-                          </div>
-                          {/* Overall score */}
-                          <div className="text-center">
-                            <span className="text-[11px] font-bold" style={{ color: tier.color }}>{c.overallScore}</span>
-                          </div>
-                          {/* Factor scores */}
-                          {(['teamImpliedRuns','lineupSpot','obpXwOBA','pitcherWeakness','recentForm','dayNightSplit','parkWeather','bullpenWeakness','platoonAdvantage','hardContactBarrel'] as const).map(key => {
-                            const val = c.factors[key] as number;
-                            const color = val >= 70 ? 'oklch(0.72 0.18 165)' : val >= 50 ? 'oklch(0.82 0.17 85)' : 'oklch(0.55 0.015 255)';
-                            return (
-                              <div key={key} className="text-center">
-                                <span className="text-[10px] font-semibold" style={{ color }}>{val}</span>
-                              </div>
-                            );
-                          })}
+                    {/* Issue 5: Horizontal scroll wrapper for mobile */}
+                    <div className="overflow-x-auto -mx-2 px-2">
+                      <div style={{ minWidth: 520 }}>
+                        {/* Header row */}
+                        <div className="grid gap-1 mb-2 px-2" style={{ gridTemplateColumns: '140px 36px 28px 28px 28px 28px 28px 28px 28px 28px 28px 28px' }}>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)]">Player</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center">Score</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Team Implied Runs">TIR</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Lineup Spot">LU</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="OBP/xwOBA">OBP</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Pitcher Weakness">PIT</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Recent Form">FRM</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Day/Night Split">D/N</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Park+Weather">PRK</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Bullpen">BUL</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Platoon">PLT</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Hard Contact/Barrel">HRD</span>
                         </div>
-                      );
-                    })}
+                        {/* Divider */}
+                        <div className="h-px mb-2" style={{ background: "oklch(1 0 0 / 8%)" }} />
+                        {/* Candidate rows */}
+                        {matrixData.candidates.map((c: any, i: number) => {
+                          const tier = getScoreTier(c.overallScore);
+                          const passes = c.passesGate;
+                          return (
+                            <div
+                              key={i}
+                              className="grid gap-1 px-2 py-1.5 rounded-lg items-center"
+                              style={{
+                                gridTemplateColumns: '140px 36px 28px 28px 28px 28px 28px 28px 28px 28px 28px 28px',
+                                background: passes ? 'oklch(0.15 0.025 165 / 30%)' : 'oklch(1 0 0 / 2%)',
+                                opacity: passes ? 1 : 0.55,
+                              }}
+                            >
+                              {/* Player name + team */}
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-semibold text-white truncate">{c.playerName}</div>
+                                <div className="text-[9px] text-[oklch(0.45_0.015_255)] truncate">{c.team} #{c.battingPosition} vs {c.pitcherTeam}</div>
+                              </div>
+                              {/* Overall score */}
+                              <div className="text-center">
+                                <span className="text-[11px] font-bold" style={{ color: tier.color }}>{c.overallScore}</span>
+                              </div>
+                              {/* Factor scores */}
+                              {(['teamImpliedRuns','lineupSpot','obpXwOBA','pitcherWeakness','recentForm','dayNightSplit','parkWeather','bullpenWeakness','platoonAdvantage','hardContactBarrel'] as const).map(key => {
+                                const val = c.factors[key] as number;
+                                const color = val >= 70 ? 'oklch(0.72 0.18 165)' : val >= 50 ? 'oklch(0.82 0.17 85)' : 'oklch(0.55 0.015 255)';
+                                return (
+                                  <div key={key} className="text-center">
+                                    <span className="text-[10px] font-semibold" style={{ color }}>{val}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                     {/* Legend */}
                     <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[oklch(1_0_0/6%)]">
                       <div className="flex items-center gap-1">
@@ -1190,7 +1308,7 @@ export function MoneyPicksTab() {
                         <span className="text-[9px] text-[oklch(0.45_0.015_255)]">Below threshold</span>
                       </div>
                       <div className="ml-auto text-[9px] text-[oklch(0.35_0.015_255)]">
-                        TIR·LU·OBP·PIT·FRM·D/N·PRK·BUL·PLT·HRD
+                        ← Scroll →
                       </div>
                     </div>
                   </div>

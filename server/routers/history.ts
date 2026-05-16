@@ -44,6 +44,11 @@ export const historyRouter = router({
         oddsProvider: z.string().nullable().optional(),
         streakLabel: z.string().nullable().optional(),
         dayNightLabel: z.string().nullable().optional(),
+        // Phase AE: new tracking fields
+        tier: z.string().nullable().optional(), // S, A, Lean
+        edge: z.number().nullable().optional(), // model edge %
+        closingLineValue: z.number().nullable().optional(), // CLV
+        matrixScore: z.number().nullable().optional(), // 10-factor score
       })),
     }))
     .mutation(async ({ input }) => {
@@ -73,6 +78,11 @@ export const historyRouter = router({
           oddsProvider: play.oddsProvider ?? null,
           streakLabel: play.streakLabel ?? null,
           dayNightLabel: play.dayNightLabel ?? null,
+          // Phase AE: tracking fields
+          tier: play.tier ?? null,
+          edge: play.edge ?? null,
+          closingLineValue: play.closingLineValue ?? null,
+          matrixScore: play.matrixScore ?? null,
         }))
       );
       

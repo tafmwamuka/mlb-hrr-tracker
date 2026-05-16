@@ -222,6 +222,11 @@ export const dailyResults = mysqlTable("daily_results", {
   oddsProvider: varchar("oddsProvider", { length: 64 }),
   streakLabel: varchar("streakLabel", { length: 64 }),
   dayNightLabel: varchar("dayNightLabel", { length: 64 }),
+  // Phase AE: tracking fields added May 15, 2025
+  tier: varchar("tier", { length: 8 }), // S, A, Lean, or null
+  edge: int("edge"), // model edge % vs book implied probability
+  closingLineValue: int("closingLineValue"), // CLV: closing line vs our pick line (positive = value)
+  matrixScore: int("matrixScore"), // 10-factor matrix score (0-100)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

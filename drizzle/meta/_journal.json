@@ -50,6 +50,13 @@
       "when": 1778894965233,
       "tag": "0006_graceful_warhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1778897359251,
+      "tag": "0007_bitter_nicolaos",
+      "breakpoints": true
     }
   ]
 }

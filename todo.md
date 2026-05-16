@@ -971,3 +971,42 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Show player prop odds on Money Picks cards with sportsbook label (FD/DK/MGM) or MDL badge
 - [x] Confirm Diamond Edge uses internal Statcast calculations only (BallparkPal fully removed)
 - [x] Document full Diamond Edge pipeline steps for user
+
+## Phase AE — Diamond Edge Production Readiness (May 16)
+
+### Issue 1 — Resilient Fallback Pipeline
+- [ ] Add Tier 1 / Tier 2 pipeline structure: Tier 1 (slate + pitchers + odds + projected lineups) always runs, Tier 2 (enrichment) is optional
+- [ ] If Tier 2 enrichment fails, reduce confidence by 5 pts and continue generating picks
+- [ ] Add enrichmentStatus object to pipeline output: { lineups, odds, statcast, streaks, dayNight, bullpen }
+- [ ] Show "Advanced enrichment still loading. Preliminary Diamond Edge scores are active." banner when enrichment is partial
+
+### Issue 2 — Smart Empty-Slate Experience
+- [x] Replace blank empty state with "Why No Plays Qualified" section showing top reasons
+- [x] Show best available score (e.g. "77.2 — below 83 threshold") in empty state
+- [x] Show top 3 lean/watchlist candidates even when no official picks qualify
+- [ ] Add live refresh countdown ("Next lineup refresh in 12 minutes")
+- [x] Add "Waiting for confirmed lineups..." status when lineups not yet posted
+
+### Issue 3 — Real Results Tracking
+- [x] Ensure every official pick saves: timestamp, sportsbook odds, tier, edge, playerId, gameId to DB
+- [x] Add "Official tracking began May 15" disclaimer to Results tab
+- [ ] Add rolling 7-day hit rate and ROI tracking once data accumulates
+- [x] Add closing line value (CLV) field to pick storage schema
+
+### Issue 4 — Clear Odds Separation
+- [x] Show "LIVE ODDS" tag (green) when real sportsbook odds are available
+- [x] Show "MODEL ESTIMATE" tag (grey) when model-derived odds are used
+- [x] Display three-line odds breakdown: Sportsbook Odds / Diamond Edge Fair Line / Value Edge %
+- [x] Never show model odds without a clear label distinguishing them from sportsbook lines
+
+### Issue 5 — Mobile Responsive Fixes
+- [x] Make scoring matrix horizontally scrollable with sticky first column on mobile
+- [x] Stack expanded pick card sections vertically on mobile (reduce graph width)
+- [ ] Convert podium section to swipeable cards on mobile (stacked, not 3-column)
+- [x] Add quick-view / expanded-view toggle on pick cards
+
+### Issue 6 — Live Data Health Bar
+- [x] Add a top status strip showing: Lineups ✓/✗, Odds ✓/✗, Statcast ✓/✗, Bullpen ✓/✗
+- [x] Show "Last Updated: 12:34 PM ET" timestamp on the health bar
+- [x] Show degraded-mode messages (e.g. "Weather enrichment delayed — using cached data")
+- [x] Health bar should be collapsible (tap to expand/collapse)

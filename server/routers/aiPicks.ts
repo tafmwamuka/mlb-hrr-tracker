@@ -1047,6 +1047,50 @@ export const aiPicksRouter = router({
       const confirmedCount = games3.filter(g => g.lineupSource === 'confirmed').length;
       const projectedCount = games3.filter(g => g.lineupSource === 'projected').length;
 
+      // Compute enrichment status
+      const enrichmentStatus = {
+        lineups: (matchups.length > 0 ? 'ok' : 'pending') as 'ok' | 'pending' | 'failed',
+        odds: ((enrichment3 as any).isWarm ? 'ok' : 'partial') as 'ok' | 'partial' | 'pending' | 'failed',
+        statcast: ((enrichment3 as any).statcastCache?.data?.size > 0 ? 'ok' : 'partial') as 'ok' | 'partial' | 'failed',
+        streaks: ((enrichment3 as any).mlbStreakMap?.size > 0 ? 'ok' : 'partial') as 'ok' | 'partial' | 'failed',
+        dayNight: ((enrichment3 as any).dayNightSplitsMap?.size > 0 ? 'ok' : 'partial') as 'ok' | 'partial' | 'failed',
+        bullpen: ((enrichment3 as any).bullpenFatigueMap?.size > 0 ? 'ok' : 'partial') as 'ok' | 'partial' | 'failed',
+        isPartialEnrichment: !(enrichment3 as any).isWarm,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      // Compute topCandidates (top 3 near-miss picks that didn't make money picks)
+      const qualifyingNames = new Set(
+        enrichedPicks
+          .filter(p => (p.alternateLines || []).some((a: any) => a.overProb >= 75))
+          .map(p => p.playerName)
+      );
+      const topCandidates = enrichedPicks
+        .filter(p => !qualifyingNames.has(p.playerName))
+        .slice(0, 3);
+
+      // Compute bestAvailableScore
+      const bestAvailableScore = enrichedPicks.length > 0 ? (enrichedPicks[0]?.overallScore ?? null) : null;
+
+      // Compute emptySlateReasons
+      const emptySlateReasons: string[] = [];
+      if (qualifyingNames.size === 0) {
+        if (enrichedPicks.length === 0) {
+          emptySlateReasons.push('No matchups passed the VS quality gate today.');
+        } else {
+          const topScore = enrichedPicks[0]?.overallScore ?? 0;
+          if (topScore < 68) {
+            emptySlateReasons.push(`Best available score is ${topScore.toFixed(1)} — below the 68 minimum threshold.`);
+          } else {
+            emptySlateReasons.push(`Top candidate scored ${topScore.toFixed(1)} — no picks reached the 75%+ probability threshold.`);
+          }
+          const highPitcherCount = matrixPicks.filter((p: AIPick) => ((p as any).factors?.pitcherWeakness ?? 0) < 3).length;
+          if (highPitcherCount > matrixPicks.length * 0.6) {
+            emptySlateReasons.push('Strong pitching matchups across the slate are suppressing scores.');
+          }
+        }
+      }
+
       return {
         success: true,
         picks: enrichedPicks,
@@ -1062,6 +1106,11 @@ export const aiPicksRouter = router({
         confirmedGames: confirmedCount,
         projectedGames: projectedCount,
         totalGames: games3.length,
+        // Phase AE: enrichment metadata
+        enrichmentStatus,
+        topCandidates,
+        emptySlateReasons,
+        bestAvailableScore,
       };
     } catch (error) {
       console.error("Error generating HRR picks:", error);
