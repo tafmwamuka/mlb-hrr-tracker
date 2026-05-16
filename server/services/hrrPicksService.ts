@@ -198,8 +198,21 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const todaySlate = `${nowET.getFullYear()}-${String(nowET.getMonth() + 1).padStart(2, '0')}-${String(nowET.getDate()).padStart(2, '0')}`;
   if (picksCache && picksCache.slateDate === todaySlate && Date.now() - picksCache.ts < PICKS_CACHE_TTL) {
-    console.log(`[HRRPicks] Serving from cache (age: ${Math.round((Date.now() - picksCache.ts) / 1000)}s)`);
-    return picksCache.result;
+    // Smart invalidation: if any cached pick's game has now started, bust the cache
+    // so the next request re-runs the pipeline and drops that pick automatically.
+    const GRACE_MS = 5 * 60 * 1000;
+    const nowMs = Date.now();
+    const hasStartedGame = picksCache.result.moneyPicks.some((p: any) => {
+      if (!p.gameTime) return false;
+      return nowMs >= new Date(p.gameTime).getTime() + GRACE_MS;
+    });
+    if (hasStartedGame) {
+      console.log('[HRRPicks] Cache busted — at least one pick\'s game has started');
+      picksCache = null;
+    } else {
+      console.log(`[HRRPicks] Serving from cache (age: ${Math.round((Date.now() - picksCache.ts) / 1000)}s)`);
+      return picksCache.result;
+    }
   }
   const lineupData = await getAdaptedLineupData();
   const dataDate = await getDataDate();
@@ -428,8 +441,25 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     return b.overProbability - a.overProbability;
   });
 
+  // Pre-game gate: only show picks for games that have NOT yet started.
+  // We give a 5-minute grace window past first pitch so picks aren't
+  // yanked the instant the game goes live (umpires delay, etc.).
+  const nowMs = Date.now();
+  const GRACE_MS = 5 * 60 * 1000; // 5 minutes
+
+  const preGamePicks = enrichedPicks.filter((pick: any) => {
+    if (!pick.gameTime) return true; // no time info → keep (don't silently drop)
+    const gameStartMs = new Date(pick.gameTime).getTime();
+    const cutoff = gameStartMs + GRACE_MS;
+    const isPreGame = nowMs < cutoff;
+    if (!isPreGame) {
+      console.log(`[HRRPicks] Dropping ${pick.playerName} — game started at ${new Date(gameStartMs).toISOString()}`);
+    }
+    return isPreGame;
+  });
+
   // Filter to money picks: at least one alternate line at 75%+
-  const moneyPicks: EnrichedMoneyPick[] = enrichedPicks
+  const moneyPicks: EnrichedMoneyPick[] = preGamePicks
     .map((pick: any) => {
       const qualifyingLines = (pick.alternateLines || [])
         .filter((a: any) => a.overProb >= 75)

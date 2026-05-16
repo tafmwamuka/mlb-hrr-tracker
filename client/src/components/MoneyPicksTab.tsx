@@ -90,6 +90,7 @@ interface MoneyPick {
   baseScore?: number;    // Score before BP boost
   isBestBet?: boolean;   // True when surfaced as Best Bet Today (weak slate fallback)
   leanTier?: boolean;    // True when score is 68-73 (informational only)
+  gameTime?: string | null; // ISO game start time (UTC)
 }
 
 // S/A/B/C Tier system based on overallScore — Phase W calibration: S=83+, A=74-82, B/Lean=68-73
@@ -199,6 +200,13 @@ function MoneyPickCard({
   const scoreTier = getScoreTier(pick.overallScore ?? pick.recommendedProb);
   const archetype = getPlayerArchetype(pick);
 
+  // Game timing: warn when game starts within 30 minutes
+  const gameStartMs = pick.gameTime ? new Date(pick.gameTime).getTime() : null;
+  const nowMs = Date.now();
+  const minsUntilGame = gameStartMs ? Math.round((gameStartMs - nowMs) / 60000) : null;
+  const isGameSoon = minsUntilGame !== null && minsUntilGame >= 0 && minsUntilGame <= 30;
+  const isGameImminent = minsUntilGame !== null && minsUntilGame >= 0 && minsUntilGame <= 10;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -212,6 +220,22 @@ function MoneyPickCard({
     >
       {/* Top accent bar — tier color */}
       <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${scoreTier.color}, ${scoreTier.color}60)` }} />
+
+      {/* Game timing warning banner */}
+      {isGameSoon && (
+        <div
+          className="flex items-center justify-center gap-1.5 py-1 text-[10px] font-bold tracking-wide"
+          style={{
+            background: isGameImminent ? "oklch(0.68 0.22 25 / 20%)" : "oklch(0.82 0.17 85 / 12%)",
+            color: isGameImminent ? "oklch(0.78 0.18 25)" : "oklch(0.82 0.17 85)",
+          }}
+        >
+          <Clock size={10} />
+          {isGameImminent
+            ? `⚠️ LAST CALL — GAME IN ${minsUntilGame} MIN`
+            : `GAME STARTS IN ${minsUntilGame} MIN — LOCK IN NOW`}
+        </div>
+      )}
 
       <div className="p-4">
         {/* Header */}
@@ -709,6 +733,7 @@ export function MoneyPicksTab() {
           leanTier: pick.leanTier ?? false,
           bpBoost: pick.bpBoost ?? 0,
           baseScore: pick.baseScore ?? undefined,
+          gameTime: (pick as any).gameTime ?? null,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)

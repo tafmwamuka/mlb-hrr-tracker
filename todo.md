@@ -946,3 +946,10 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Extend Odds API cache TTL from 10 min to 15 min
 - [x] Add daily usage counter with warning log if > 200 calls/day
 - [x] Return cached/model odds silently outside the time window (no error shown to user)
+
+## Phase AB — Pre-Game Filter & Early Release (User Request May 15)
+- [x] Add game start time to each pick in the pipeline (from BallparkPal/MLB schedule)
+- [x] Filter out picks for games that have already started (gameTime < now + 5min grace)
+- [x] Add GAME SOON / LAST CALL warning banner on cards (30 min and 10 min warnings)
+- [x] Ensure picks are generated as soon as lineups are confirmed (no artificial delay)
+- [x] Smart cache invalidation: bust cache when any cached pick's game has started
