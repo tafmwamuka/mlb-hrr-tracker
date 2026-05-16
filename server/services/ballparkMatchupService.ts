@@ -13,7 +13,6 @@
  */
 
 import puppeteer from 'puppeteer-core';
-import { getBallparkPalCache } from '../db';
 
 export interface BallparkMatchup {
   game: string;           // e.g. "Giants @ Dodgers"
@@ -215,24 +214,6 @@ async function fetchMatchupData(): Promise<BallparkMatchup[]> {
   // Check in-memory cache
   if (cachedMatchups && Date.now() - cacheTimestamp < CACHE_TTL) {
     return cachedMatchups;
-  }
-
-  // Step 0: Check DB cache first — populated by scheduled task
-  try {
-    const slateDate = getTodayET();
-    const dbCache = await getBallparkPalCache(slateDate, 6 * 60 * 60 * 1000); // 6 hour max age
-    if (dbCache && dbCache.matchups.length > 0) {
-      const matchups = parseMatchups(dbCache.matchups as Array<Record<string, any>>);
-      if (matchups.length > 0) {
-        cachedMatchups = matchups;
-        cacheTimestamp = Date.now();
-        const ageMin = Math.round((Date.now() - dbCache.fetchedAt.getTime()) / 60000);
-        console.log(`[BallparkPal] DB cache hit: ${matchups.length} matchups (${ageMin} min old, source: ${dbCache.source})`);
-        return matchups;
-      }
-    }
-  } catch (dbErr) {
-    console.warn('[BallparkPal] DB cache lookup failed, falling back to direct fetch:', dbErr);
   }
 
   try {

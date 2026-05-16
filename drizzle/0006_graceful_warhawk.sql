@@ -1,0 +1,1 @@
+DROP TABLE `ballparkpal_cache`;

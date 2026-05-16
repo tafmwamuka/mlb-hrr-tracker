@@ -953,3 +953,14 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Add GAME SOON / LAST CALL warning banner on cards (30 min and 10 min warnings)
 - [x] Ensure picks are generated as soon as lineups are confirmed (no artificial delay)
 - [x] Smart cache invalidation: bust cache when any cached pick's game has started
+
+## Phase AC — Remove BallparkPal, Build Internal VS Gate (User Request May 15)
+- [ ] Audit all BallparkPal references across the codebase
+- [ ] Build internal Statcast-based VS gate: pitcher xwOBA suppression vs batter xwOBA
+- [ ] Add park factor lookup from internal MLB Stats API park data (no external scraping)
+- [ ] Remove ballparkService.ts, ballparkPalService.ts, and all BallparkPal cache logic
+- [ ] Remove ballparkpal_cache DB table reference from schema and DB helpers
+- [ ] Remove BallparkPal fallback mode from enrichmentCache.ts VS gate
+- [ ] Wire internal VS gate into hrrPicksService as the sole matchup filter
+- [ ] Ensure pipeline runs immediately on cold start (no BallparkPal warm-up delay)
+- [ ] Update UI to remove any BallparkPal-specific labels (VS grade, BP boost, etc.)

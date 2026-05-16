@@ -43,6 +43,13 @@
       "when": 1778876457377,
       "tag": "0005_futuristic_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1778894965233,
+      "tag": "0006_graceful_warhawk",
+      "breakpoints": true
     }
   ]
 }

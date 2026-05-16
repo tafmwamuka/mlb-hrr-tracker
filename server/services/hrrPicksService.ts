@@ -4,7 +4,7 @@
  * and the Results tab always show identical plays.
  *
  * This is the single source of truth for:
- *   - VS gate (BallparkPal or mlbMatchup thresholds)
+ *   - VS gate (mlbMatchupService — pitcher ERA/platoon/Statcast, 0-10 scale)
  *   - 10-factor matrix scoring (rankAIPicks)
  *   - HRR Poisson projections (generateHRRProjections)
  *   - Alternate line calculation + quality gate (75%+ overProb)
@@ -21,101 +21,7 @@ import { generateHRRProjections } from './hrrService';
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from './poissonModel';
 import { getAdaptedLineupData } from './lineupAdapter';
 import { getDataDate } from './mlbLineupService';
-import { findMatchupForPlayer } from './ballparkMatchupService';
 import { getEnrichmentData } from './enrichmentCache';
-import type { BallparkMatchup } from './ballparkMatchupService';
-
-// ─── Local helpers (mirrors aiPicks.ts) ──────────────────────────────────────
-
-function buildMatchupsFromBallparkPal(ballparkMatchups: BallparkMatchup[]) {
-  const matchups: any[] = [];
-  const playerDataMap = new Map<number, any>();
-
-  const starters = ballparkMatchups.filter(bp =>
-    bp.batter && bp.batter.trim().length > 0 && bp.rc > 0
-  );
-
-  starters.forEach((bp, idx) => {
-    const syntheticId = -(idx + 1);
-    const avgEst = 0.250;
-    const obpEst = 0.320;
-    const slgEst = 0.400;
-
-    matchups.push({
-      playerId: syntheticId,
-      playerName: bp.batter,
-      team: bp.team,
-      position: 'DH',
-      battingPosition: 5,
-      pitcher: {
-        id: null,
-        name: bp.pitcher,
-        team: '',
-        handedness: (bp.throws as 'R' | 'L') || 'R',
-        era: 4.00,
-      },
-      rc: bp.rc,
-      confidence: 70,
-      gameTime: undefined,
-    });
-
-    playerDataMap.set(syntheticId, {
-      playerId: syntheticId,
-      name: bp.batter,
-      team: bp.team,
-      position: 'DH',
-      battingPosition: 5,
-      handedness: (bp.bats as 'R' | 'L' | 'S') || 'R',
-      stats: {
-        hits: 30, runs: 20, rbi: 20,
-        slg: slgEst, avg: avgEst, obp: obpEst, power: slgEst - avgEst,
-      },
-      recentForm: {
-        last15Games: { hits: 15, runs: 10, rbi: 10, avg: avgEst },
-        trend: 'neutral',
-      },
-    });
-  });
-
-  return { matchups, playerDataMap };
-}
-
-function buildRealHRTargetsMap(
-  playerNames: string[],
-  ballparkMatchups: BallparkMatchup[]
-): Map<string, { grade: string; hrProbability: number; threatScore: number }> {
-  const map = new Map<string, { grade: string; hrProbability: number; threatScore: number }>();
-  if (ballparkMatchups.length === 0) return map;
-
-  for (const name of playerNames) {
-    const bpMatch = findMatchupForPlayer(name, '', ballparkMatchups);
-    if (!bpMatch) continue;
-    const hrProb = bpMatch.hrProb;
-    let grade: string;
-    if (hrProb >= 5.5) grade = 'A+';
-    else if (hrProb >= 4.5) grade = 'A';
-    else if (hrProb >= 3.5) grade = 'B+';
-    else if (hrProb >= 2.5) grade = 'B';
-    else if (hrProb >= 1.5) grade = 'C+';
-    else if (hrProb >= 0.5) grade = 'C';
-    else grade = 'D';
-    const threatScore = Math.min(100, Math.round((hrProb / 8) * 100));
-    map.set(name, { grade, hrProbability: Math.round(hrProb * 10), threatScore });
-  }
-  return map;
-}
-
-function enrichMatchupsWithBallparkRC<T extends { playerName: string; team: string; rc: number }>(
-  matchups: T[],
-  ballparkMatchups: BallparkMatchup[]
-): T[] {
-  if (ballparkMatchups.length === 0) return matchups;
-  return matchups.map(m => {
-    const bpMatch = findMatchupForPlayer(m.playerName, m.team, ballparkMatchups);
-    if (!bpMatch) return m;
-    return { ...m, rc: bpMatch.rc };
-  });
-}
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
@@ -135,9 +41,9 @@ export interface EnrichedMoneyPick {
   rcScore: number;
   parkFactor: number;
   lineSource: string;
-  bookOdds: null;
-  bookOddsProvider: null;
-  bookImpliedProb: null;
+  bookOdds: string | null;
+  bookOddsProvider: string | null;
+  bookImpliedProb: number | null;
   overProbability: number;
   edge: number;
   pickQuality: string;
@@ -179,7 +85,7 @@ export interface HRRPicksResult {
 
 // ─── Picks-level in-memory cache ────────────────────────────────────────────
 // Avoids re-running the full pipeline (VS gate + matrix scoring + Poisson) on
-// every request. TTL is 5 minutes; invalidated automatically at midnight ET.
+// every request. TTL is 5 minutes; invalidated automatically when a game starts.
 const PICKS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 let picksCache: { result: HRRPicksResult; ts: number; slateDate: string } | null = null;
 
@@ -199,7 +105,6 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   const todaySlate = `${nowET.getFullYear()}-${String(nowET.getMonth() + 1).padStart(2, '0')}-${String(nowET.getDate()).padStart(2, '0')}`;
   if (picksCache && picksCache.slateDate === todaySlate && Date.now() - picksCache.ts < PICKS_CACHE_TTL) {
     // Smart invalidation: if any cached pick's game has now started, bust the cache
-    // so the next request re-runs the pipeline and drops that pick automatically.
     const GRACE_MS = 5 * 60 * 1000;
     const nowMs = Date.now();
     const hasStartedGame = picksCache.result.moneyPicks.some((p: any) => {
@@ -214,6 +119,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       return picksCache.result;
     }
   }
+
   const lineupData = await getAdaptedLineupData();
   const dataDate = await getDataDate();
 
@@ -232,27 +138,15 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     dayNightSplitsMap: new Map(),
     mlbStreakMap: new Map(),
     statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
-    ballparkMatchups: [] as BallparkMatchup[],
+    bullpenFatigueMap: new Map(),
     fetchedAt: Date.now(),
     isWarm: false,
   }));
 
-  const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache, ballparkMatchups: bpMatchups, bullpenFatigueMap } = enrichment as any;
+  const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache, bullpenFatigueMap } = enrichment as any;
 
-  let matchups = lineupData.matchups;
-  let players = lineupData.playerDataMap;
-
-  if (matchups.length < 50 && bpMatchups.length > 0) {
-    const bpData = buildMatchupsFromBallparkPal(bpMatchups);
-    if (bpData.matchups.length > 0) {
-      const realNames = new Set(matchups.map((m: any) => m.playerName));
-      const bpOnly = bpData.matchups.filter((m: any) => !realNames.has(m.playerName));
-      matchups = [...matchups, ...bpOnly];
-      for (const [id, pd] of Array.from(bpData.playerDataMap.entries())) {
-        if (!players.has(id)) players.set(id, pd);
-      }
-    }
-  }
+  const matchups = lineupData.matchups;
+  const players = lineupData.playerDataMap;
 
   const now = new Date();
   const todayET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -289,10 +183,10 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     }
   }
 
-  // VS gate (same as getHRRPicks)
-  const hasBallparkPalData = bpMatchups.length > 0;
-  const STRONG_THRESHOLD = hasBallparkPalData ? 9.5 : 7.0;
-  const MODERATE_THRESHOLD = hasBallparkPalData ? 8.5 : 5.5;
+  // VS gate: always use mlbMatchupService scores (0-10 scale)
+  // STRONG >= 7.0, MODERATE >= 5.5 (with secondary signals), < 5.5 excluded
+  const STRONG_THRESHOLD = 7.0;
+  const MODERATE_THRESHOLD = 5.5;
 
   const gatedMatchups = vsGradeMap.size > 0
     ? matchups.filter((m: any) => {
@@ -314,14 +208,12 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       })
     : matchups;
 
-  const hrTargetsMap = bpMatchups.length > 0
-    ? buildRealHRTargetsMap(gatedMatchups.map((m: any) => m.playerName), bpMatchups)
-    : getMockHRTargets();
+  console.log(`[HRRPicks] VS Gate (internal mlbMatchup, STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD}): ${matchups.length} → ${gatedMatchups.length} matchups passed`);
 
-  const enrichedGatedMatchups = enrichMatchupsWithBallparkRC(gatedMatchups, bpMatchups);
+  const hrTargetsMap = getMockHRTargets();
 
   const matrixPicks = rankAIPicks(
-    enrichedGatedMatchups,
+    gatedMatchups,
     players,
     hrTargetsMap,
     parkFactors,
@@ -330,8 +222,8 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     vsGradeMap,
     gameTotalsMap,
     statcastCache,
-    hasBallparkPalData,
-    bpMatchups,
+    false,  // hasBallparkPalData = false (always internal now)
+    [],     // ballparkMatchups = empty (removed)
     bullpenFatigueMap ?? new Map()
   );
 
@@ -388,7 +280,6 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     } : null;
 
     // Derive model-based American odds as fallback display
-    // American odds: if prob >= 50% → -(prob/(1-prob)*100), else +((1-prob)/prob*100)
     const probFrac = Math.min(0.99, Math.max(0.01, modelOverProb));
     const americanOdds = probFrac >= 0.5
       ? `-${Math.round((probFrac / (1 - probFrac)) * 100)}`
@@ -414,11 +305,9 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       overProbability: Math.round(modelOverProb * 100),
       edge: Math.round(edge * 100),
       pickQuality,
-      // Odds: model-derived American odds (no sportsbook integration)
       bookOdds: americanOdds,
       bookOddsProvider: 'model' as const,
       bookImpliedProb: Math.round(modelOverProb * 100),
-      // Streak + day/night from enrichment cache
       streakInfo,
       dayNightSplit,
       alternateLines: alternates.map((alt: any) => ({
@@ -442,13 +331,11 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   });
 
   // Pre-game gate: only show picks for games that have NOT yet started.
-  // We give a 5-minute grace window past first pitch so picks aren't
-  // yanked the instant the game goes live (umpires delay, etc.).
   const nowMs = Date.now();
-  const GRACE_MS = 5 * 60 * 1000; // 5 minutes
+  const GRACE_MS = 5 * 60 * 1000;
 
   const preGamePicks = enrichedPicks.filter((pick: any) => {
-    if (!pick.gameTime) return true; // no time info → keep (don't silently drop)
+    if (!pick.gameTime) return true;
     const gameStartMs = new Date(pick.gameTime).getTime();
     const cutoff = gameStartMs + GRACE_MS;
     const isPreGame = nowMs < cutoff;
@@ -475,7 +362,6 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     .filter((p: any): p is EnrichedMoneyPick => p !== null);
 
   // Targeted Odds API fetch: only call for events containing our final picks
-  // This uses ~1-3 API calls instead of 28+ (one per game)
   let hasOddsData = false;
   if (moneyPicks.length > 0) {
     try {
@@ -484,18 +370,15 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       );
       if (oddsMap.size > 0) {
         hasOddsData = true;
-        // Overlay real sportsbook odds onto each money pick
         for (const pick of moneyPicks as any[]) {
           const oddsData = oddsMap.get(pick.playerName);
           if (!oddsData) continue;
 
-          // Use featured HRR line if available, else best individual stat line
           const featuredLine = oddsData.featuredLine;
           const featuredOverOdds = oddsData.featuredOverOdds;
           const featuredUnderOdds = oddsData.featuredUnderOdds;
 
           if (featuredLine !== null && featuredOverOdds !== null) {
-            // Real sportsbook HRR line
             const overProb = americanToImpliedProbability(featuredOverOdds);
             const underProb = featuredUnderOdds ? americanToImpliedProbability(featuredUnderOdds) : 1 - overProb;
             const { trueOver } = removeVig(overProb, underProb);
@@ -504,7 +387,6 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
             pick.bookImpliedProb = Math.round(trueOver * 100);
             pick.lineSource = 'sportsbook';
           } else if (featuredOverOdds !== null) {
-            // Individual stat odds as fallback
             pick.bookOdds = featuredOverOdds > 0 ? `+${featuredOverOdds}` : `${featuredOverOdds}`;
             pick.bookOddsProvider = oddsData.bookmaker;
           }
@@ -527,7 +409,6 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     firstPitchTime: null,
   };
 
-  // Store in picks cache
   picksCache = { result, ts: Date.now(), slateDate: todayETDate };
   console.log(`[HRRPicks] Cache updated: ${moneyPicks.length} money picks, ${matrixPicks.length} matrix picks`);
 

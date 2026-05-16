@@ -90,24 +90,6 @@ export const systemRouter = router({
           console.warn("[Scheduled Task] Failed to fetch MLB standings:", error);
         }
 
-        // Fetch fresh ballpark matchups
-        let ballparkMatchupCount = 0;
-        try {
-          // Note: ballpark.com API endpoint may vary; this is a placeholder
-          const response = await fetch("https://www.ballpark.com/api/matchups", {
-            headers: { "User-Agent": "MLB-HRR-Tracker/1.0" },
-          });
-          if (response.ok) {
-            const data = await response.json();
-            if (Array.isArray(data)) {
-              ballparkMatchupCount = data.length;
-            }
-            console.log(`[Scheduled Task] Fetched ${ballparkMatchupCount} ballpark matchups`);
-          }
-        } catch (error) {
-          console.warn("[Scheduled Task] Failed to fetch ballpark matchups:", error);
-        }
-
         // Fetch fresh odds from The Odds API
         let oddsGameCount = 0;
         try {
@@ -140,12 +122,10 @@ export const systemRouter = router({
             timestamp,
             dataFetched: {
               mlbStandings: mlbStatsCount > 0,
-              ballparkMatchups: ballparkMatchupCount > 0,
               oddsGames: oddsGameCount > 0,
             },
             counts: {
               mlbStandings: mlbStatsCount,
-              ballparkMatchups: ballparkMatchupCount,
               oddsGames: oddsGameCount,
             },
           };
@@ -159,12 +139,10 @@ export const systemRouter = router({
           timestamp,
           dataFetched: {
             mlbStandings: mlbStatsCount > 0,
-            ballparkMatchups: ballparkMatchupCount > 0,
             oddsGames: oddsGameCount > 0,
           },
           counts: {
             mlbStandings: mlbStatsCount,
-            ballparkMatchups: ballparkMatchupCount,
             oddsGames: oddsGameCount,
           },
         };

@@ -1,11 +1,10 @@
 /**
  * Enrichment Cache
  * Shared in-memory cache for expensive external data fetches.
- * Deduplicates in-flight requests so all three pick procedures
- * (getTopPicks, getComprehensivePicks, getHRRPicks) share the same
+ * Deduplicates in-flight requests so all pick procedures share the same
  * fetched data instead of tripling the MLB API load.
  *
- * Cache TTL: 15 minutes (data doesn't change mid-session)
+ * Cache TTL: 30 minutes (data doesn't change mid-session)
  *
  * Cold-cache strategy:
  * - On first request, return IMMEDIATELY with neutral/empty data
@@ -14,13 +13,12 @@
  * - This prevents the first page load from timing out due to ~500 MLB API calls
  *
  * Data sources (in priority order):
- * 1. BallparkPal vsGrade (-10 to +10) — PRIMARY VS signal, normalized to 0-10 scale
- *    Also provides: real RC, HR%, XB%, 1B% per player
- * 2. MLB Stats API matchup scores (hrtargets-style fallback if ballparkpal unavailable)
- * 3. Pybaseball Statcast data (xwOBA, barrel%, exit velocity) — cached 6h separately
- * 4. MLB Stats API day/night splits per player
- * 5. MLB Stats API streak data per player
- * 6. Odds API / RC-based game totals
+ * 1. MLB Stats API matchup scores (hrtargets-style) — pitcher ERA, platoon splits, park factor
+ *    Combined with Statcast barrel%/hard-hit% for power grading
+ * 2. Pybaseball Statcast data (xwOBA, barrel%, exit velocity) — cached 6h separately
+ * 3. MLB Stats API day/night splits per player
+ * 4. MLB Stats API streak data per player
+ * 5. Odds API game totals
  */
 
 import { batchGetDayNightSplits, type PlayerDayNightSplits } from "./dayNightSplitService";
@@ -28,17 +26,11 @@ import { batchGetPlayerStreaks, type PlayerStreakData } from "./mlbStreakService
 import { batchComputeMatchupScores } from "./mlbMatchupService";
 import { fetchGameTotals } from "./gameTotalsService";
 import { getStatcastData, lookupStatcastPlayer, type StatcastCache } from "./pybaseballService";
-import {
-  fetchMatchupDataPublic,
-  findMatchupForPlayer,
-  computeGameTotalsFromMatchups,
-  type BallparkMatchup,
-} from "./ballparkMatchupService";
 import type { GameTotal } from "./gameTotalsService";
 import { getBullpenFatigue, type BullpenFatigue } from "./bullpenFatigueService";
 
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes — picks don't change mid-session
-const FETCH_TIMEOUT = 12_000; // 12 seconds — gives MLB Stats API time to respond for game logs
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const FETCH_TIMEOUT = 12_000; // 12 seconds
 
 export interface EnrichmentData {
   vsGradeMap: Map<string, number>;          // player name → 0-10 VS score (primary gate)
@@ -46,9 +38,6 @@ export interface EnrichmentData {
   dayNightSplitsMap: Map<number, PlayerDayNightSplits>;
   mlbStreakMap: Map<number, PlayerStreakData>;
   statcastCache: StatcastCache;
-  // Real ballparkpal data per player (for matrix RC and HR% factors)
-  ballparkMatchups: BallparkMatchup[];       // raw ballparkpal matchup data
-  // S3: Bullpen fatigue per opposing team (teamId -> BullpenFatigue)
   bullpenFatigueMap: Map<number, BullpenFatigue>;
   fetchedAt: number;
   isWarm: boolean; // true = real data, false = neutral placeholder
@@ -75,13 +64,11 @@ let cacheDataDate: string | null = null;
 /**
  * Get the active slate date in Eastern Time.
  * After 5 AM ET, returns today's date.
- * Before 5 AM ET, returns yesterday's date (overnight window — yesterday's late games may still be live).
- * This matches the mlbLineupService slate logic.
+ * Before 5 AM ET, returns yesterday's date (overnight window).
  */
 function getETDate(): string {
   const now = new Date();
   const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  // Before 5 AM ET: treat as previous day (overnight window)
   if (etDate.getHours() < 5) {
     etDate.setDate(etDate.getDate() - 1);
   }
@@ -117,19 +104,10 @@ function buildNeutralEnrichment(): EnrichmentData {
       fetchedAt: Date.now(),
       year: new Date().getFullYear(),
     },
-    ballparkMatchups: [],
     bullpenFatigueMap: new Map<number, BullpenFatigue>(),
     fetchedAt: 0, // 0 = never fetched, will trigger background warm
     isWarm: false,
   };
-}
-
-/**
- * Convert ballparkpal vsGrade (-10 to +10) to 0-10 scale for VS gate.
- * -10 → 0.0, 0 → 5.0, +10 → 10.0
- */
-function bpGradeToScore(vsGrade: number): number {
-  return Math.round(((vsGrade + 10) / 20) * 10 * 10) / 10;
 }
 
 /**
@@ -144,13 +122,8 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
     const season = new Date().getFullYear();
     const oddsApiKey = process.env.ODDS_API_KEY;
 
-    // Stage 1: Fetch BallparkPal, Statcast, day/night splits, and streaks in parallel
-    const [ballparkMatchups, statcastCache, dayNightSplitsMap, mlbStreakMap] = await Promise.all([
-      withTimeout(
-        fetchMatchupDataPublic(),
-        12_000, // 12s — plain fetch (8s) + small buffer; Puppeteer adds ~10s if needed
-        [] as BallparkMatchup[]
-      ),
+    // Stage 1: Fetch Statcast, day/night splits, and streaks in parallel
+    const [statcastCache, dayNightSplitsMap, mlbStreakMap] = await Promise.all([
       withTimeout(
         getStatcastData(season),
         30_000,
@@ -177,95 +150,53 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
       ),
     ]);
 
-    // Stage 2: Build VS grade map
-    // PRIMARY: Use ballparkpal vsGrade if available (normalized to 0-10)
-    // FALLBACK: Use mlbMatchupService hrtargets-style score
-    let vsGradeMap: Map<string, number>;
-
-    if (ballparkMatchups.length > 0) {
-      // Build VS grade map from ALL ballparkpal matchups (not just current lineup players)
-      // This handles the case where today's lineups aren't posted yet but ballparkpal
-      // already has today's matchup data — all 198 starters get real vsGrades.
-      vsGradeMap = new Map<string, number>();
-
-      // Index ALL ballparkpal matchups by player name (both starters and non-starters)
-      for (const bpMatch of ballparkMatchups) {
-        const score = bpGradeToScore(bpMatch.vsGrade);
-        // Use the first occurrence (starters take priority over bench players)
-        if (!vsGradeMap.has(bpMatch.batter)) {
-          vsGradeMap.set(bpMatch.batter, score);
-        }
+    // Stage 2: Build VS grade map using MLB Stats API + Statcast
+    // Uses hrtargets-style scoring: pitcher ERA/WHIP/platoon + Statcast barrel%/hard-hit%
+    const enrichedPlayers = players.map(p => {
+      const statcast = lookupStatcastPlayer(statcastCache, p.playerName);
+      const streak = mlbStreakMap.get(p.playerId);
+      let streakBonus = 0;
+      if (streak) {
+        if (streak.trendDirection === 'HOT') streakBonus = 5;
+        else if (streak.trendDirection === 'COLD') streakBonus = -4;
       }
+      return {
+        playerId: p.playerId,
+        playerName: p.playerName,
+        pitcherId: p.pitcherId ?? null,
+        pitcherHand: p.pitcherHand ?? null,
+        barrelPct: statcast?.barrelPct ?? null,
+        hardHitPct: statcast?.hardHitPct ?? null,
+        seasonHr: null,
+        streakBonus,
+      };
+    });
 
-      // Also ensure lineup players are mapped (handles name mismatches via findMatchupForPlayer)
-      for (const player of players) {
-        if (!vsGradeMap.has(player.playerName)) {
-          const bpMatch = findMatchupForPlayer(player.playerName, player.team, ballparkMatchups);
-          if (bpMatch) {
-            vsGradeMap.set(player.playerName, bpGradeToScore(bpMatch.vsGrade));
-          } else {
-            vsGradeMap.set(player.playerName, 5.0); // neutral fallback
-          }
-        }
-      }
+    const vsGradeMap = await withTimeout(
+      batchComputeMatchupScores(enrichedPlayers, season),
+      60_000,
+      new Map<string, number>()
+    );
 
-      const bpScores = Array.from(vsGradeMap.values());
-      console.log(`[EnrichmentCache] BallparkPal VS grades loaded: ${ballparkMatchups.length} matchups, ${vsGradeMap.size} players mapped. ` +
-        `STRONG(>=7): ${bpScores.filter(v => v >= 7).length}, ` +
-        `MODERATE(5.5-7): ${bpScores.filter(v => v >= 5.5 && v < 7).length}, ` +
-        `BAD(<5.5): ${bpScores.filter(v => v < 5.5).length}`);
-    } else {
-      // Fallback: compute hrtargets-style scores from MLB Stats API
-      console.log('[EnrichmentCache] BallparkPal unavailable, falling back to mlbMatchupService');
+    const vsScores = Array.from(vsGradeMap.values());
+    console.log(`[EnrichmentCache] Internal VS grades loaded: ${vsGradeMap.size} players. ` +
+      `STRONG(>=7): ${vsScores.filter(v => v >= 7).length}, ` +
+      `MODERATE(5.5-7): ${vsScores.filter(v => v >= 5.5 && v < 7).length}, ` +
+      `BAD(<5.5): ${vsScores.filter(v => v < 5.5).length}`);
 
-      const enrichedPlayers = players.map(p => {
-        const statcast = lookupStatcastPlayer(statcastCache, p.playerName);
-        const streak = mlbStreakMap.get(p.playerId);
-        let streakBonus = 0;
-        if (streak) {
-          if (streak.trendDirection === 'HOT') streakBonus = 5;
-          else if (streak.trendDirection === 'COLD') streakBonus = -4;
-        }
-        return {
-          playerId: p.playerId,
-          playerName: p.playerName,
-          pitcherId: p.pitcherId ?? null,
-          pitcherHand: p.pitcherHand ?? null,
-          barrelPct: statcast?.barrelPct ?? null,
-          hardHitPct: statcast?.hardHitPct ?? null,
-          seasonHr: null,
-          streakBonus,
-        };
-      });
+    // Stage 3: Fetch game totals from Odds API
+    const teamMatchups = players.map(p => ({
+      batter: p.playerName,
+      team: p.team,
+      vsGrade: vsGradeMap.get(p.playerName) ?? 5,
+    }));
+    const gameTotalsMap = await withTimeout(
+      fetchGameTotals(oddsApiKey, teamMatchups),
+      FETCH_TIMEOUT,
+      new Map<string, GameTotal>()
+    );
 
-      vsGradeMap = await withTimeout(
-        batchComputeMatchupScores(enrichedPlayers, season),
-        60_000,
-        new Map<string, number>()
-      );
-    }
-
-    // Stage 3: Fetch game totals
-    // Use ballparkpal RC-based game totals if available, otherwise Odds API
-    let gameTotalsMap: Map<string, GameTotal>;
-    if (ballparkMatchups.length > 0) {
-      gameTotalsMap = computeGameTotalsFromMatchups(ballparkMatchups);
-      console.log(`[EnrichmentCache] Game totals from BallparkPal RC: ${gameTotalsMap.size} games`);
-    } else {
-      const teamMatchups = players.map(p => ({
-        batter: p.playerName,
-        team: p.team,
-        vsGrade: vsGradeMap.get(p.playerName) ?? 5,
-      }));
-      gameTotalsMap = await withTimeout(
-        fetchGameTotals(oddsApiKey, teamMatchups),
-        FETCH_TIMEOUT,
-        new Map<string, GameTotal>()
-      );
-    }
-
-    // Stage 4: Fetch bullpen fatigue for all 30 MLB teams (S3)
-    // Cached for 15 min — fast after first call. Covers all possible opponent teams.
+    // Stage 4: Fetch bullpen fatigue for all 30 MLB teams
     const MLB_TEAM_IDS = [
       { teamId: 133, teamAbbr: 'OAK' }, { teamId: 134, teamAbbr: 'PIT' },
       { teamId: 135, teamAbbr: 'SD' },  { teamId: 136, teamAbbr: 'SEA' },
@@ -286,7 +217,7 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
 
     const bullpenFatigueMap = await withTimeout(
       getBullpenFatigue(MLB_TEAM_IDS),
-      20_000, // 20s timeout — fetches 30 teams' last 3 days
+      20_000,
       new Map<number, BullpenFatigue>()
     );
 
@@ -296,15 +227,14 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
       dayNightSplitsMap,
       mlbStreakMap,
       statcastCache,
-      ballparkMatchups,
       bullpenFatigueMap,
       fetchedAt: Date.now(),
       isWarm: true,
     };
-    cacheDataDate = getETDate(); // Track which day this cache belongs to
+    cacheDataDate = getETDate();
 
     console.log(`[EnrichmentCache] Background warm complete. ` +
-      `BallparkPal: ${ballparkMatchups.length > 0 ? 'YES' : 'NO (fallback)'}, ` +
+      `VS: ${vsGradeMap.size} players, ` +
       `Statcast: ${statcastCache.data.size} players, ` +
       `Streaks: ${mlbStreakMap.size}, ` +
       `DayNight: ${dayNightSplitsMap.size}`);
@@ -317,7 +247,7 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
 
 /**
  * Fetch all enrichment data for a set of players.
- * Results are cached for 15 minutes and shared across all callers.
+ * Results are cached for 30 minutes and shared across all callers.
  *
  * On cold cache: returns neutral data immediately and warms the cache in background.
  * On warm cache: returns cached data instantly.
@@ -338,7 +268,6 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
   }
 
   // If cache is stale or cold, start background warming and return neutral immediately
-  // This ensures the first page load is fast even if external APIs are slow
   warmCacheInBackground(players).catch(err => {
     console.error('[EnrichmentCache] Background warm error:', err);
   });
@@ -349,7 +278,6 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
   }
 
   // Truly cold cache: return neutral data immediately
-  // The background warm will populate the cache for subsequent requests
   return buildNeutralEnrichment();
 }
 
@@ -360,7 +288,6 @@ export async function getEnrichmentData(players: PlayerRef[]): Promise<Enrichmen
  */
 export async function warmEnrichmentCacheOnStartup(): Promise<void> {
   try {
-    // Fetch today's lineup players to warm the cache
     const { getAdaptedLineupData } = await import('./lineupAdapter');
     const lineupData = await getAdaptedLineupData();
     const players: PlayerRef[] = lineupData.matchups.map((m: import('./lineupAdapter').MatchupData) => ({
