@@ -392,8 +392,8 @@ export async function batchComputeMatchupScores(
 ): Promise<Map<string, number>> {
   const results = new Map<string, number>();
 
-  // Process in batches of 25 — larger batches = fewer round trips = faster cold cache
-  const BATCH_SIZE = 25;
+  // Process in batches of 50 — Phase AN: doubled from 25 to halve sequential rounds
+  const BATCH_SIZE = 50;
   for (let i = 0; i < players.length; i += BATCH_SIZE) {
     const batch = players.slice(i, i + BATCH_SIZE);
     await Promise.all(

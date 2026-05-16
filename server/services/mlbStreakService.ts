@@ -50,7 +50,7 @@ async function fetchPlayerGameLog(playerId: number, attempt = 0): Promise<Player
   try {
     const res = await fetch(url, {
       headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(5000), // Phase AN: fail fast (was 15s)
     });
     if (!res.ok) return [];
 

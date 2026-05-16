@@ -29,7 +29,7 @@ import { getStatcastData, lookupStatcastPlayer, type StatcastCache } from "./pyb
 import type { GameTotal } from "./gameTotalsService";
 import { getBullpenFatigue, type BullpenFatigue } from "./bullpenFatigueService";
 
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL = 45 * 60 * 1000; // 45 minutes — Phase AN: extended to reduce cold-cache frequency
 const FETCH_TIMEOUT = 12_000; // 12 seconds
 
 export interface EnrichmentData {

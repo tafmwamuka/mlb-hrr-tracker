@@ -1101,3 +1101,16 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Force Refresh UI: show '🔒 X confirmed picks kept' banner after refresh
 - [x] MoneyPickCard: show 🔒 LOCKED badge for locked_confirmed picks
 - [x] MoneyPickCard: show ⚠️ SCORE CHANGED −N badge when scoreChanged flag is set
+
+## Phase AN — Performance Overhaul: Fix Buffering (May 16)
+- [x] ROOT CAUSE: lineupAdapter was making 150+ blocking MLB API calls (handedness + platoon) on every cold-cache hit
+- [x] FIX: lineupAdapter handedness + platoon fetches are now NON-BLOCKING background pre-warm
+- [x] FIX: getAdaptedLineupData returns immediately using cached values (or 'R' default), fires background warm
+- [x] FIX: Background pre-warm runs in batches of 10 with 50ms pauses to avoid rate-limiting
+- [x] FIX: Handedness re-warm only fires if >60 min since last warm (not on every request)
+- [x] FIX: bullpenFatigueService date loop parallelized with Promise.allSettled (was sequential for...of)
+- [x] FIX: bullpenFatigueService boxscore fetches parallelized across all games/dates
+- [x] FIX: mlbStreakService timeout reduced from 15s to 5s (fail fast, use neutral fallback)
+- [x] FIX: batchComputeMatchupScores batch size doubled from 25 to 50 (halves sequential rounds)
+- [x] FIX: enrichmentCache TTL extended from 30 min to 45 min (reduces cold-cache frequency)
+- [x] FIX: lineupAdapter TTL extended from 10 min to 15 min

@@ -62,60 +62,54 @@ async function fetchTeamBullpenUsage(teamId: number, dates: string[]): Promise<{
   let totalAppearances = 0;
   let highLeverageUsed = 0;
 
-  for (const date of dates) {
-    try {
-      // Fetch games for this team on this date
+  // Phase AN perf fix: fetch all 3 dates in parallel instead of sequentially
+  const dateResults = await Promise.allSettled(
+    dates.map(async (date) => {
       const url = `${MLB_API_BASE}/schedule?sportId=1&date=${date}&teamId=${teamId}&hydrate=boxscore`;
       const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (!resp.ok) continue;
-
+      if (!resp.ok) return [];
       const json = await resp.json() as any;
-      const games = json.dates?.[0]?.games || [];
+      return (json.dates?.[0]?.games || []) as any[];
+    })
+  );
 
-      for (const game of games) {
-        const gamePk = game.gamePk;
-        if (!gamePk) continue;
-
-        // Fetch boxscore for pitcher details
-        try {
-          const bsUrl = `${MLB_API_BASE}/game/${gamePk}/boxscore`;
-          const bsResp = await fetch(bsUrl, { signal: AbortSignal.timeout(5000) });
-          if (!bsResp.ok) continue;
-
-          const bs = await bsResp.json() as any;
-
-          // Determine if this team is home or away
-          const homeTeamId = bs.teams?.home?.team?.id;
-          const teamKey = homeTeamId === teamId ? 'home' : 'away';
-          const pitchers = bs.teams?.[teamKey]?.pitchers || [];
-          const playerStats = bs.teams?.[teamKey]?.players || {};
-
-          // Count reliever usage (skip starter = first pitcher)
-          for (let i = 1; i < pitchers.length; i++) {
-            const pitcherId = pitchers[i];
-            const playerKey = `ID${pitcherId}`;
-            const stats = playerStats[playerKey]?.stats?.pitching;
-            if (!stats) continue;
-
-            const pitches = stats.pitchesThrown || 0;
-            const inningsPitched = parseFloat(stats.inningsPitched || '0');
-            totalPitches += pitches;
-            totalInnings += inningsPitched;
-            totalAppearances += 1;
-
-            // High leverage = pitched 20+ pitches or 1+ innings
-            if (pitches >= 20 || inningsPitched >= 1.0) {
-              highLeverageUsed += 1;
-            }
-          }
-        } catch {
-          // Skip this game
-        }
-      }
-    } catch {
-      // Skip this date
-    }
+  // Collect all gamePks across all dates
+  const allGames: any[] = [];
+  for (const r of dateResults) {
+    if (r.status === 'fulfilled') allGames.push(...r.value);
   }
+
+  // Fetch all boxscores in parallel
+  await Promise.allSettled(
+    allGames.map(async (game) => {
+      const gamePk = game.gamePk;
+      if (!gamePk) return;
+      try {
+        const bsUrl = `${MLB_API_BASE}/game/${gamePk}/boxscore`;
+        const bsResp = await fetch(bsUrl, { signal: AbortSignal.timeout(5000) });
+        if (!bsResp.ok) return;
+        const bs = await bsResp.json() as any;
+        const homeTeamId = bs.teams?.home?.team?.id;
+        const teamKey = homeTeamId === teamId ? 'home' : 'away';
+        const pitchers = bs.teams?.[teamKey]?.pitchers || [];
+        const playerStats = bs.teams?.[teamKey]?.players || {};
+        for (let i = 1; i < pitchers.length; i++) {
+          const pitcherId = pitchers[i];
+          const playerKey = `ID${pitcherId}`;
+          const stats = playerStats[playerKey]?.stats?.pitching;
+          if (!stats) continue;
+          const pitches = stats.pitchesThrown || 0;
+          const inningsPitched = parseFloat(stats.inningsPitched || '0');
+          totalPitches += pitches;
+          totalInnings += inningsPitched;
+          totalAppearances += 1;
+          if (pitches >= 20 || inningsPitched >= 1.0) highLeverageUsed += 1;
+        }
+      } catch {
+        // Skip this game
+      }
+    })
+  );
 
   return {
     pitches: totalPitches,

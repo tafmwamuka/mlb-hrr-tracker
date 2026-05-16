@@ -4,9 +4,11 @@
  * expected by aiRankingService and hrrService.
  *
  * Phase AJ upgrade: fetches real batter/pitcher handedness from MLB API
- * and passes platoon splits (vsRHP/vsLHP avg) into MatchupData so that
- * the PLT factor in aiRankingService uses real data instead of the
- * hardcoded 'R' vs 'R' = 45 fallback.
+ * Phase AN perf fix: handedness + platoon fetches are NON-BLOCKING background tasks.
+ *   - On cold cache: returns 'R' default immediately (no blocking)
+ *   - Background pre-warm populates the cache within 30-60s
+ *   - Subsequent calls use the warm cache instantly
+ *   - This eliminates the 150+ sequential timeout calls that caused 30-60s buffering
  */
 
 import { getTodaysPlayersWithStats, getTodaysGamesSummary, type PlayerWithContext, type MLBGame } from "./mlbLineupService";
@@ -37,11 +39,16 @@ interface PlatoonEntry {
 const platoonCache = new Map<number, PlatoonEntry>();
 const PLATOON_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
+// ─── Background pre-warm state ────────────────────────────────────────────────
+let handednessWarmInProgress = false;
+let lastHandednessWarm = 0;
+const HANDEDNESS_WARM_INTERVAL = 60 * 60 * 1000; // Re-warm every 60 min
+
 async function safeFetch(url: string): Promise<any | null> {
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'MLB-HRR-Tracker/1.0' },
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(4000), // 4s per call — fail fast
     });
     if (!res.ok) return null;
     return res.json();
@@ -112,6 +119,82 @@ async function getBatterPlatoonSplits(playerId: number, seasonAvg: number): Prom
   return { vsRHP, vsLHP };
 }
 
+/**
+ * Background pre-warm: fetches handedness + platoon splits for all players
+ * WITHOUT blocking the critical path. Called after lineup data is ready.
+ * Runs in batches of 10 with small delays to avoid rate-limiting.
+ */
+async function prewarmHandednessInBackground(players: PlayerWithContext[]): Promise<void> {
+  if (handednessWarmInProgress) return;
+  if (Date.now() - lastHandednessWarm < HANDEDNESS_WARM_INTERVAL) return;
+
+  handednessWarmInProgress = true;
+  const startMs = Date.now();
+
+  try {
+    const batterIds = players.map(p => p.playerId);
+    const pitcherIds = Array.from(new Set(
+      players.map(p => p.opposingPitcher?.id).filter((id): id is number => !!id)
+    ));
+
+    // Filter to only uncached players to minimize API calls
+    const uncachedBatterIds = batterIds.filter(id => {
+      const c = batterHandCache.get(id);
+      return !c || Date.now() - c.ts >= HAND_CACHE_TTL;
+    });
+    const uncachedPitcherIds = pitcherIds.filter(id => {
+      const c = pitcherHandCache.get(id);
+      return !c || Date.now() - c.ts >= HAND_CACHE_TTL;
+    });
+    const uncachedPlatoonIds = players
+      .filter(p => {
+        const c = platoonCache.get(p.playerId);
+        return !c || Date.now() - c.ts >= PLATOON_CACHE_TTL;
+      })
+      .map(p => ({ id: p.playerId, avg: parseFloat(p.avg) || 0.250 }));
+
+    if (uncachedBatterIds.length === 0 && uncachedPitcherIds.length === 0 && uncachedPlatoonIds.length === 0) {
+      lastHandednessWarm = Date.now();
+      return;
+    }
+
+    console.log(`[LineupAdapter] Background handedness pre-warm: ${uncachedBatterIds.length} batters, ${uncachedPitcherIds.length} pitchers, ${uncachedPlatoonIds.length} platoon splits`);
+
+    // Fetch in small parallel batches with a 50ms pause between batches to avoid rate limits
+    const BATCH = 10;
+
+    // Batter handedness
+    for (let i = 0; i < uncachedBatterIds.length; i += BATCH) {
+      const batch = uncachedBatterIds.slice(i, i + BATCH);
+      await Promise.allSettled(batch.map(id => getBatterHandedness(id)));
+      if (i + BATCH < uncachedBatterIds.length) await new Promise(r => setTimeout(r, 50));
+    }
+
+    // Pitcher handedness
+    for (let i = 0; i < uncachedPitcherIds.length; i += BATCH) {
+      const batch = uncachedPitcherIds.slice(i, i + BATCH);
+      await Promise.allSettled(batch.map(id => getPitcherHandedness(id)));
+      if (i + BATCH < uncachedPitcherIds.length) await new Promise(r => setTimeout(r, 50));
+    }
+
+    // Platoon splits
+    for (let i = 0; i < uncachedPlatoonIds.length; i += BATCH) {
+      const batch = uncachedPlatoonIds.slice(i, i + BATCH);
+      await Promise.allSettled(batch.map(({ id, avg }) => getBatterPlatoonSplits(id, avg)));
+      if (i + BATCH < uncachedPlatoonIds.length) await new Promise(r => setTimeout(r, 50));
+    }
+
+    lastHandednessWarm = Date.now();
+    const elapsed = Date.now() - startMs;
+    const handednessCount = Array.from(batterHandCache.values()).filter(h => h.batSide !== 'R').length;
+    console.log(`[LineupAdapter] Background pre-warm complete in ${elapsed}ms. Non-R batters: ${handednessCount}/${batterHandCache.size}`);
+  } catch (err) {
+    console.error('[LineupAdapter] Background pre-warm error:', err);
+  } finally {
+    handednessWarmInProgress = false;
+  }
+}
+
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface PlayerData {
@@ -179,7 +262,7 @@ interface AdaptedData {
 }
 
 let cachedData: AdaptedData | null = null;
-const CACHE_TTL = 10 * 60 * 1000; // 10 minutes — lineups don't change every 5 min
+const CACHE_TTL = 15 * 60 * 1000; // 15 minutes — Phase AN: extended to reduce cold-cache frequency
 
 /**
  * Convert PlayerWithContext to PlayerData format for ranking services.
@@ -211,7 +294,7 @@ function toPlayerData(player: PlayerWithContext, handedness: 'R' | 'L' | 'S' = '
       slg: slgNum,
       avg: avgNum,
       obp: obpNum,
-      power: Math.max(0.05, iso),
+      power: Math.min(100, Math.max(0, iso * 200)),
     },
     recentForm: {
       last15Games: {
@@ -271,8 +354,10 @@ function toMatchupData(
 
 /**
  * Get today's real lineup data adapted for the ranking services.
- * Phase AJ: enriches with real batter/pitcher handedness and platoon splits.
- * Falls back to empty arrays if MLB API is unavailable.
+ * Phase AN perf fix: handedness + platoon fetches are NON-BLOCKING.
+ *   - Uses cached handedness/platoon data if available (warm path: instant)
+ *   - Fires background pre-warm if cache is cold (cold path: returns defaults immediately)
+ *   - Falls back to empty arrays if MLB API is unavailable.
  * IMPORTANT: Does NOT cache empty results to avoid stale empty cache blocking real data.
  */
 export async function getAdaptedLineupData(): Promise<AdaptedData> {
@@ -301,60 +386,39 @@ export async function getAdaptedLineupData(): Promise<AdaptedData> {
       };
     }
 
-    // Phase AJ: Fetch real handedness for all batters and pitchers in parallel
-    // Use Promise.allSettled so one failure doesn't block the whole lineup
-    const batterIds = players.map(p => p.playerId);
-    const pitcherIds = Array.from(new Set(
-      players.map(p => p.opposingPitcher?.id).filter((id): id is number => !!id)
-    ));
-
-    const [batterHandResults, pitcherHandResults] = await Promise.all([
-      Promise.allSettled(batterIds.map(id => getBatterHandedness(id))),
-      Promise.allSettled(pitcherIds.map(id => getPitcherHandedness(id))),
-    ]);
-
-    const batterHandMap = new Map<number, 'R' | 'L' | 'S'>();
-    batterIds.forEach((id, i) => {
-      const r = batterHandResults[i];
-      batterHandMap.set(id, r.status === 'fulfilled' ? r.value : 'R');
-    });
-
-    const pitcherHandMap = new Map<number, 'R' | 'L'>();
-    pitcherIds.forEach((id, i) => {
-      const r = pitcherHandResults[i];
-      pitcherHandMap.set(id, r.status === 'fulfilled' ? r.value : 'R');
-    });
-
-    // Phase AJ: Fetch platoon splits for all batters in parallel
-    const platoonResults = await Promise.allSettled(
-      players.map(p => {
-        const avgNum = parseFloat(p.avg) || 0.250;
-        return getBatterPlatoonSplits(p.playerId, avgNum);
-      })
-    );
-
-    const platoonMap = new Map<number, { vsRHP: number; vsLHP: number }>();
-    players.forEach((p, i) => {
-      const r = platoonResults[i];
-      if (r.status === 'fulfilled') platoonMap.set(p.playerId, r.value);
-    });
-
-    const handednessCount = Array.from(batterHandMap.values()).filter(h => h !== 'R').length;
-    const platoonCount = platoonMap.size;
-    console.log(`[LineupAdapter] Handedness enriched: ${batterHandMap.size} batters (${handednessCount} non-R), ${pitcherHandMap.size} pitchers. Platoon splits: ${platoonCount}/${players.length}`);
+    // Phase AN: Use cached handedness/platoon data IMMEDIATELY (no blocking)
+    // Fire background pre-warm if cache is cold — it will populate on next request cycle
+    prewarmHandednessInBackground(players).catch(() => {}); // fire-and-forget
 
     const matchups: MatchupData[] = [];
     const playerDataMap = new Map<number, PlayerData>();
 
     for (const player of players) {
-      const batHand = batterHandMap.get(player.playerId) ?? 'R';
+      // Use cached handedness if available, otherwise default to 'R' (non-blocking)
+      const batCached = batterHandCache.get(player.playerId);
+      const batHand: 'R' | 'L' | 'S' = (batCached && Date.now() - batCached.ts < HAND_CACHE_TTL)
+        ? batCached.batSide
+        : 'R';
+
       const pitcherId = player.opposingPitcher?.id;
-      const pitchHand = pitcherId ? (pitcherHandMap.get(pitcherId) ?? 'R') : 'R';
-      const platoon = platoonMap.get(player.playerId);
+      const pitchCached = pitcherId ? pitcherHandCache.get(pitcherId) : undefined;
+      const pitchHand: 'R' | 'L' = (pitchCached && Date.now() - pitchCached.ts < HAND_CACHE_TTL)
+        ? pitchCached.pitchHand
+        : 'R';
+
+      // Use cached platoon splits if available, otherwise undefined (non-blocking)
+      const platoonCached = platoonCache.get(player.playerId);
+      const platoon = (platoonCached && Date.now() - platoonCached.ts < PLATOON_CACHE_TTL)
+        ? { vsRHP: platoonCached.vsRHP, vsLHP: platoonCached.vsLHP }
+        : undefined;
 
       matchups.push(toMatchupData(player, pitchHand, platoon));
       playerDataMap.set(player.playerId, toPlayerData(player, batHand));
     }
+
+    const handednessCount = matchups.filter(m => m.pitcher.handedness !== 'R').length;
+    const platoonCount = matchups.filter(m => m.platoonSplit !== undefined).length;
+    console.log(`[LineupAdapter] Built ${matchups.length} matchups. Cached handedness: ${handednessCount} non-R pitchers, ${platoonCount} platoon splits. Background pre-warm: ${handednessWarmInProgress ? 'running' : 'idle'}`);
 
     // Only cache when we have real data
     cachedData = {
