@@ -184,6 +184,13 @@ export interface AIPick {
   projectedPA?: number; // Projected PA this game (e.g. 4.8 for 3-hole)
   // VS Gate data
   vsGrade?: number; // 0-10 normalized vsGrade
+  vsGateData?: {
+    batterXwOBA?: number;        // batter's Statcast xwOBA (e.g. 0.360)
+    pitcherXwOBAAgainst?: number; // pitcher's xwOBA-against (e.g. 0.290)
+    xwOBADelta?: number;          // batter - pitcher (positive = batter edge)
+    tier?: string;                // 'STRONG' | 'MODERATE' | 'BAD'
+    score?: number;               // raw 0-10 vs gate score
+  };
   gameTotalOU?: number | null; // Vegas over/under line (e.g. 9.5)
   gameTotalScore?: number; // Normalized 0-100 game environment score
   overallScore: number; // Final weighted score (0-100, after BP boost)
@@ -914,6 +921,28 @@ export function rankAIPicks(
         } else if (fatigue.score <= 20) {
           pick.riskFlags.push(`Fresh bullpen — limited late-game scoring opportunity`);
         }
+      }
+
+      // Attach VS Gate xwOBA data for tooltip display
+      const statcastBatter = statcastCache?.data?.get(matchup.playerName.toLowerCase());
+      const pitcherId = matchup.pitcher?.id;
+      const statcastPitcher = (pitcherId && statcastCache?.pitchers) ? statcastCache.pitchers.get(pitcherId) : undefined;
+      if (statcastBatter || statcastPitcher || vsGrade !== null) {
+        const batterXwOBAraw = statcastBatter?.xwOBA ?? undefined;
+        const pitcherXwOBAraw = statcastPitcher?.xwOBAAgainst ?? undefined;
+        const xwOBADelta = batterXwOBAraw !== undefined && pitcherXwOBAraw !== undefined
+          ? Math.round((batterXwOBAraw - pitcherXwOBAraw) * 1000) / 1000
+          : undefined;
+        const tier = vsGrade !== null
+          ? (vsGrade >= 7.5 ? 'STRONG' : vsGrade >= 5.5 ? 'MODERATE' : 'BAD')
+          : undefined;
+        pick.vsGateData = {
+          batterXwOBA: batterXwOBAraw !== undefined ? Math.round(batterXwOBAraw * 1000) / 1000 : undefined,
+          pitcherXwOBAAgainst: pitcherXwOBAraw !== undefined ? Math.round(pitcherXwOBAraw * 1000) / 1000 : undefined,
+          xwOBADelta,
+          tier,
+          score: vsGrade !== null ? Math.round(vsGrade * 10) / 10 : undefined,
+        };
       }
 
       // Attach streak info

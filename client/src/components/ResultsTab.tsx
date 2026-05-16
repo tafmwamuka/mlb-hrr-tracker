@@ -122,10 +122,13 @@ function HistoricalPerformancePanel() {
       className="rounded-2xl border overflow-hidden"
       style={{ background: "oklch(0.12 0.022 255)", borderColor: "oklch(1 0 0 / 10%)" }}
     >
-      {/* Header row */}
-      <button
-        className="w-full flex items-center justify-between px-4 py-3"
+      {/* Header row — use div to avoid nested button (period pills are also buttons) */}
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-[oklch(1_0_0/3%)] transition-colors"
         onClick={() => setExpanded(!expanded)}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setExpanded(!expanded); }}
       >
         <div className="flex items-center gap-2">
           <History size={13} style={{ color: "oklch(0.72 0.18 165)" }} />
@@ -162,7 +165,7 @@ function HistoricalPerformancePanel() {
           </div>
           {expanded ? <ChevronUp size={12} className="text-[oklch(0.45_0.015_255)]" /> : <ChevronDown size={12} className="text-[oklch(0.45_0.015_255)]" />}
         </div>
-      </button>
+      </div>
 
       {/* Expanded content */}
       <AnimatePresence>

@@ -1054,3 +1054,12 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [ ] Lower qualifying threshold from 83→78 when lineups are PROJECTED (not confirmed)
 - [ ] Ensure enrichment cache always produces 50+ enriched players for scoring
 - [ ] Add fallback: if enriched player count < 20, use Statcast-only scoring path
+
+## Phase AI — VS Gate xwOBA Tooltip (May 16)
+- [x] Add vsGateData field to AIPick interface in aiRankingService.ts (batterXwOBA, pitcherXwOBAAgainst, xwOBADelta, tier, score)
+- [x] Populate vsGateData server-side in rankAIPicks (looks up batter via statcastCache.data, pitcher via statcastCache.pitchers)
+- [x] Add vsGateData field to MoneyPick interface in MoneyPicksTab.tsx
+- [x] Wire vsGateData through moneyPicks useMemo mapping (vsGateData: pick.vsGateData ?? null)
+- [x] Import Tooltip/TooltipTrigger/TooltipContent from @/components/ui/tooltip
+- [x] Build VS Gate tooltip badge (⚡ VS X/10) in MoneyPickCard — color-coded by tier (STRONG/MODERATE/BAD)
+- [x] Tooltip shows: Batter xwOBA (color-coded), Pitcher xwOBA-against (color-coded), xwOBA Delta, VS Gate Score/tier, 1-line interpretation

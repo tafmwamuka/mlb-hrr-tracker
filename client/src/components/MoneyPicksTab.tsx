@@ -15,6 +15,7 @@ import { SaferPlayTip } from "@/components/SaferPlayTip";
 import { PerformanceGraph } from "@/components/PerformanceGraph";
 import { BestEdgeCard } from "@/components/BestEdgeCard";
 import { DataHealthBar } from "@/components/DataHealthBar";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface AlternateLine {
   line: number;
@@ -82,6 +83,13 @@ interface MoneyPick {
   } | null;
   overallScore?: number; // Matrix score (0-100)
   vsGrade?: number; // VS Gate score (0-10)
+  vsGateData?: {
+    batterXwOBA?: number;
+    pitcherXwOBAAgainst?: number;
+    xwOBADelta?: number;
+    tier?: string;
+    score?: number;
+  } | null;
   gameTotalOU?: number | null; // Vegas over/under line
   // Phase R new fields
   grade?: 'elite' | 'strong' | 'watchlist';
@@ -412,6 +420,136 @@ function MoneyPickCard({
             </div>
           )}
 
+          {/* VS Gate tooltip — xwOBA matchup breakdown */}
+          {pick.vsGrade !== null && pick.vsGrade !== undefined && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold cursor-help"
+                  style={{
+                    background: pick.vsGateData?.tier === 'STRONG'
+                      ? 'oklch(0.72 0.18 165 / 15%)'
+                      : pick.vsGateData?.tier === 'BAD'
+                      ? 'oklch(0.68 0.22 25 / 15%)'
+                      : 'oklch(0.55 0.15 255 / 12%)',
+                    color: pick.vsGateData?.tier === 'STRONG'
+                      ? 'oklch(0.72 0.18 165)'
+                      : pick.vsGateData?.tier === 'BAD'
+                      ? 'oklch(0.78 0.18 25)'
+                      : 'oklch(0.65 0.10 255)',
+                    border: `1px solid ${
+                      pick.vsGateData?.tier === 'STRONG'
+                        ? 'oklch(0.72 0.18 165 / 30%)'
+                        : pick.vsGateData?.tier === 'BAD'
+                        ? 'oklch(0.68 0.22 25 / 30%)'
+                        : 'oklch(0.55 0.15 255 / 20%)'
+                    }`,
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  ⚡ VS {pick.vsGrade.toFixed(1)}/10
+                </button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="top"
+                sideOffset={6}
+                className="p-0 overflow-hidden rounded-xl border-0 max-w-[240px]"
+                style={{
+                  background: 'oklch(0.13 0.025 255)',
+                  border: '1px solid oklch(1 0 0 / 15%)',
+                }}
+              >
+                {/* VS Gate breakdown panel */}
+                <div className="px-3 py-2.5 space-y-2">
+                  <div className="text-[9px] font-bold tracking-widest uppercase" style={{ color: 'oklch(0.55 0.15 255)' }}>
+                    Diamond Edge VS Gate
+                  </div>
+                  {/* Batter xwOBA */}
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-[10px]" style={{ color: 'oklch(0.55 0.015 255)' }}>Batter xwOBA</span>
+                    <span
+                      className="text-[10px] font-bold"
+                      style={{
+                        color: pick.vsGateData?.batterXwOBA !== undefined
+                          ? pick.vsGateData.batterXwOBA >= 0.340
+                            ? 'oklch(0.72 0.18 165)'
+                            : pick.vsGateData.batterXwOBA >= 0.310
+                            ? 'oklch(0.82 0.17 85)'
+                            : 'oklch(0.68 0.22 25)'
+                          : 'oklch(0.55 0.015 255)',
+                      }}
+                    >
+                      {pick.vsGateData?.batterXwOBA !== undefined
+                        ? pick.vsGateData.batterXwOBA.toFixed(3)
+                        : '—'}
+                    </span>
+                  </div>
+                  {/* Pitcher xwOBA-against */}
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-[10px]" style={{ color: 'oklch(0.55 0.015 255)' }}>Pitcher xwOBA-against</span>
+                    <span
+                      className="text-[10px] font-bold"
+                      style={{
+                        color: pick.vsGateData?.pitcherXwOBAAgainst !== undefined
+                          ? pick.vsGateData.pitcherXwOBAAgainst >= 0.340
+                            ? 'oklch(0.68 0.22 25)'   // hittable pitcher = bad for pitcher = good for batter
+                            : pick.vsGateData.pitcherXwOBAAgainst <= 0.290
+                            ? 'oklch(0.72 0.18 165)'  // tough pitcher = good for pitcher
+                            : 'oklch(0.82 0.17 85)'
+                          : 'oklch(0.55 0.015 255)',
+                      }}
+                    >
+                      {pick.vsGateData?.pitcherXwOBAAgainst !== undefined
+                        ? pick.vsGateData.pitcherXwOBAAgainst.toFixed(3)
+                        : '—'}
+                    </span>
+                  </div>
+                  {/* xwOBA Delta */}
+                  {pick.vsGateData?.xwOBADelta !== undefined && (
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[10px]" style={{ color: 'oklch(0.55 0.015 255)' }}>xwOBA Delta</span>
+                      <span
+                        className="text-[10px] font-bold"
+                        style={{ color: pick.vsGateData.xwOBADelta >= 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)' }}
+                      >
+                        {pick.vsGateData.xwOBADelta >= 0 ? '+' : ''}{pick.vsGateData.xwOBADelta.toFixed(3)}
+                      </span>
+                    </div>
+                  )}
+                  {/* Divider */}
+                  <div className="border-t" style={{ borderColor: 'oklch(1 0 0 / 10%)' }} />
+                  {/* VS Gate Score */}
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-[10px]" style={{ color: 'oklch(0.55 0.015 255)' }}>VS Gate Score</span>
+                    <span
+                      className="text-[10px] font-bold"
+                      style={{
+                        color: pick.vsGateData?.tier === 'STRONG'
+                          ? 'oklch(0.72 0.18 165)'
+                          : pick.vsGateData?.tier === 'BAD'
+                          ? 'oklch(0.68 0.22 25)'
+                          : 'oklch(0.82 0.17 85)',
+                      }}
+                    >
+                      {pick.vsGrade.toFixed(1)}/10 — {pick.vsGateData?.tier ?? 'MODERATE'}
+                    </span>
+                  </div>
+                  {/* Interpretation */}
+                  <div
+                    className="text-[9px] leading-snug"
+                    style={{ color: 'oklch(0.50 0.015 255)' }}
+                  >
+                    {pick.vsGateData?.tier === 'STRONG'
+                      ? 'Batter has significant xwOBA edge over pitcher'
+                      : pick.vsGateData?.tier === 'BAD'
+                      ? 'Pitcher has xwOBA advantage — proceed with caution'
+                      : 'Neutral matchup — no significant xwOBA edge'}
+                  </div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           {/* Weather intelligence tags — parsed from riskFlags */}
           {(() => {
             const windFlag = pick.riskFlags?.find(r => r.toLowerCase().includes('wind blowing'));
@@ -711,6 +849,10 @@ export function MoneyPicksTab() {
     { enabled: showMatrix, staleTime: 5 * 60 * 1000 }
   );
 
+  // Derive lineup source early so it can be used in memos below
+  const _lineupSource = (data as any)?.lineupSource ?? 'projected';
+  const isProjected = (_lineupSource as string) !== 'confirmed';
+
   // Filter picks to only those with at least one alternate line at 75%+
   const moneyPicks: MoneyPick[] = useMemo(() => {
     return (data?.picks || [])
@@ -789,6 +931,7 @@ export function MoneyPicksTab() {
           bpBoost: pick.bpBoost ?? 0,
           baseScore: pick.baseScore ?? undefined,
           gameTime: (pick as any).gameTime ?? null,
+          vsGateData: pick.vsGateData ?? null,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)
@@ -802,16 +945,19 @@ export function MoneyPicksTab() {
       });
   }, [data]);
 
-  // Apply confidence filter
+  // Apply confidence filter — thresholds shift for projected lineups
   const filteredPicks = useMemo(() => {
+    const eliteMin = isProjected ? 75 : 83;
+    const strongMin = isProjected ? 66 : 74;
+    const leanMin = isProjected ? 60 : 68;
     switch (activeFilter) {
-      case "s": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 83);
-      case "a": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 74 && (p.overallScore ?? 0) < 83);
-      case "b": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 68 && (p.overallScore ?? 0) < 74);
+      case "s": return moneyPicks.filter(p => (p.overallScore ?? 0) >= eliteMin);
+      case "a": return moneyPicks.filter(p => (p.overallScore ?? 0) >= strongMin && (p.overallScore ?? 0) < eliteMin);
+      case "b": return moneyPicks.filter(p => (p.overallScore ?? 0) >= leanMin && (p.overallScore ?? 0) < strongMin);
       case "lean": return moneyPicks.filter(p => (p.overallScore ?? 0) >= 68 && (p.overallScore ?? 0) < 74);
       default: return moneyPicks;
     }
-  }, [moneyPicks, activeFilter]);
+  }, [moneyPicks, activeFilter, isProjected]);
 
   const toggleSelect = (index: number) => {
     setSelectedPicks(prev => {
@@ -899,9 +1045,6 @@ export function MoneyPicksTab() {
       </div>
     );
   }
-
-  const lineupSource = (data as any)?.lineupSource ?? 'projected';
-  const isProjected = lineupSource === 'projected';
 
   // Handle lineups pending state (no picks at all)
   if (data?.lineupsPending) {
@@ -995,9 +1138,9 @@ export function MoneyPicksTab() {
       <div className="flex items-center gap-2 flex-wrap">
         {([
           { key: "all", label: "All Picks" },
-          { key: "s", label: "S Tier (83+)" },
-          { key: "a", label: "A Tier (74-82)" },
-          { key: "b", label: "Lean (68-73)" },
+          { key: "s", label: isProjected ? "Strong (74+)" : "S Tier (83+)" },
+          { key: "a", label: isProjected ? "A Tier (66-74)" : "A Tier (74-82)" },
+          { key: "b", label: isProjected ? "Lean (60-66)" : "Lean (68-73)" },
         ] as { key: FilterTier; label: string }[]).map((filter) => (
           <button
             key={filter.key}
