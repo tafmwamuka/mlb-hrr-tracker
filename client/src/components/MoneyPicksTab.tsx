@@ -110,6 +110,27 @@ interface MoneyPick {
   isEarlyLocked?: boolean;      // true when game was early-locked before scheduled pull
   gameLockTime?: string | null; // ISO timestamp when game was locked
   gameLockReason?: 'early_auto_lock' | 'scheduled_pull' | null;
+  // Phase AW: Value Intelligence System
+  valueAnalysis?: {
+    trueProb: number;
+    impliedProb: number;
+    vigFreeImpliedProb: number;
+    edge: number;
+    ev: number;
+    fairOdds: number;
+    bookOdds: number;
+    valueTier: string;
+    valueTag: string;
+    isMispriced: boolean;
+    altLineIsBetter: boolean;
+    bestAltLine?: {
+      line: number;
+      overOdds: number;
+      impliedProb: number;
+      edge: number;
+      ev: number;
+    };
+  } | null;
 }
 
 // S/A/B/C Tier system based on overallScore — Phase W calibration: S=83+, A=74-82, B/Lean=68-73
@@ -936,31 +957,80 @@ function MoneyPickCard({
                   );
                 })()}
 
-                {/* ── Sportsbook Value ─────────────────────────────────────────────────── */}
-                {pick.odds && (
-                  <div className="p-2.5 rounded-xl" style={{ background: 'oklch(0.12 0.018 255)', border: '1px solid oklch(1 0 0 / 6%)' }}>
-                    <div className="text-[9px] font-bold tracking-widest uppercase mb-2" style={{ color: 'oklch(0.55 0.015 255)' }}>Sportsbook Value</div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-[9px] text-[oklch(0.45_0.015_255)]">
-                          {pick.oddsProvider === 'fanduel' ? 'FanDuel' :
-                           pick.oddsProvider === 'draftkings' ? 'DraftKings' :
-                           pick.oddsProvider === 'bet365' ? 'bet365' :
-                           pick.oddsProvider === 'betmgm' ? 'BetMGM' :
-                           (pick.oddsProvider ?? 'Sportsbook').toUpperCase()}
-                        </div>
-                        <div className="text-base font-bold text-white">{pick.odds}</div>
+                {/* ── Sportsbook Value Intelligence ─────────────────────────────── */}
+                {(pick.odds || pick.valueAnalysis) && (() => {
+                  const va = pick.valueAnalysis;
+                  const tierConfig: Record<string, { color: string; bg: string; border: string; label: string }> = {
+                    SAFE_VALUE:     { color: 'oklch(0.72 0.18 165)', bg: 'oklch(0.72 0.18 165 / 12%)', border: 'oklch(0.72 0.18 165 / 40%)', label: '🛡️ SAFE VALUE' },
+                    BALANCED_VALUE: { color: 'oklch(0.82 0.17 85)',  bg: 'oklch(0.82 0.17 85 / 12%)',  border: 'oklch(0.82 0.17 85 / 40%)',  label: '⚖️ BALANCED VALUE' },
+                    CEILING_PLAY:   { color: 'oklch(0.68 0.22 25)',  bg: 'oklch(0.68 0.22 25 / 12%)',  border: 'oklch(0.68 0.22 25 / 40%)',  label: '🚀 CEILING PLAY' },
+                    PASS:           { color: 'oklch(0.45 0.015 255)', bg: 'oklch(0.16 0.02 255)',       border: 'oklch(1 0 0 / 8%)',          label: '— PASS' },
+                  };
+                  const tagConfig: Record<string, { color: string; icon: string }> = {
+                    'BEST VALUE':   { color: 'oklch(0.72 0.18 165)', icon: '✅' },
+                    'MISPRICED':    { color: 'oklch(0.82 0.17 85)',  icon: '🔥' },
+                    'ELITE EDGE':   { color: 'oklch(0.82 0.17 85)',  icon: '⚡' },
+                    'BETTER VALUE': { color: 'oklch(0.72 0.10 220)', icon: '↗️' },
+                    'MONITORING':   { color: 'oklch(0.65 0.12 240)', icon: '👁' },
+                    'PASS':         { color: 'oklch(0.45 0.015 255)', icon: '—' },
+                  };
+                  const tier = va?.valueTier ?? 'PASS';
+                  const tag  = va?.valueTag  ?? (pick.edge > 0 ? 'BEST VALUE' : 'PASS');
+                  const tc = tierConfig[tier] ?? tierConfig.PASS;
+                  const tg = tagConfig[tag]   ?? tagConfig.PASS;
+                  return (
+                    <div className="p-2.5 rounded-xl space-y-2" style={{ background: 'oklch(0.12 0.018 255)', border: '1px solid oklch(1 0 0 / 6%)' }}>
+                      <div className="text-[9px] font-bold tracking-widest uppercase" style={{ color: 'oklch(0.55 0.015 255)' }}>Sportsbook Value Intelligence</div>
+
+                      {/* Tier + Tag row */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: tc.bg, border: `1px solid ${tc.border}`, color: tc.color }}>{tc.label}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: `${tg.color}15`, border: `1px solid ${tg.color}40`, color: tg.color }}>{tg.icon} {tag}</span>
                       </div>
-                      {pick.edge > 0 && (
-                        <div className="px-2.5 py-1.5 rounded-lg text-center" style={{ background: 'oklch(0.72 0.18 165 / 15%)', border: '1px solid oklch(0.72 0.18 165 / 40%)' }}>
-                          <div className="text-[8px] font-bold tracking-widest" style={{ color: 'oklch(0.72 0.18 165)' }}>✅ BEST VALUE</div>
-                          <div className="text-sm font-black" style={{ color: 'oklch(0.72 0.18 165)' }}>+{pick.edge}%</div>
-                          <div className="text-[8px] text-[oklch(0.45_0.015_255)]">edge vs fair</div>
+
+                      {/* Odds comparison row */}
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <div className="p-1.5 rounded-lg text-center" style={{ background: 'oklch(0.16 0.02 255)' }}>
+                          <div className="text-[8px] text-[oklch(0.40_0.015_255)] uppercase tracking-wide">Book Odds</div>
+                          <div className="text-sm font-black text-white">{pick.odds ?? (va?.bookOdds != null ? (va.bookOdds > 0 ? `+${va.bookOdds}` : `${va.bookOdds}`) : '—')}</div>
+                          <div className="text-[8px] text-[oklch(0.38_0.015_255)]">{va ? `${va.impliedProb.toFixed(1)}% implied` : ''}</div>
+                        </div>
+                        <div className="p-1.5 rounded-lg text-center" style={{ background: 'oklch(0.16 0.02 255)' }}>
+                          <div className="text-[8px] text-[oklch(0.40_0.015_255)] uppercase tracking-wide">Fair Odds</div>
+                          <div className="text-sm font-black" style={{ color: tc.color }}>{va ? (va.fairOdds > 0 ? `+${va.fairOdds}` : `${va.fairOdds}`) : '—'}</div>
+                          <div className="text-[8px] text-[oklch(0.38_0.015_255)]">{va ? `${va.trueProb}% true` : ''}</div>
+                        </div>
+                        <div className="p-1.5 rounded-lg text-center" style={{ background: va && va.ev > 0 ? `${tc.color}15` : 'oklch(0.16 0.02 255)', border: va && va.ev > 0 ? `1px solid ${tc.color}40` : 'none' }}>
+                          <div className="text-[8px] text-[oklch(0.40_0.015_255)] uppercase tracking-wide">EV%</div>
+                          <div className="text-sm font-black" style={{ color: va && va.ev > 0 ? tc.color : 'oklch(0.45 0.015 255)' }}>{va ? `${va.ev > 0 ? '+' : ''}${va.ev.toFixed(1)}%` : '—'}</div>
+                          <div className="text-[8px] text-[oklch(0.38_0.015_255)]">{va ? `${va.edge > 0 ? '+' : ''}${va.edge.toFixed(1)}pt edge` : ''}</div>
+                        </div>
+                      </div>
+
+                      {/* Mispriced alert */}
+                      {va?.isMispriced && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg" style={{ background: 'oklch(0.82 0.17 85 / 10%)', border: '1px solid oklch(0.82 0.17 85 / 30%)' }}>
+                          <span className="text-[10px]">🔥</span>
+                          <span className="text-[9px] font-bold" style={{ color: 'oklch(0.82 0.17 85)' }}>MISPRICED MARKET — Book significantly undervaluing this player</span>
+                        </div>
+                      )}
+
+                      {/* Best alt line */}
+                      {va?.altLineIsBetter && va.bestAltLine && (
+                        <div className="flex items-center justify-between px-2 py-1.5 rounded-lg" style={{ background: 'oklch(0.72 0.10 220 / 10%)', border: '1px solid oklch(0.72 0.10 220 / 30%)' }}>
+                          <div>
+                            <div className="text-[8px] font-bold tracking-widest" style={{ color: 'oklch(0.72 0.10 220)' }}>↗️ BETTER VALUE ON ALT LINE</div>
+                            <div className="text-[9px] text-[oklch(0.55_0.015_255)] mt-0.5">Over {va.bestAltLine.line} @ {va.bestAltLine.overOdds > 0 ? `+${va.bestAltLine.overOdds}` : va.bestAltLine.overOdds}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-black" style={{ color: 'oklch(0.72 0.10 220)' }}>{va.bestAltLine.ev > 0 ? '+' : ''}{va.bestAltLine.ev.toFixed(1)}% EV</div>
+                            <div className="text-[8px] text-[oklch(0.45_0.015_255)]">vs main line</div>
+                          </div>
                         </div>
                       )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Book comparison */}
                 {pick.bookImpliedProb && (

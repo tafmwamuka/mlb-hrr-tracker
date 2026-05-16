@@ -22,6 +22,27 @@ interface PickLike {
   parkFactor?: number;
   isEarlyLocked?: boolean;
   pickStatus?: string;
+  // Phase AW: Value Intelligence
+  valueAnalysis?: {
+    trueProb: number;
+    impliedProb: number;
+    vigFreeImpliedProb: number;
+    edge: number;
+    ev: number;
+    fairOdds: number;
+    bookOdds: number;
+    valueTier: string;
+    valueTag: string;
+    isMispriced: boolean;
+    altLineIsBetter: boolean;
+    bestAltLine?: {
+      line: number;
+      overOdds: number;
+      impliedProb: number;
+      edge: number;
+      ev: number;
+    };
+  } | null;
 }
 
 interface RemovedPick {
@@ -234,6 +255,78 @@ function GameEnvironmentSection({ picks }: { picks: PickLike[] }) {
   );
 }
 
+// ── Best Alt Value Plays ────────────────────────────────────────────────
+function BestAltValueSection({ picks }: { picks: PickLike[] }) {
+  const valuePicks = useMemo(() =>
+    picks
+      .filter(p => {
+        const va = p.valueAnalysis;
+        if (!va) return false;
+        return va.valueTier !== 'PASS' && va.ev > 0;
+      })
+      .sort((a, b) => (b.valueAnalysis?.ev ?? 0) - (a.valueAnalysis?.ev ?? 0))
+      .slice(0, 4),
+    [picks]
+  );
+
+  if (valuePicks.length === 0) return null;
+
+  const tierLabel: Record<string, string> = {
+    SAFE_VALUE: '🛡️ SAFE',
+    BALANCED_VALUE: '⚖️ BALANCED',
+    CEILING_PLAY: '🚀 CEILING',
+    PASS: '—',
+  };
+  const tierColor: Record<string, string> = {
+    SAFE_VALUE: 'oklch(0.72 0.18 165)',
+    BALANCED_VALUE: 'oklch(0.82 0.17 85)',
+    CEILING_PLAY: 'oklch(0.68 0.22 25)',
+    PASS: 'oklch(0.45 0.015 255)',
+  };
+
+  return (
+    <div className="rounded-2xl overflow-hidden border" style={{ background: "oklch(0.13 0.022 255)", borderColor: "oklch(0.82 0.17 85 / 20%)" }}>
+      <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: "oklch(1 0 0 / 6%)" }}>
+        <TrendingUp size={13} style={{ color: "oklch(0.82 0.17 85)" }} />
+        <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "oklch(0.82 0.17 85)" }}>Best Alt Value Plays</span>
+        <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "oklch(0.82 0.17 85 / 12%)", color: "oklch(0.82 0.17 85)" }}>+EV</span>
+      </div>
+      <div className="divide-y" style={{ borderColor: "oklch(1 0 0 / 5%)" }}>
+        {valuePicks.map((p, i) => {
+          const va = p.valueAnalysis!;
+          const tc = tierColor[va.valueTier] ?? tierColor.PASS;
+          const tl = tierLabel[va.valueTier] ?? '—';
+          return (
+            <div key={i} className="flex items-center gap-3 px-4 py-2.5">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-white truncate">{p.playerName}</span>
+                  <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: `${tc}15`, color: tc, border: `1px solid ${tc}40` }}>{tl}</span>
+                </div>
+                <div className="text-[10px] text-[oklch(0.45_0.015_255)]">{p.team} vs {p.pitcherTeam}</div>
+                {va.altLineIsBetter && va.bestAltLine && (
+                  <div className="text-[9px] mt-0.5" style={{ color: 'oklch(0.72 0.10 220)' }}>
+                    ↗️ Alt: O {va.bestAltLine.line} @ {va.bestAltLine.overOdds > 0 ? `+${va.bestAltLine.overOdds}` : va.bestAltLine.overOdds}
+                  </div>
+                )}
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-sm font-black" style={{ color: tc }}>{va.ev > 0 ? '+' : ''}{va.ev.toFixed(1)}% EV</div>
+                <div className="text-[9px] text-[oklch(0.45_0.015_255)]">
+                  Fair {va.fairOdds > 0 ? `+${va.fairOdds}` : va.fairOdds} · {va.edge > 0 ? '+' : ''}{va.edge.toFixed(1)}pt
+                </div>
+                {va.isMispriced && (
+                  <div className="text-[8px] font-bold" style={{ color: 'oklch(0.82 0.17 85)' }}>🔥 MISPRICED</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Removed / Expired Plays ──────────────────────────────────────────────────
 function RemovedPlaysSection({ removedPicks }: { removedPicks: RemovedPick[] }) {
   if (removedPicks.length === 0) return null;
@@ -262,12 +355,13 @@ function RemovedPlaysSection({ removedPicks }: { removedPicks: RemovedPick[] }) 
   );
 }
 
-// ── Main export ──────────────────────────────────────────────────────────────
+// ── Main export ──────────────// ── Main export ──────────────────────────────────────────────
 export function StructuredPickSections({ picks, removedPicks = [] }: Props) {
   return (
     <div className="space-y-3 mt-2">
       <SafePlaysSection picks={picks} />
       <HighUpsideSection picks={picks} />
+      <BestAltValueSection picks={picks} />
       <StacksSection picks={picks} />
       <GameEnvironmentSection picks={picks} />
       <RemovedPlaysSection removedPicks={removedPicks} />

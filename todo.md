@@ -1234,3 +1234,20 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [ ] Add structured output sections: Official Locked / Confirmed / Preliminary / Safe / High Upside / Stacks / Sportsbook Value / Game Environment / Monitoring / Removed
 - [ ] Add game status indicators: 🟢 OPEN / 🟡 LOCKING SOON / 🔒 LOCKED / ⚫ STARTED / 🔴 REMOVED
 - [ ] TypeScript: 0 errors
+
+## Phase AW: Value + Alt Line Intelligence System
+
+- [ ] Add oddsToImpliedProb() helper — convert American odds to implied probability
+- [ ] Add impliedProbToOdds() helper — convert probability to fair American odds
+- [ ] Add calcEV() — returns EV% given true prob and sportsbook odds
+- [ ] Add getValueTier() — returns SAFE_VALUE / BALANCED_VALUE / CEILING_PLAY / PASS based on odds range + edge + hit prob
+- [ ] Add getValueTag() — returns BEST VALUE / MISPRICED / ELITE EDGE / MONITORING / PASS label
+- [ ] Integrate EV calculation into aiRankingService pick assembly
+- [ ] Add fairOdds, impliedProb, ev, valueTier, valueTag fields to pick output
+- [ ] Add PASS filtering: picks with negative EV get valueTag=PASS and are deprioritized
+- [ ] Add alt-line comparison: if alt line EV > main line EV by 5%+, flag as BETTER VALUE
+- [ ] Add mispriced detection: if fair odds vs sportsbook odds differ by 20%+ implied prob, flag as MISPRICED
+- [ ] Update MoneyPickCard UI: show fair odds, implied prob, EV%, value tag badge
+- [ ] Update MoneyPickCard: show risk tier (SAFE VALUE / BALANCED / CEILING PLAY / PASS)
+- [ ] Add Best Alt Value Plays section to StructuredPickSections
+- [ ] TypeScript: 0 errors

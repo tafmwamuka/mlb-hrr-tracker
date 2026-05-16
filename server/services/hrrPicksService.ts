@@ -16,6 +16,7 @@
 
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from './aiRankingService';
 import { fetchOddsForPicks, americanToImpliedProbability, removeVig } from './oddsApiService';
+import { analyzeValue } from './valueEngine';
 // Phase AP: getMockSavantData removed — barrel threat check now uses real statcastCache
 import { generateHRRProjections } from './hrrService';
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from './poissonModel';
@@ -457,6 +458,24 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       }
     } catch (err) {
       console.warn('[HRRPicks] Odds API fetch failed, using model odds:', err);
+    }
+  }
+
+  // Phase AW: Enrich money picks with value analysis (EV, fair odds, value tier, mispricing)
+  for (const pick of moneyPicks as any[]) {
+    const rawBookOdds = pick.bookOdds;
+    const numericOdds = typeof rawBookOdds === 'number'
+      ? rawBookOdds
+      : typeof rawBookOdds === 'string'
+        ? parseInt(rawBookOdds.replace(/[^0-9+-]/g, ''), 10)
+        : null;
+    if (numericOdds !== null && !isNaN(numericOdds)) {
+      const trueProb = Math.round(35 + ((pick.overallScore ?? 60) / 100) * 50);
+      const altLines = (pick.alternateLines ?? []).map((al: any) => ({
+        line: al.line,
+        overOdds: al.overOdds ?? numericOdds,
+      }));
+      pick.valueAnalysis = analyzeValue(trueProb, numericOdds, altLines);
     }
   }
 

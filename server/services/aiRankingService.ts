@@ -68,6 +68,7 @@ import { lookupStatcastPlayer, type StatcastCache } from "./pybaseballService";
 // BallparkMatchup kept as a legacy type for backward compat (ballparkMatchupService removed in Phase AC)
 type BallparkMatchup = { batter: string; kProb?: number | null; hrProb?: number | null };
 import { getBullpenFatigueScore, type BullpenFatigue } from "./bullpenFatigueService";
+import { analyzeValue } from "./valueEngine";
 
 export interface PlayerData {
   playerId: number;
@@ -249,6 +250,27 @@ export interface AIPick {
     battingPositionStrong: boolean;
     dayNightFavorable: boolean;
     favorableCount: number;
+  };
+  // Phase AW: Value Intelligence System
+  valueAnalysis?: {
+    trueProb: number;          // Model probability (0-100)
+    impliedProb: number;       // Sportsbook implied prob (0-100, vig-included)
+    vigFreeImpliedProb: number; // Vig-removed implied prob (0-100)
+    edge: number;              // trueProb - vigFreeImpliedProb (pct points)
+    ev: number;                // Expected Value %
+    fairOdds: number;          // Fair American odds from model
+    bookOdds: number;          // Sportsbook American odds
+    valueTier: string;         // SAFE_VALUE | BALANCED_VALUE | CEILING_PLAY | PASS
+    valueTag: string;          // BEST VALUE | MISPRICED | ELITE EDGE | BETTER VALUE | MONITORING | PASS
+    isMispriced: boolean;
+    altLineIsBetter: boolean;
+    bestAltLine?: {
+      line: number;
+      overOdds: number;
+      impliedProb: number;
+      edge: number;
+      ev: number;
+    };
   };
 }
 
@@ -969,6 +991,20 @@ export function rankAIPicks(
         streakLabel,
         last5Games: mlbStreak?.last5Games ?? [],
       };
+
+      // Phase AW: Attach value analysis (EV, fair odds, value tier, mispricing)
+      // Use the pick's book odds if available, else skip
+      const bookOddsForValue = pick.odds?.overOdds
+        ? parseInt(String(pick.odds.overOdds).replace(/[^0-9+-]/g, ''), 10)
+        : null;
+      if (bookOddsForValue !== null && !isNaN(bookOddsForValue)) {
+        // True probability: use overallScore as a proxy (scaled to 35-85% range)
+        // Higher score → higher true probability
+        const trueProb = Math.round(35 + (overallScore / 100) * 50);
+        // Alt lines: no direct access to hrrMarketData here, pass empty array
+        // (alt lines are enriched later in hrrPicksService when HRRMarketData is available)
+        pick.valueAnalysis = analyzeValue(trueProb, bookOddsForValue, []);
+      }
 
       return pick;
     })
