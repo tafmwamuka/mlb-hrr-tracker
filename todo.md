@@ -1016,3 +1016,12 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Set refetchOnWindowFocus: false and refetchOnMount: false on getHRRPicks query
 - [x] Increase gcTime to 60 minutes on getHRRPicks query
 - [x] Fix getHitRateStats SQL error (hits_actual → type-safe Drizzle isNotNull filter)
+
+## Phase AC — BallparkPal Removal + xwOBA VS Gate Upgrade (May 16)
+- [x] Delete ballparkMatchupService.ts (dead code, never called)
+- [x] Rename all "BallparkPal" label strings in aiRankingService.ts to "Matchup Grade" / "VS Score"
+- [x] Remove hasBallparkPalData parameter from rankAIPicks (always false, simplify signature)
+- [x] Upgrade internal VS gate: add pitcher xwOBA suppression from Statcast cache vs batter xwOBA
+- [x] Add xwOBA delta (batter xwOBA - pitcher xwOBA-against) as a VS gate signal in mlbMatchupService
+- [ ] Improve bullpen timeout resilience: fetch only today's opponent teams (not all 30) to reduce API calls
+- [x] Show "Matchup Grade" instead of "BallparkPal" on pick cards in UI

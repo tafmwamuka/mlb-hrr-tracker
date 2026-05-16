@@ -152,7 +152,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     gameTotalsMap: new Map(),
     dayNightSplitsMap: new Map(),
     mlbStreakMap: new Map(),
-    statcastCache: { data: new Map(), byId: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
+    statcastCache: { data: new Map(), byId: new Map(), pitchers: new Map(), fetchedAt: Date.now(), year: new Date().getFullYear() },
     bullpenFatigueMap: new Map(),
     fetchedAt: Date.now(),
     isWarm: false,
@@ -253,8 +253,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     vsGradeMap,
     gameTotalsMap,
     statcastCache,
-    false,  // hasBallparkPalData = false (always internal now)
-    [],     // ballparkMatchups = empty (removed)
+    undefined,  // ballparkMatchups (legacy, unused)
     bullpenFatigueMap ?? new Map()
   );
 

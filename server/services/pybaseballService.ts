@@ -28,9 +28,22 @@ export interface StatcastPlayer {
   sprintSpeedPercentile: number | null;
 }
 
+export interface StatcastPitcher {
+  pitcherId: number;
+  pitcherName: string;
+  xwOBAAgainst: number;       // expected wOBA against (league avg ~0.320; lower = elite suppressor)
+  xBAAgainst: number;         // expected BA against
+  xSLGAgainst: number;        // expected SLG against
+  pa: number;                 // plate appearances faced (sample size)
+  xwOBAPercentile?: number;   // pitcher xwOBA percentile (higher = more hittable)
+  barrelPercentile?: number;
+  hardHitPercentile?: number;
+}
+
 export interface StatcastCache {
   data: Map<string, StatcastPlayer>; // keyed by lowercase player name
   byId: Map<number, StatcastPlayer>; // keyed by MLB player ID
+  pitchers: Map<number, StatcastPitcher>; // keyed by pitcher MLB ID
   fetchedAt: number;
   year: number;
 }
@@ -84,10 +97,16 @@ async function fetchStatcastData(year: number): Promise<StatcastCache> {
           if (!byName.has(lastName)) byName.set(lastName, p);
           byId.set(p.playerId, p);
         }
-        console.log(`[Statcast] Loaded ${parsed.count} players for ${year}`);
+        // Parse pitcher xwOBA-against data
+        const pitchers = new Map<number, StatcastPitcher>();
+        for (const p of (parsed.pitchers ?? []) as StatcastPitcher[]) {
+          pitchers.set(p.pitcherId, p);
+        }
+        console.log(`[Statcast] Loaded ${parsed.count} batters, ${parsed.pitcherCount ?? pitchers.size} pitchers for ${year}`);
         resolve({
           data: byName,
           byId,
+          pitchers,
           fetchedAt: Date.now(),
           year,
         });
@@ -128,6 +147,7 @@ export async function getStatcastData(year?: number): Promise<StatcastCache> {
       return {
         data: new Map<string, StatcastPlayer>(),
         byId: new Map<number, StatcastPlayer>(),
+        pitchers: new Map<number, StatcastPitcher>(),
         fetchedAt: Date.now(),
         year: targetYear,
       };

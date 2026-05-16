@@ -696,8 +696,6 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache,
-        false, // hasBallparkPalData = false (internal VS gate)
-        [],    // ballparkMatchups = empty
         bullpenFatigueMap ?? new Map()
       );
       
@@ -796,8 +794,6 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache2,
-        false, // hasBallparkPalData = false
-        [],    // ballparkMatchups = empty
         bullpenFatigueMap2 ?? new Map()
       );
       
@@ -936,8 +932,6 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache3,
-        false, // hasBallparkPalData = false (internal VS gate)
-        [],    // ballparkMatchups = empty
         bullpenFatigueMap3 ?? new Map()
       );
 
@@ -1214,8 +1208,6 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache,
-        false, // hasBallparkPalData = false
-        [],    // ballparkMatchups = empty
         bullpenFatigueMap ?? new Map()
       );
 

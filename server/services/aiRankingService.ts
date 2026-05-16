@@ -65,7 +65,8 @@ import { calculateHandednessAdvantage, calculateWeatherImpact } from "./advanced
 import type { GameTotal } from "./gameTotalsService";
 import { getGameTotalScoreForTeam } from "./gameTotalsService";
 import { lookupStatcastPlayer, type StatcastCache } from "./pybaseballService";
-import type { BallparkMatchup } from "./ballparkMatchupService";
+// BallparkMatchup kept as a legacy type for backward compat (ballparkMatchupService removed in Phase AC)
+type BallparkMatchup = { batter: string; kProb?: number | null; hrProb?: number | null };
 import { getBullpenFatigueScore, type BullpenFatigue } from "./bullpenFatigueService";
 
 export interface PlayerData {
@@ -554,9 +555,7 @@ export function rankAIPicks(
   gameTotalsMap?: Map<string, GameTotal>,
   // Statcast data from pybaseball
   statcastCache?: StatcastCache,
-  // Whether vsGradeMap is from real ballparkpal data (true) or mlbMatchupService fallback (false)
-  hasBallparkPalData?: boolean,
-  // Raw BallparkPal matchups for kProb, hrProb access
+  // Raw matchups for kProb, hrProb access (legacy — kept for type compat, always empty now)
   ballparkMatchups?: BallparkMatchup[],
   // S3: Bullpen fatigue map (opponentTeamId -> BullpenFatigue)
   bullpenFatigueMap?: Map<number, BullpenFatigue>,
@@ -564,8 +563,8 @@ export function rankAIPicks(
   edgeScoreMap?: Map<string, number>
 ): AIPick[] {
 
-  // ── Auto-exclude: only when ALL 4 negatives stack ─────────────────────────
-  // This replaces the old hard VS gate. BallparkPal is now a boost/penalty.
+      // ── Auto-exclude: only when ALL 4 negatives stack ─────────────────────────
+  // Internal VS gate: boost/penalty based on Diamond Edge matchup score.
   const picks = matchups
     .map((matchup) => {
       const playerData = playerDataMap.get(matchup.playerId);
@@ -574,7 +573,7 @@ export function rankAIPicks(
 
       if (!playerData) return null;
 
-      // ── VS grade (BallparkPal or fallback) ───────────────────────────────
+      // ── VS grade (internal Diamond Edge matchup score) ─────────────────
       const vsGrade = vsGradeMap?.get(matchup.playerName) ?? null;
 
       // ── Game Total (O/U) environment ──────────────────────────────────────
@@ -587,8 +586,8 @@ export function rankAIPicks(
         ? (statcastCache.byId.get(matchup.playerId) ?? lookupStatcastPlayer(statcastCache, matchup.playerName))
         : null;
 
-      // ── BallparkPal raw matchup (for kProb, hrProb) ───────────────────────
-      const bpMatchup = ballparkMatchups?.find(bp =>
+      // kProb: from ballparkMatchups if provided (legacy), otherwise null
+      const bpMatchup = (ballparkMatchups ?? []).find(bp =>
         bp.batter.toLowerCase() === matchup.playerName.toLowerCase() ||
         bp.batter.toLowerCase().includes(matchup.playerName.split(' ').pop()?.toLowerCase() || '')
       ) ?? null;
@@ -607,7 +606,7 @@ export function rankAIPicks(
         return null;
       }
 
-      // Rule 3: BallparkPal kProb ≥ 30% (very high strikeout risk)
+      // Rule 3: kProb ≥ 30% (very high strikeout risk)
       if (kProb !== null && kProb >= 30) {
         console.log(`[rankAIPicks] Auto-fail ${matchup.playerName}: kProb ${kProb}% ≥ 30%`);
         return null;
@@ -704,7 +703,7 @@ export function rankAIPicks(
         platoonScore       * 0.05 +   // Platoon Advantage
         hardContactScore   * 0.04;    // Hard Contact/Barrel
 
-      // ── BallparkPal boost/penalty ─────────────────────────────────────────
+      // ── Matchup Grade boost/penalty (Diamond Edge VS gate) ─────────────
       const bpBoost = calculateBPBoost(vsGrade);
 
       // ── S4: Edge-based boost (theLAB edge score) ──────────────────────────
@@ -746,9 +745,9 @@ export function rankAIPicks(
 
       // ── Build reasons (WHY THIS PLAY QUALIFIES) ───────────────────────────
       const reasons: string[] = [];
-      if (vsGrade !== null && vsGrade >= 9.5) reasons.push(`Elite BallparkPal matchup (Grade ${Math.round(vsGrade)}/10)`);
-      else if (vsGrade !== null && vsGrade >= 8.5) reasons.push(`Strong BallparkPal matchup (Grade ${Math.round(vsGrade)}/10)`);
-      else if (vsGrade !== null && vsGrade >= 7.5) reasons.push(`Favorable BallparkPal matchup (Grade ${Math.round(vsGrade)}/10)`);
+      if (vsGrade !== null && vsGrade >= 9.5) reasons.push(`Elite matchup grade (VS ${Math.round(vsGrade)}/10 — xwOBA + ERA edge)`);
+      else if (vsGrade !== null && vsGrade >= 8.5) reasons.push(`Strong matchup grade (VS ${Math.round(vsGrade)}/10)`);
+      else if (vsGrade !== null && vsGrade >= 7.5) reasons.push(`Favorable matchup grade (VS ${Math.round(vsGrade)}/10)`);
       if (gameTotalOU !== null && gameTotalOU >= 9.5) reasons.push(`High-scoring game environment (O/U ${gameTotalOU})`);
       else if (gameTotalOU !== null && gameTotalOU >= 8.5) reasons.push(`Above-average game total (O/U ${gameTotalOU})`);
       if (matchup.battingPosition <= 3) reasons.push(`Top of lineup (#${matchup.battingPosition} — high run-scoring opportunity)`);
@@ -760,7 +759,7 @@ export function rankAIPicks(
       if (parkFactor >= 1.05) reasons.push(`Hitter-friendly park (factor ${parkFactor.toFixed(2)})`);
       if (platoonScore >= 60) reasons.push(`Platoon advantage vs ${matchup.pitcher.handedness}HP`);
       if (barrelPercentile >= 70) reasons.push(`Elite barrel% (${barrelPercentile}th percentile)`);
-      if (bpBoost > 0) reasons.push(`BallparkPal boost: +${bpBoost} pts`);
+      if (bpBoost > 0) reasons.push(`Matchup grade boost: +${bpBoost} pts (favorable VS score)`);
 
       // ── Build risk flags ──────────────────────────────────────────────────
       const riskFlags: string[] = [];
@@ -773,15 +772,14 @@ export function rankAIPicks(
         if (isHeadwind && matchup.weather.windSpeed > 10) riskFlags.push(`Wind blowing in (${matchup.weather.windSpeed}mph ${matchup.weather.windDirection})`);
       }
       if (recentFormResult.streakType === 'cold') riskFlags.push(`Cold streak — ${recentFormResult.last5HitRate}% hit rate last 5 games`);
-      if (bpBoost < 0) riskFlags.push(`BallparkPal penalty: ${bpBoost} pts (poor matchup grade)`);
+      if (bpBoost < 0) riskFlags.push(`Matchup grade penalty: ${bpBoost} pts (poor VS score)`);
       if (gameTotalOU !== null && gameTotalOU < 7.0) riskFlags.push(`Low game total (O/U ${gameTotalOU}) — limited scoring`);
 
       // ── Legacy reasoning string ───────────────────────────────────────────
       const reasoning = reasons.slice(0, 3).join(" • ") || "Solid matchup";
       const parkFactorValue = parkFactor > 1.05 ? "hitter-friendly" : parkFactor < 0.95 ? "pitcher-friendly" : "neutral";
       const ouStr = gameTotalOU !== null ? ` Game O/U: ${gameTotalOU}.` : "";
-      const ballparkReasoning = `Playing at ${parkFactorValue} park.${ouStr} ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ""}`;
-
+      const ballparkReasoning = `Playing at ${parkFactorValue} park.${ouStr} ${matchup.weather ? `Weather: ${matchup.weather.temperature}°F, ${matchup.weather.windSpeed}mph ${matchup.weather.windDirection}` : ''}`;
       // ── Best stat type ────────────────────────────────────────────────────
       const stats = playerData.stats;
       const STAT_PRIORITY_BONUS = { hits: 25, runs: 10, rbi: 0 };

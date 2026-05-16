@@ -101,6 +101,7 @@ function buildNeutralEnrichment(): EnrichmentData {
     statcastCache: {
       data: new Map(),
       byId: new Map(),
+      pitchers: new Map(),
       fetchedAt: Date.now(),
       year: new Date().getFullYear(),
     },
@@ -151,7 +152,7 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
     ]);
 
     // Stage 2: Build VS grade map using MLB Stats API + Statcast
-    // Uses hrtargets-style scoring: pitcher ERA/WHIP/platoon + Statcast barrel%/hard-hit%
+    // Uses hrtargets-style scoring: pitcher ERA/WHIP/platoon + Statcast barrel%/hard-hit% + xwOBA delta
     const enrichedPlayers = players.map(p => {
       const statcast = lookupStatcastPlayer(statcastCache, p.playerName);
       const streak = mlbStreakMap.get(p.playerId);
@@ -160,6 +161,8 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
         if (streak.trendDirection === 'HOT') streakBonus = 5;
         else if (streak.trendDirection === 'COLD') streakBonus = -4;
       }
+      // xwOBA VS gate: look up pitcher xwOBA-against from Statcast pitcher cache
+      const pitcherStatcast = p.pitcherId ? statcastCache.pitchers.get(p.pitcherId) : undefined;
       return {
         playerId: p.playerId,
         playerName: p.playerName,
@@ -169,6 +172,9 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
         hardHitPct: statcast?.hardHitPct ?? null,
         seasonHr: null,
         streakBonus,
+        // Phase AC: xwOBA delta for VS gate upgrade
+        batterXwOBA: statcast?.xwOBA ?? null,
+        pitcherXwOBAAgainst: pitcherStatcast?.xwOBAAgainst ?? null,
       };
     });
 

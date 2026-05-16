@@ -73,6 +73,7 @@ interface PitcherStats {
   homeTeamId: number | null; // for park factor lookup
   kPer9: number;
   bbPer9: number;
+  xwOBAAgainst?: number; // Statcast xwOBA-against (injected from StatcastCache.pitchers)
 }
 
 export interface MatchupScore {
@@ -86,6 +87,7 @@ export interface MatchupScore {
   pitcherEra: number;
   pitcherWhip: number;
   parkFactor: number;
+  xwOBADelta?: number;    // batter xwOBA - pitcher xwOBA-against (positive = batter edge)
   // Component scores for debugging
   components: {
     pitcherScore: number;
@@ -93,6 +95,7 @@ export interface MatchupScore {
     parkScore: number;
     tierScore: number;
     streakBonus: number;
+    xwOBAScore: number;   // bonus/penalty from xwOBA delta
   };
 }
 
@@ -205,8 +208,9 @@ function computeHRTargetsScore(params: {
   hardHitPct: number;   // e.g. 42.0 = 42%
   seasonHr: number;
   streakBonus: number;  // 0-5
-}): { total: number; components: { pitcherScore: number; powerScore: number; parkScore: number; tierScore: number; streakBonus: number } } {
-  const { era, parkFactor, tier, barrelPct, hardHitPct, seasonHr, streakBonus } = params;
+  xwOBADelta?: number;  // batter xwOBA - pitcher xwOBA-against (e.g. +0.040 = batter edge)
+}): { total: number; components: { pitcherScore: number; powerScore: number; parkScore: number; tierScore: number; streakBonus: number; xwOBAScore: number } } {
+  const { era, parkFactor, tier, barrelPct, hardHitPct, seasonHr, streakBonus, xwOBADelta } = params;
 
   // Pitcher score: higher ERA = more hittable = higher score
   // ERA 3.5 → 0 pts, ERA 7.0 → 25 pts (same as hrtargets formula)
@@ -224,7 +228,17 @@ function computeHRTargetsScore(params: {
   // Tier score: STRONG=15, MODERATE=7, BAD=0
   const tierScore = tier === 'STRONG' ? 15 : tier === 'MODERATE' ? 7 : 0;
 
-  const total = Math.min(85, Math.max(0, Math.round(pitcherScore + powerScore + parkScore + tierScore + streakBonus)));
+  // xwOBA delta score: batter xwOBA advantage over pitcher xwOBA-against
+  // Delta +0.050 = strong batter edge (+10 pts), Delta -0.050 = pitcher dominates (-10 pts)
+  // League avg xwOBA ~.320; delta of 0 = neutral
+  // Max bonus: +10 pts (delta >= +0.050), Max penalty: -10 pts (delta <= -0.050)
+  let xwOBAScore = 0;
+  if (xwOBADelta !== undefined && xwOBADelta !== null) {
+    xwOBAScore = Math.min(10, Math.max(-10, (xwOBADelta / 0.050) * 10));
+  }
+
+  const rawTotal = pitcherScore + powerScore + parkScore + tierScore + streakBonus + xwOBAScore;
+  const total = Math.min(95, Math.max(0, Math.round(rawTotal))); // max bumped to 95 to allow xwOBA bonus
 
   return {
     total,
@@ -234,6 +248,7 @@ function computeHRTargetsScore(params: {
       parkScore: Math.round(parkScore),
       tierScore,
       streakBonus,
+      xwOBAScore: Math.round(xwOBAScore),
     },
   };
 }
@@ -258,6 +273,8 @@ export async function computeMatchupScore(
     hardHitPct?: number;
     seasonHr?: number;
     streakBonus?: number;
+    batterXwOBA?: number;     // batter's xwOBA from Statcast (e.g. 0.360)
+    pitcherXwOBAAgainst?: number; // pitcher's xwOBA-against from Statcast (e.g. 0.290)
   }
 ): Promise<MatchupScore> {
   const [splits, pitcherStats] = await Promise.all([
@@ -298,7 +315,21 @@ export async function computeMatchupScore(
   const seasonHr = options?.seasonHr ?? 10;
   const streakBonus = options?.streakBonus ?? 0;
 
-  // Compute hrtargets-style score
+  // xwOBA delta: batter advantage over pitcher
+  // League avg xwOBA ~.320 for both batters and pitchers-against
+  let xwOBADelta: number | undefined;
+  if (options?.batterXwOBA !== undefined && options?.pitcherXwOBAAgainst !== undefined) {
+    // Positive delta = batter is above-average, pitcher is below-average suppressor = good matchup
+    xwOBADelta = options.batterXwOBA - options.pitcherXwOBAAgainst;
+  } else if (options?.batterXwOBA !== undefined) {
+    // Only batter data: compare to league avg pitcher (.320)
+    xwOBADelta = options.batterXwOBA - 0.320;
+  } else if (options?.pitcherXwOBAAgainst !== undefined) {
+    // Only pitcher data: compare to league avg batter (.320)
+    xwOBADelta = 0.320 - options.pitcherXwOBAAgainst;
+  }
+
+  // Compute hrtargets-style score (max 95 with xwOBA bonus)
   const { total: rawScore, components } = computeHRTargetsScore({
     era: pitcherStats.era,
     parkFactor,
@@ -307,10 +338,11 @@ export async function computeMatchupScore(
     hardHitPct,
     seasonHr,
     streakBonus,
+    xwOBADelta,
   });
 
-  // Normalize raw score (0-85) to 0-10 scale
-  const score = Math.round((rawScore / 85) * 10 * 10) / 10;
+  // Normalize raw score (0-95) to 0-10 scale
+  const score = Math.round((rawScore / 95) * 10 * 10) / 10;
 
   // Pitcher vulnerability for backward compatibility
   const eraScore = Math.min(100, Math.max(0, ((pitcherStats.era - 2.0) / 5.0) * 100));
@@ -327,6 +359,7 @@ export async function computeMatchupScore(
     pitcherVulnerability,
     batterAvgVsPitcherHand,
     pitcherEra: pitcherStats.era,
+    xwOBADelta,
     pitcherWhip: pitcherStats.whip,
     parkFactor,
     components,
@@ -351,6 +384,9 @@ export async function batchComputeMatchupScores(
     hardHitPct?: number | null;
     seasonHr?: number | null;
     streakBonus?: number | null;
+    // xwOBA fields for VS gate upgrade (Phase AC)
+    batterXwOBA?: number | null;         // batter's Statcast xwOBA
+    pitcherXwOBAAgainst?: number | null; // pitcher's Statcast xwOBA-against
   }>,
   season: number
 ): Promise<Map<string, number>> {
@@ -377,6 +413,8 @@ export async function batchComputeMatchupScores(
               hardHitPct: p.hardHitPct ?? undefined,
               seasonHr: p.seasonHr ?? undefined,
               streakBonus: p.streakBonus ?? undefined,
+              batterXwOBA: p.batterXwOBA ?? undefined,
+              pitcherXwOBAAgainst: p.pitcherXwOBAAgainst ?? undefined,
             }
           );
           results.set(p.playerName, ms.score);
