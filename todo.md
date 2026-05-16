@@ -1251,3 +1251,11 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [ ] Update MoneyPickCard: show risk tier (SAFE VALUE / BALANCED / CEILING PLAY / PASS)
 - [ ] Add Best Alt Value Plays section to StructuredPickSections
 - [ ] TypeScript: 0 errors
+
+## Phase AY: Scheduled Task Audit & Alignment
+- [ ] Replace scheduledAIPicks in systemRouter.ts — currently calls legacy runDailyPropsJob() (mock data, random overs/unders). Replace with warmEnrichmentCacheOnStartup() + cache bust so next getHRRPicks call gets fresh data
+- [ ] Replace scheduledLeaderboardRefresh in systemRouter.ts — currently just fetches MLB standings and counts records. Replace with enrichment cache warm + lineup pre-warm
+- [ ] Update scheduled.ts refreshData schema — old schema has statType/propLine/confidence fields from legacy prop system. Update to accept HRR pick fields (overallScore, pickQuality, hrrLine, etc.) or deprecate in favor of cache-bust approach
+- [ ] Update Manus scheduled task detail — remove references to saveBallparkPalData (procedure doesn't exist), remove stale 75% threshold references, align timing with 3-pull system (7AM morning, 1PM midday, 7PM final)
+- [ ] Remove/disable daily-props.ts legacy job — it generates mock data for 3 hardcoded players with random over/under, completely misaligned with current system
+- [ ] TypeScript: 0 errors

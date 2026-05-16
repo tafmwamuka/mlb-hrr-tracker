@@ -110,6 +110,9 @@ export function invalidatePicksCache() {
   console.log('[HRRPicks] Cache invalidated');
 }
 
+/** Alias used by scheduled tasks to trigger a fresh board build on next request */
+export const bustPicksCache = invalidatePicksCache;
+
 /**
  * Run the full HRR picks pipeline and return enriched money picks.
  * This is the single source of truth — both getHRRPicks and getTodayResults call this.

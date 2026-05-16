@@ -28,35 +28,46 @@ export const systemRouter = router({
     }),
 
   /**
-   * Scheduled task endpoint for 6 AM daily AI picks generation
-   * Called by the Manus scheduler with OAuth authentication
-   * Fetches fresh data from all sources and generates new AI picks
+   * Phase AY: Morning data warm (7 AM ET)
+   * - Warms enrichment cache (VS grades, Statcast, game totals, splits, streaks)
+   * - Pre-warms lineup adapter so first getHRRPicks call gets real data
+   * - Busts hrrPicksService cache so next user request triggers a fresh 3-pull board build
+   * - Aligns with PRELIMINARY BOARD phase (before 1 PM ET)
    */
   scheduledAIPicks: publicProcedure
     .mutation(async () => {
       try {
         const timestamp = new Date();
-        console.log(`[Scheduled Task] 6 AM AI Picks generation started at ${timestamp.toISOString()}`);
+        console.log(`[Scheduled] Morning warm (7 AM) started at ${timestamp.toISOString()}`);
 
-        // Import the existing daily props job which already handles all data fetching
-        const { runDailyPropsJob } = await import("../jobs/daily-props");
-        
-        // Execute the comprehensive daily props job
-        await runDailyPropsJob();
+        // 1. Warm enrichment cache (VS grades, Statcast, game totals, splits, streaks, bullpen)
+        const { warmEnrichmentCacheOnStartup } = await import("../services/enrichmentCache");
+        await warmEnrichmentCacheOnStartup();
+        console.log(`[Scheduled] Enrichment cache warmed`);
 
-        console.log(`[Scheduled Task] 6 AM AI Picks generation completed at ${new Date().toISOString()}`);
+        // 2. Pre-warm lineup adapter (fetches projected + confirmed lineups from MLB API)
+        const { getAdaptedLineupData } = await import("../services/lineupAdapter");
+        await getAdaptedLineupData();
+        console.log(`[Scheduled] Lineup adapter pre-warmed`);
+
+        // 3. Bust the HRR picks cache so the next getHRRPicks call rebuilds the board
+        const { bustPicksCache } = await import("../services/hrrPicksService");
+        bustPicksCache();
+        console.log(`[Scheduled] HRR picks cache busted — board will rebuild on next request`);
+
+        console.log(`[Scheduled] Morning warm completed at ${new Date().toISOString()}`);
 
         return {
           success: true,
-          message: "AI picks generation completed successfully",
+          message: "Morning data warm completed — PRELIMINARY BOARD will rebuild on next request",
           timestamp,
           status: "completed",
         };
       } catch (error) {
-        console.error("[Scheduled Task] Error in 6 AM AI picks:", error);
+        console.error("[Scheduled] Error in morning warm:", error);
         return {
           success: false,
-          message: "Failed to generate AI picks",
+          message: "Morning warm failed",
           error: error instanceof Error ? error.message : "Unknown error",
           timestamp: new Date(),
         };
@@ -64,93 +75,95 @@ export const systemRouter = router({
     }),
 
   /**
-   * Scheduled task endpoint for pre-game leaderboard refresh
-   * Called by the Manus scheduler at 11 AM with OAuth authentication
-   * Refreshes all leaderboard data 2 hours before first game
+   * Phase AY: Midday data refresh (1 PM ET)
+   * - Re-warms enrichment cache with confirmed lineup data
+   * - Busts picks cache so next request triggers CONFIRMED BOARD build
+   * - Aligns with the 1 PM official pull in the 3-pull stability system
    */
   scheduledLeaderboardRefresh: publicProcedure
     .mutation(async () => {
       try {
         const timestamp = new Date();
-        console.log(`[Scheduled Task] Pre-game leaderboard refresh started at ${timestamp.toISOString()}`);
+        console.log(`[Scheduled] Midday refresh (1 PM) started at ${timestamp.toISOString()}`);
 
-        // Fetch fresh leaderboard data from MLB Stats API
-        let mlbStatsCount = 0;
-        try {
-          const response = await fetch("https://statsapi.mlb.com/api/v1/standings?leagueId=103,104");
-          if (response.ok) {
-            const data = await response.json();
-            // Count total players across all divisions
-            if (data.records) {
-              mlbStatsCount = data.records.length;
-            }
-            console.log(`[Scheduled Task] Fetched MLB standings with ${mlbStatsCount} divisions`);
-          }
-        } catch (error) {
-          console.warn("[Scheduled Task] Failed to fetch MLB standings:", error);
-        }
+        // 1. Re-warm enrichment cache with latest confirmed lineup data
+        const { warmEnrichmentCacheOnStartup } = await import("../services/enrichmentCache");
+        await warmEnrichmentCacheOnStartup();
+        console.log(`[Scheduled] Enrichment cache re-warmed for midday`);
 
-        // Fetch fresh odds from The Odds API
-        let oddsGameCount = 0;
-        try {
-          const oddsApiKey = process.env.ODDS_API_KEY;
-          if (oddsApiKey) {
-            const response = await fetch(
-              `https://api.the-odds-api.com/v4/sports/baseball_mlb/odds?apiKey=${oddsApiKey}&regions=us&markets=h2h`
-            );
-            if (response.ok) {
-              const data = await response.json();
-              if (Array.isArray(data)) {
-                oddsGameCount = data.length;
-              }
-              console.log(`[Scheduled Task] Fetched ${oddsGameCount} games from Odds API`);
-            }
-          }
-        } catch (error) {
-          console.warn("[Scheduled Task] Failed to fetch odds data:", error);
-        }
+        // 2. Re-warm lineup adapter to pick up confirmed lineups
+        const { getAdaptedLineupData } = await import("../services/lineupAdapter");
+        const lineupData = await getAdaptedLineupData();
+        const confirmedCount = lineupData?.lineupSource === 'confirmed' ? (lineupData?.games?.length ?? 0) : 0;
+        console.log(`[Scheduled] Lineup adapter re-warmed — ${confirmedCount} confirmed lineups`);
 
-        // Get database connection for persistence
-        const { getDb } = await import("../db");
-        const db = await getDb();
-        
-        if (!db) {
-          console.warn("[Scheduled Task] Database not available for leaderboard refresh");
-          return {
-            success: true,
-            message: "Leaderboard data fetched but database unavailable for persistence",
-            timestamp,
-            dataFetched: {
-              mlbStandings: mlbStatsCount > 0,
-              oddsGames: oddsGameCount > 0,
-            },
-            counts: {
-              mlbStandings: mlbStatsCount,
-              oddsGames: oddsGameCount,
-            },
-          };
-        }
+        // 3. Bust picks cache so next request triggers CONFIRMED BOARD build
+        const { bustPicksCache } = await import("../services/hrrPicksService");
+        bustPicksCache();
+        console.log(`[Scheduled] HRR picks cache busted — CONFIRMED BOARD will rebuild on next request`);
 
-        console.log(`[Scheduled Task] Pre-game leaderboard refresh completed successfully`);
+        console.log(`[Scheduled] Midday refresh completed at ${new Date().toISOString()}`);
 
         return {
           success: true,
-          message: "Leaderboard refresh completed successfully",
+          message: `Midday refresh completed — ${confirmedCount} confirmed lineups loaded, CONFIRMED BOARD will rebuild on next request`,
           timestamp,
-          dataFetched: {
-            mlbStandings: mlbStatsCount > 0,
-            oddsGames: oddsGameCount > 0,
-          },
-          counts: {
-            mlbStandings: mlbStatsCount,
-            oddsGames: oddsGameCount,
-          },
+          confirmedLineups: confirmedCount,
+          status: "completed",
         };
       } catch (error) {
-        console.error("[Scheduled Task] Error in pre-game refresh:", error);
+        console.error("[Scheduled] Error in midday refresh:", error);
         return {
           success: false,
-          message: "Failed to refresh leaderboard",
+          message: "Midday refresh failed",
+          error: error instanceof Error ? error.message : "Unknown error",
+          timestamp: new Date(),
+        };
+      }
+    }),
+
+  /**
+   * Phase AY: Evening final lock (7 PM ET)
+   * - Final enrichment cache warm before evening games
+   * - Busts picks cache so next request triggers FINAL OFFICIAL BOARD build
+   * - Aligns with the 7 PM official pull in the 3-pull stability system
+   */
+  scheduledEveningLock: publicProcedure
+    .mutation(async () => {
+      try {
+        const timestamp = new Date();
+        console.log(`[Scheduled] Evening lock (7 PM) started at ${timestamp.toISOString()}`);
+
+        // 1. Final enrichment cache warm
+        const { warmEnrichmentCacheOnStartup } = await import("../services/enrichmentCache");
+        await warmEnrichmentCacheOnStartup();
+        console.log(`[Scheduled] Enrichment cache warmed for evening lock`);
+
+        // 2. Final lineup pre-warm
+        const { getAdaptedLineupData } = await import("../services/lineupAdapter");
+        const lineupData = await getAdaptedLineupData();
+        const confirmedCount = lineupData?.lineupSource === 'confirmed' ? (lineupData?.games?.length ?? 0) : 0;
+        console.log(`[Scheduled] Final lineup warm — ${confirmedCount} confirmed lineups`);
+
+        // 3. Bust picks cache so next request triggers FINAL OFFICIAL BOARD build
+        const { bustPicksCache } = await import("../services/hrrPicksService");
+        bustPicksCache();
+        console.log(`[Scheduled] HRR picks cache busted — FINAL OFFICIAL BOARD will rebuild on next request`);
+
+        console.log(`[Scheduled] Evening lock completed at ${new Date().toISOString()}`);
+
+        return {
+          success: true,
+          message: `Evening lock completed — FINAL OFFICIAL BOARD will rebuild on next request`,
+          timestamp,
+          confirmedLineups: confirmedCount,
+          status: "completed",
+        };
+      } catch (error) {
+        console.error("[Scheduled] Error in evening lock:", error);
+        return {
+          success: false,
+          message: "Evening lock failed",
           error: error instanceof Error ? error.message : "Unknown error",
           timestamp: new Date(),
         };
