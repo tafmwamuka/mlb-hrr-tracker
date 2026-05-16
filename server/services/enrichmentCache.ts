@@ -50,6 +50,7 @@ interface PlayerRef {
   gameTime?: string | null;
   pitcherId?: number | null;
   pitcherHand?: string | null;
+  opponentTeamId?: number | null; // MLB team ID of the opposing (pitching) team
 }
 
 // Shared cache entry
@@ -202,27 +203,28 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
       new Map<string, GameTotal>()
     );
 
-    // Stage 4: Fetch bullpen fatigue for all 30 MLB teams
-    const MLB_TEAM_IDS = [
-      { teamId: 133, teamAbbr: 'OAK' }, { teamId: 134, teamAbbr: 'PIT' },
-      { teamId: 135, teamAbbr: 'SD' },  { teamId: 136, teamAbbr: 'SEA' },
-      { teamId: 137, teamAbbr: 'SF' },  { teamId: 138, teamAbbr: 'STL' },
-      { teamId: 139, teamAbbr: 'TB' },  { teamId: 140, teamAbbr: 'TEX' },
-      { teamId: 141, teamAbbr: 'TOR' }, { teamId: 142, teamAbbr: 'MIN' },
-      { teamId: 143, teamAbbr: 'PHI' }, { teamId: 144, teamAbbr: 'ATL' },
-      { teamId: 145, teamAbbr: 'CWS' }, { teamId: 146, teamAbbr: 'MIA' },
-      { teamId: 147, teamAbbr: 'NYY' }, { teamId: 158, teamAbbr: 'MIL' },
-      { teamId: 108, teamAbbr: 'LAA' }, { teamId: 109, teamAbbr: 'ARI' },
-      { teamId: 110, teamAbbr: 'BAL' }, { teamId: 111, teamAbbr: 'BOS' },
-      { teamId: 112, teamAbbr: 'CHC' }, { teamId: 113, teamAbbr: 'CIN' },
-      { teamId: 114, teamAbbr: 'CLE' }, { teamId: 115, teamAbbr: 'COL' },
-      { teamId: 116, teamAbbr: 'DET' }, { teamId: 117, teamAbbr: 'HOU' },
-      { teamId: 118, teamAbbr: 'KC' },  { teamId: 119, teamAbbr: 'LAD' },
-      { teamId: 120, teamAbbr: 'WSH' }, { teamId: 121, teamAbbr: 'NYM' },
-    ];
+    // Stage 4: Fetch bullpen fatigue — only for today's opponent (pitching) teams
+    // This reduces API calls from ~90 (30 teams × 3 days) to ~45 (15 games × 3 days)
+    const ALL_TEAM_IDS: Record<number, string> = {
+      133: 'OAK', 134: 'PIT', 135: 'SD',  136: 'SEA', 137: 'SF',  138: 'STL',
+      139: 'TB',  140: 'TEX', 141: 'TOR', 142: 'MIN', 143: 'PHI', 144: 'ATL',
+      145: 'CWS', 146: 'MIA', 147: 'NYY', 158: 'MIL', 108: 'LAA', 109: 'ARI',
+      110: 'BAL', 111: 'BOS', 112: 'CHC', 113: 'CIN', 114: 'CLE', 115: 'COL',
+      116: 'DET', 117: 'HOU', 118: 'KC',  119: 'LAD', 120: 'WSH', 121: 'NYM',
+    };
+    // Extract unique opponent team IDs from today's matchups
+    const opponentTeamIds = Array.from(new Set(
+      players.map(p => p.opponentTeamId).filter((id): id is number => !!id)
+    ));
+    // Fall back to all 30 if no opponent IDs available (e.g. startup before lineups)
+    const teamsToFetch = opponentTeamIds.length > 0
+      ? opponentTeamIds.map(id => ({ teamId: id, teamAbbr: ALL_TEAM_IDS[id] ?? String(id) }))
+      : Object.entries(ALL_TEAM_IDS).map(([id, abbr]) => ({ teamId: Number(id), teamAbbr: abbr }));
+
+    console.log(`[EnrichmentCache] Fetching bullpen fatigue for ${teamsToFetch.length} opponent teams (${opponentTeamIds.length > 0 ? 'targeted' : 'all-30 fallback'})`);
 
     const bullpenFatigueMap = await withTimeout(
-      getBullpenFatigue(MLB_TEAM_IDS),
+      getBullpenFatigue(teamsToFetch),
       20_000,
       new Map<number, BullpenFatigue>()
     );
@@ -303,6 +305,7 @@ export async function warmEnrichmentCacheOnStartup(): Promise<void> {
       gameTime: m.gameTime,
       pitcherId: m.pitcher?.id ?? null,
       pitcherHand: m.pitcher?.handedness ?? null,
+      opponentTeamId: m.opponentTeamId ?? null,
     }));
     if (players.length > 0) {
       console.log(`[EnrichmentCache] Startup warm triggered for ${players.length} players`);

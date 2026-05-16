@@ -1025,3 +1025,25 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Add xwOBA delta (batter xwOBA - pitcher xwOBA-against) as a VS gate signal in mlbMatchupService
 - [ ] Improve bullpen timeout resilience: fetch only today's opponent teams (not all 30) to reduce API calls
 - [x] Show "Matchup Grade" instead of "BallparkPal" on pick cards in UI
+
+## Phase AG — 3 Follow-Up Improvements (May 16)
+
+### Follow-up 1 — Bullpen Timeout Resilience
+- [x] Update bullpenFatigueService to accept a list of opponent team IDs (not all 30)
+- [x] Update enrichmentCache to pass only today's opponent teams to bullpen service
+- [x] Reduce bullpen API calls from ~90 to ~30 (3 days × opponent teams only)
+- [x] Log how many teams were fetched vs skipped
+
+### Follow-up 2 — Rolling 7-Day Hit Rate & ROI Tracking
+- [x] Add getSevenDayStats DB query (last 7 days of dailyResults)
+- [x] Add trpc.history.getSevenDayStats procedure
+- [x] Display rolling 7-day hit rate card in Results tab header
+- [x] Display rolling 7-day ROI (units won/lost) in Results tab header
+- [x] Show trend arrow (up/down) based on 7-day vs 30-day comparison
+
+### Follow-up 3 — Mobile Swipeable Podium Cards
+- [x] Detect mobile screen size in Home.tsx (useWindowSize or CSS)
+- [x] On mobile (<640px): render podium as horizontal swipeable carousel
+- [x] Each podium card takes full width, swipe left/right to navigate
+- [x] Show dot indicators for current card position
+- [x] Keep 3-column layout on desktop (>=640px)

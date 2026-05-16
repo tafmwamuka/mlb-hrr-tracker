@@ -8,11 +8,99 @@
  * - Fully responsive mobile-first design
  */
 
-import { Trophy, TrendingUp, Zap, Target, CheckCircle2, XCircle, Clock, Flame, BarChart3, Award, Star, RefreshCw, Radio, History, ChevronDown, ChevronUp } from "lucide-react";
+import { Trophy, TrendingUp, Zap, Target, CheckCircle2, XCircle, Clock, Flame, BarChart3, Award, Star, RefreshCw, Radio, History, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Minus, DollarSign } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import { SaferPlayTip } from "./SaferPlayTip";
 import { useState, useEffect, useMemo } from "react";
+
+// ─── Rolling 7-Day Stats Card ─────────────────────────────────────────────────
+function SevenDayStatsCard() {
+  const { data, isLoading } = trpc.history.getSevenDayStats.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
+  const trendColor = data?.trend === 'up' ? 'oklch(0.72 0.18 165)' : data?.trend === 'down' ? 'oklch(0.68 0.22 25)' : 'oklch(0.55 0.015 255)';
+  const TrendIcon = data?.trend === 'up' ? ArrowUp : data?.trend === 'down' ? ArrowDown : Minus;
+  const hitRateColor = (r: number) => r >= 65 ? 'oklch(0.72 0.18 165)' : r >= 50 ? 'oklch(0.82 0.17 85)' : 'oklch(0.68 0.22 25)';
+
+  if (isLoading || !data || data.totalPlays === 0) {
+    return (
+      <div
+        className="rounded-2xl border px-4 py-3 flex items-center gap-3"
+        style={{ background: 'oklch(0.12 0.022 255)', borderColor: 'oklch(1 0 0 / 10%)' }}
+      >
+        <TrendingUp size={13} style={{ color: 'oklch(0.72 0.18 165)' }} />
+        <span className="text-xs font-bold text-white">7-Day Trend</span>
+        <span className="text-[10px] text-[oklch(0.40_0.015_255)] ml-auto">
+          {isLoading ? 'Loading...' : 'No data yet — tracking started May 15'}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="rounded-2xl border overflow-hidden"
+      style={{ background: 'oklch(0.12 0.022 255)', borderColor: 'oklch(1 0 0 / 10%)' }}
+    >
+      {/* Header */}
+      <div className="px-4 py-2.5 flex items-center justify-between border-b" style={{ borderColor: 'oklch(1 0 0 / 8%)' }}>
+        <div className="flex items-center gap-2">
+          <TrendingUp size={13} style={{ color: 'oklch(0.72 0.18 165)' }} />
+          <span className="text-xs font-bold text-white">Rolling 7-Day Performance</span>
+        </div>
+        <div className="flex items-center gap-1" style={{ color: trendColor }}>
+          <TrendIcon size={11} />
+          <span className="text-[10px] font-bold">
+            {data.trend === 'up' ? 'Trending Up' : data.trend === 'down' ? 'Trending Down' : 'Stable'}
+          </span>
+        </div>
+      </div>
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-4 divide-x" style={{ borderColor: 'oklch(1 0 0 / 8%)' }}>
+        {[
+          { label: 'Hit Rate', value: `${data.hitRate}%`, sub: `${data.hits}/${data.totalPlays}`, color: hitRateColor(data.hitRate) },
+          { label: 'Money %', value: `${data.moneyHitRate}%`, sub: 'money picks', color: hitRateColor(data.moneyHitRate) },
+          { label: 'ROI', value: `${data.roi > 0 ? '+' : ''}${data.roi}%`, sub: 'at -110', color: data.roi >= 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)' },
+          { label: 'Units', value: `${data.unitsWon > 0 ? '+' : ''}${data.unitsWon}u`, sub: '7 days', color: data.unitsWon >= 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)' },
+        ].map((stat, i) => (
+          <div key={i} className="px-3 py-2.5 text-center" style={{ borderColor: 'oklch(1 0 0 / 8%)' }}>
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)] uppercase font-semibold tracking-wider mb-1">{stat.label}</div>
+            <div className="text-base font-bold font-stat" style={{ color: stat.color }}>{stat.value}</div>
+            <div className="text-[8px] text-[oklch(0.35_0.015_255)] mt-0.5">{stat.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Sparkline */}
+      {data.byDay.length > 1 && (
+        <div className="px-4 pb-3 pt-2">
+          <div className="flex items-end gap-1 h-8">
+            {data.byDay.map((d, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                <div
+                  className="w-full rounded-sm"
+                  style={{
+                    height: `${Math.max(4, (d.hitRate / 100) * 28)}px`,
+                    background: hitRateColor(d.hitRate),
+                    opacity: 0.7,
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between mt-1">
+            <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{data.byDay[0]?.date.slice(5)}</span>
+            <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{data.byDay[data.byDay.length - 1]?.date.slice(5)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Historical Performance Mini-Panel ────────────────────────────────────────
 function HistoricalPerformancePanel() {
@@ -786,6 +874,11 @@ export function ResultsTab() {
       {/* Safer play tip */}
       <div className="px-3 sm:px-4 mb-3 sm:mb-4">
         <SaferPlayTip />
+      </div>
+
+      {/* 7-Day Rolling Stats */}
+      <div className="px-3 sm:px-4 mb-3 sm:mb-4">
+        <SevenDayStatsCard />
       </div>
 
       {/* Historical performance panel */}

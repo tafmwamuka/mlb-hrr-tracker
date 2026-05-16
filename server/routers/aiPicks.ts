@@ -696,6 +696,7 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache,
+        undefined, // ballparkMatchups (legacy)
         bullpenFatigueMap ?? new Map()
       );
       
@@ -794,6 +795,7 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache2,
+        undefined, // ballparkMatchups (legacy)
         bullpenFatigueMap2 ?? new Map()
       );
       
@@ -932,6 +934,7 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache3,
+        undefined, // ballparkMatchups (legacy)
         bullpenFatigueMap3 ?? new Map()
       );
 
@@ -1208,6 +1211,7 @@ export const aiPicksRouter = router({
         vsGradeMap,
         gameTotalsMap,
         statcastCache,
+        undefined, // ballparkMatchups (legacy)
         bullpenFatigueMap ?? new Map()
       );
 

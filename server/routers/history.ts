@@ -198,6 +198,84 @@ export const historyRouter = router({
     }),
 
   /**
+   * Rolling 7-day performance stats with ROI tracking.
+   * Used in Results tab header to show recent trend.
+   */
+  getSevenDayStats: publicProcedure.query(async () => {
+    const db = await getDb();
+    const empty = {
+      totalPlays: 0, hits: 0, misses: 0, hitRate: 0,
+      moneyHitRate: 0, roi: 0, unitsWon: 0, trend: 'neutral' as 'up' | 'down' | 'neutral',
+      byDay: [] as Array<{ date: string; hitRate: number; plays: number }>,
+    };
+    if (!db) return empty;
+
+    const sevenDaysAgo = subtractDays(7);
+    const fourteenDaysAgo = subtractDays(14);
+
+    const [recentRows, prevRows] = await Promise.all([
+      db.select().from(dailyResults)
+        .where(and(
+          gte(dailyResults.gameDate, sevenDaysAgo),
+          sql`${dailyResults.result} != 'pending'`
+        ))
+        .orderBy(desc(dailyResults.gameDate)),
+      db.select().from(dailyResults)
+        .where(and(
+          gte(dailyResults.gameDate, fourteenDaysAgo),
+          lte(dailyResults.gameDate, sevenDaysAgo),
+          sql`${dailyResults.result} != 'pending'`
+        ))
+        .orderBy(desc(dailyResults.gameDate)),
+    ]);
+
+    if (recentRows.length === 0) return empty;
+
+    const hits = recentRows.filter(r => r.result === 'hit').length;
+    const misses = recentRows.filter(r => r.result === 'miss').length;
+    const total = hits + misses;
+    const hitRate = total > 0 ? Math.round((hits / total) * 100) : 0;
+
+    // Money picks hit rate
+    const moneyRows = recentRows.filter(r => r.source === 'money');
+    const moneyHits = moneyRows.filter(r => r.result === 'hit').length;
+    const moneySettled = moneyRows.filter(r => r.result !== 'pending').length;
+    const moneyHitRate = moneySettled > 0 ? Math.round((moneyHits / moneySettled) * 100) : 0;
+
+    // ROI: assume -110 odds (1 unit risk = 0.909 units profit on win, -1 on loss)
+    const WIN_PAYOUT = 0.909; // profit per unit at -110
+    const unitsWon = (hits * WIN_PAYOUT) - misses;
+    const roi = total > 0 ? Math.round((unitsWon / total) * 100) : 0;
+
+    // Trend: compare 7-day hit rate to previous 7-day hit rate
+    const prevHits = prevRows.filter(r => r.result === 'hit').length;
+    const prevTotal = prevRows.filter(r => r.result !== 'pending').length;
+    const prevHitRate = prevTotal > 0 ? (prevHits / prevTotal) * 100 : 0;
+    const trend: 'up' | 'down' | 'neutral' =
+      total < 5 ? 'neutral' :
+      hitRate > prevHitRate + 5 ? 'up' :
+      hitRate < prevHitRate - 5 ? 'down' : 'neutral';
+
+    // Group by day for sparkline
+    const byDayMap = new Map<string, { hits: number; plays: number }>();
+    for (const row of recentRows) {
+      const d = byDayMap.get(row.gameDate) ?? { hits: 0, plays: 0 };
+      d.plays += 1;
+      if (row.result === 'hit') d.hits += 1;
+      byDayMap.set(row.gameDate, d);
+    }
+    const byDay = Array.from(byDayMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, d]) => ({
+        date,
+        hitRate: d.plays > 0 ? Math.round((d.hits / d.plays) * 100) : 0,
+        plays: d.plays,
+      }));
+
+    return { totalPlays: total, hits, misses, hitRate, moneyHitRate, roi, unitsWon: Math.round(unitsWon * 100) / 100, trend, byDay };
+  }),
+
+  /**
    * Get list of dates that have stored results (for calendar view)
    */
   getResultDates: publicProcedure.query(async () => {

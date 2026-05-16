@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useRef } from "react";
+import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { Link } from "wouter";
 import { SearchBar } from "@/components/SearchBar";
 import { motion, AnimatePresence } from "framer-motion";
@@ -425,7 +426,9 @@ function LeaderboardTabContent() {
                   <div className="text-[10px] font-semibold tracking-widest uppercase text-[oklch(0.40_0.015_255)] mb-3">
                     Top Performers · Tap for full stats
                   </div>
-                  <div className="flex items-end justify-center gap-2 pb-0">
+
+                  {/* Desktop: 3-column podium */}
+                  <div className="hidden sm:flex items-end justify-center gap-2 pb-0">
                     {top3.map((player, i) => (
                       <PodiumCard
                         key={player.playerId}
@@ -437,6 +440,56 @@ function LeaderboardTabContent() {
                         onClick={() => setSelectedPlayer(player)}
                       />
                     ))}
+                  </div>
+
+                  {/* Mobile: swipeable carousel (1 card at a time) */}
+                  <div className="sm:hidden pb-2">
+                    <Carousel opts={{ align: 'center', loop: false }}>
+                      <CarouselContent className="-ml-2">
+                        {/* Show in rank order: 1, 2, 3 */}
+                        {[0, 1, 2].map((i) => {
+                          const player = top3[i];
+                          if (!player) return null;
+                          const medalColors = { 1: '#FFD700', 2: '#C0C0C0', 3: '#CD7F32' } as Record<number, string>;
+                          const rank = (i + 1) as 1 | 2 | 3;
+                          const value = player[activeStat] as number;
+                          const pct = Math.round((value / maxVal) * 100);
+                          return (
+                            <CarouselItem key={player.playerId} className="pl-2 basis-4/5">
+                              <button
+                                className="w-full rounded-2xl border p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform"
+                                style={{
+                                  background: `linear-gradient(135deg, ${cfg.color}10, oklch(0.13 0.020 255))`,
+                                  borderColor: `${cfg.color}30`,
+                                }}
+                                onClick={() => setSelectedPlayer(player)}
+                              >
+                                <div className="text-2xl font-extrabold font-stat" style={{ color: medalColors[rank] }}>#{rank}</div>
+                                <Headshot playerId={player.playerId} name={player.fullName} size={72} />
+                                <div className="text-3xl font-bold font-stat" style={{ color: cfg.color }}>{value}</div>
+                                <div className="text-white font-semibold text-sm text-center leading-tight">{player.fullName}</div>
+                                <div className="text-[oklch(0.50_0.015_255)] text-xs">{player.teamName}</div>
+                                <div
+                                  className="w-full rounded-full h-1.5 mt-1"
+                                  style={{ background: `${cfg.color}20` }}
+                                >
+                                  <div
+                                    className="h-full rounded-full"
+                                    style={{ width: `${pct}%`, background: cfg.color }}
+                                  />
+                                </div>
+                                <div className="text-[10px] font-bold" style={{ color: cfg.color }}>{pct}% of leader</div>
+                              </button>
+                            </CarouselItem>
+                          );
+                        })}
+                      </CarouselContent>
+                    </Carousel>
+                    <div className="flex justify-center gap-1 mt-2">
+                      {top3.map((_, i) => (
+                        <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i === 0 ? cfg.color : `${cfg.color}40` }} />
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
