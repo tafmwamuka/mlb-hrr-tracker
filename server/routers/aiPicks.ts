@@ -662,6 +662,110 @@ function isMajorDowngrade(currentScore: number, scoreAtLock: number): boolean {
   return scoreAtLock - currentScore >= 8;
 }
 
+// ─── Game-Specific Lock Store ─────────────────────────────────────────────────
+// Each game tracks its own readiness and lock state independently.
+// Early confirmed games can lock BEFORE the scheduled 1PM/7PM pull windows.
+//
+// Lock conditions (ALL must be true):
+//   1. Official lineup confirmed
+//   2. 30 minutes elapsed since lineup confirmation
+//   3. Sportsbook odds loaded
+//   4. Enrichment data available
+//   5. Matrix score stable (no major downgrade in last 30 min)
+//   6. Game within 90 minutes of first pitch (early-lock trigger)
+
+const LINEUP_STABILIZATION_MS = 30 * 60 * 1000; // 30 min after lineup confirmed
+const EARLY_LOCK_WINDOW_MS = 90 * 60 * 1000;    // lock when within 90 min of first pitch
+
+interface GameLockRecord {
+  gameId: string;           // e.g. "TOR@DET"
+  firstPitchMs: number;     // UTC ms of first pitch
+  lineupConfirmedAt: number | null;  // UTC ms when lineup was confirmed
+  isLocked: boolean;
+  lockedAt: number | null;  // UTC ms when game was locked
+  lockReason: 'early_auto_lock' | 'scheduled_pull' | null;
+  scoreAtLock: Map<string, number>; // playerName → score at lock time
+}
+
+// In-memory store: gameId → lock record
+const gameLockStore = new Map<string, GameLockRecord>();
+
+/** Register or update a game in the lock store */
+function upsertGameLock(gameId: string, firstPitchMs: number, lineupSource: 'confirmed' | 'projected'): void {
+  const existing = gameLockStore.get(gameId);
+  const nowMs = Date.now();
+  if (!existing) {
+    gameLockStore.set(gameId, {
+      gameId,
+      firstPitchMs,
+      lineupConfirmedAt: lineupSource === 'confirmed' ? nowMs : null,
+      isLocked: false,
+      lockedAt: null,
+      lockReason: null,
+      scoreAtLock: new Map(),
+    });
+  } else {
+    // Update first pitch time in case it changed
+    existing.firstPitchMs = firstPitchMs;
+    // Record when lineup first became confirmed
+    if (lineupSource === 'confirmed' && existing.lineupConfirmedAt === null) {
+      existing.lineupConfirmedAt = nowMs;
+    }
+  }
+}
+
+/** Check if a game is ready for early auto-lock */
+function isGameReadyForEarlyLock(
+  gameId: string,
+  hasOdds: boolean,
+  hasEnrichment: boolean,
+): boolean {
+  const record = gameLockStore.get(gameId);
+  if (!record) return false;
+  if (record.isLocked) return false; // already locked
+
+  const nowMs = Date.now();
+  const msToFirstPitch = record.firstPitchMs - nowMs;
+
+  // Must be within 90 min of first pitch
+  if (msToFirstPitch > EARLY_LOCK_WINDOW_MS) return false;
+  // Game must not have already started
+  if (msToFirstPitch < -GAME_GRACE_MS) return false;
+
+  // Lineup must be confirmed
+  if (record.lineupConfirmedAt === null) return false;
+
+  // 30-min stabilization window must have elapsed
+  const stabilizationElapsed = nowMs - record.lineupConfirmedAt >= LINEUP_STABILIZATION_MS;
+  if (!stabilizationElapsed) return false;
+
+  // Odds and enrichment must be available
+  if (!hasOdds || !hasEnrichment) return false;
+
+  return true;
+}
+
+/** Lock a game and record scores at lock time */
+function lockGame(gameId: string, picks: any[], reason: 'early_auto_lock' | 'scheduled_pull'): void {
+  const record = gameLockStore.get(gameId);
+  if (!record) return;
+  record.isLocked = true;
+  record.lockedAt = Date.now();
+  record.lockReason = reason;
+  for (const pick of picks) {
+    record.scoreAtLock.set(pick.playerName, pick.overallScore ?? 0);
+  }
+}
+
+/** Clean up game lock records for games that have started + grace period */
+function cleanExpiredGameLocks(nowMs: number): void {
+  for (const [gameId, record] of Array.from(gameLockStore.entries())) {
+    if (nowMs > record.firstPitchMs + GAME_GRACE_MS) {
+      gameLockStore.delete(gameId);
+    }
+  }
+}
+
 function cleanExpiredLocks(nowMs: number) {
   for (const [key, lp] of Array.from(lockedPicksStore.entries())) {
     if (lp.lockType === 'confirmed') {
@@ -1090,12 +1194,40 @@ export const aiPicksRouter = router({
           recommendedProb: pick.overProbability ?? 55,
         }));
 
-      // ── STAGE 3d: Official Pull Store — 3-pull stability system ──────────────────
+      // ── STAGE 3d: Official Pull Store — 3-pull stability system + Early Auto-Lock ─────
       // Determine current ET time and slate phase
       const nowET3 = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
       const todayETDate3 = `${nowET3.getFullYear()}-${String(nowET3.getMonth() + 1).padStart(2, '0')}-${String(nowET3.getDate()).padStart(2, '0')}`;
       const currentSlatePhase: SlatePhase = getSlatePhase(nowET3);
       const currentLineupSource = lineupData.lineupSource;
+
+      // Determine enrichment readiness for early-lock checks
+      const hasOdds3 = (enrichment3 as any).isWarm === true;
+      const hasEnrichment3 = (enrichment3 as any).statcastCache?.data?.size > 0;
+
+      // Register all games in the game lock store and check for early auto-lock
+      const games3ForLock = await getGamesForUI();
+      cleanExpiredGameLocks(nowMs3);
+      const earlyLockedGameIds = new Set<string>();
+
+      for (const game of games3ForLock) {
+        const gameId = `${game.awayTeam}@${game.homeTeam}`;
+        const firstPitchMs = game.gameDate ? new Date(game.gameDate).getTime() : 0;
+        if (!firstPitchMs) continue;
+
+        const gameLineupSource: 'confirmed' | 'projected' =
+          game.lineupSource === 'confirmed' ? 'confirmed' : 'projected';
+
+        upsertGameLock(gameId, firstPitchMs, gameLineupSource);
+
+        // Check if this game qualifies for early auto-lock
+        if (isGameReadyForEarlyLock(gameId, hasOdds3, hasEnrichment3)) {
+          const picksForGame = qualifyingPicks3.filter((p: any) => p.team === game.homeTeam || p.team === game.awayTeam);
+          lockGame(gameId, picksForGame, 'early_auto_lock');
+          earlyLockedGameIds.add(gameId);
+          console.log(`[HRRPicks] Early auto-lock triggered for ${gameId} (first pitch in ${Math.round((firstPitchMs - nowMs3) / 60000)} min)`);
+        }
+      }
 
       // Also run the per-pick confirmed-lineup lock for game-start expiry
       cleanExpiredLocks(nowMs3);
@@ -1128,15 +1260,32 @@ export const aiPicksRouter = router({
           });
         }
 
-        moneyPicks3 = qualifyingPicks3.map((p: any) => ({
-          ...p,
-          pickStatus: currentSlatePhase === 'final'
-            ? 'final_official' as const
-            : currentSlatePhase === 'confirmed'
-              ? 'confirmed' as const
-              : 'preliminary' as const,
-          lastUpdated: new Date().toISOString(),
-        }));
+        // Assign pick status — early-locked games get 'confirmed' even in preliminary phase
+        moneyPicks3 = qualifyingPicks3.map((p: any) => {
+          const gameId3 = games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)
+            ? `${games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)!.awayTeam}@${games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)!.homeTeam}`
+            : null;
+          const isEarlyLocked = gameId3 ? earlyLockedGameIds.has(gameId3) : false;
+          const gameLock3 = gameId3 ? gameLockStore.get(gameId3) : null;
+
+          let pickStatus: 'preliminary' | 'confirmed' | 'final_official';
+          if (currentSlatePhase === 'final') {
+            pickStatus = 'final_official';
+          } else if (currentSlatePhase === 'confirmed' || isEarlyLocked) {
+            pickStatus = 'confirmed';
+          } else {
+            pickStatus = 'preliminary';
+          }
+
+          return {
+            ...p,
+            pickStatus,
+            isEarlyLocked,
+            gameLockTime: gameLock3?.lockedAt ? new Date(gameLock3.lockedAt).toISOString() : null,
+            gameLockReason: gameLock3?.lockReason ?? null,
+            lastUpdated: new Date().toISOString(),
+          };
+        });
 
         // Save this as the new official board
         officialPullStore = {
@@ -1145,7 +1294,7 @@ export const aiPicksRouter = router({
           slateDate: todayETDate3,
           officialPicks: moneyPicks3,
         };
-        console.log(`[HRRPicks] Official board saved: ${moneyPicks3.length} picks (phase=${currentSlatePhase})`);
+        console.log(`[HRRPicks] Official board saved: ${moneyPicks3.length} picks (phase=${currentSlatePhase}, earlyLocked=${earlyLockedGameIds.size} games)`);
 
       } else {
         // ── BETWEEN OFFICIAL PULLS: serve stable board with minor live updates ─────
@@ -1153,7 +1302,7 @@ export const aiPicksRouter = router({
         //   - Remove picks where game has started (handled by cleanExpiredLocks)
         //   - Remove picks with major downgrade (score drop ≥8 pts)
         //   - Update displayed edge/odds without reshuffling
-        //   - Add any new picks that scored very well (score > top official pick + 5)
+        //   - Promote early-locked picks to 'confirmed' if they were 'preliminary'
         const officialBoard = officialPullStore?.officialPicks ?? qualifyingPicks3;
         const currentScoreMap = new Map<string, number>();
         for (const p of preGamePicks3 as any[]) {
@@ -1173,6 +1322,17 @@ export const aiPicksRouter = router({
           const scoreDrop = (p.overallScore ?? 0) - currentScore;
           let pickStatus = p.pickStatus;
           if (scoreDrop >= 5 && scoreDrop < 8) pickStatus = 'confidence_reduced' as const;
+
+          // Promote preliminary picks to confirmed if their game has been early-locked
+          const gameId3 = games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)
+            ? `${games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)!.awayTeam}@${games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)!.homeTeam}`
+            : null;
+          const gameLock3 = gameId3 ? gameLockStore.get(gameId3) : null;
+          const isEarlyLocked = gameLock3?.isLocked && gameLock3?.lockReason === 'early_auto_lock';
+          if (pickStatus === 'preliminary' && isEarlyLocked) {
+            pickStatus = 'confirmed' as const;
+          }
+
           return {
             ...p,
             // Update live data but keep original recommended line
@@ -1182,6 +1342,9 @@ export const aiPicksRouter = router({
             edge: livePick?.edge ?? p.edge,
             overProbability: livePick?.overProbability ?? p.overProbability,
             pickStatus,
+            isEarlyLocked: isEarlyLocked ?? false,
+            gameLockTime: gameLock3?.lockedAt ? new Date(gameLock3.lockedAt).toISOString() : null,
+            gameLockReason: gameLock3?.lockReason ?? null,
             lastUpdated: new Date().toISOString(),
           };
         });
@@ -1189,6 +1352,9 @@ export const aiPicksRouter = router({
         moneyPicks3 = stableBoard;
         console.log(`[HRRPicks] Serving stable board (${officialPullStore?.phase} pull): ${moneyPicks3.length} picks`);
       }
+
+      // Compute early-locked game count for UI
+      const earlyLockedCount = Array.from(gameLockStore.values()).filter(g => g.isLocked && g.lockReason === 'early_auto_lock').length;
 
       // ── STAGE 4: Sort by matrix score first, then Poisson quality ────────────
       // Primary sort: matrix overallScore (same ranking as All Plays / Top Plays)
@@ -1284,6 +1450,15 @@ export const aiPicksRouter = router({
         slatePhase: currentSlatePhase,
         officialPullPhase: officialPullStore?.phase ?? currentSlatePhase,
         officialPullTime: officialPullStore?.pulledAt ? new Date(officialPullStore.pulledAt).toISOString() : null,
+        // Phase AT: early auto-lock metadata
+        earlyLockedCount,
+        earlyLockedGames: Array.from(gameLockStore.values())
+          .filter(g => g.isLocked && g.lockReason === 'early_auto_lock')
+          .map(g => ({
+            gameId: g.gameId,
+            lockedAt: g.lockedAt ? new Date(g.lockedAt).toISOString() : null,
+            firstPitchMs: g.firstPitchMs,
+          })),
       };
     } catch (error) {
       console.error("Error generating HRR picks:", error);

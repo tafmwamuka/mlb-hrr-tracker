@@ -1188,3 +1188,15 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Add slate phase banner to Money Picks header showing current phase and next pull time
 - [x] Ensure slate-wide evaluation: all games scored before top picks selected (already done via enrichedPicks sort)
 - [x] TypeScript: 0 errors
+
+## Phase AT: Early Game Auto-Lock System
+- [x] Create gameLockStore in aiPicks.ts — tracks per-game: lineupConfirmedAt, oddsLoaded, enrichmentLoaded, lockedAt, isLocked
+- [x] Implement isGameReadyToLock() — returns true when: lineup confirmed + 30min elapsed + odds live + enrichment loaded + score stable
+- [x] Implement earlyAutoLock() — promotes picks for ready games to 'confirmed' status without waiting for scheduled pull
+- [x] Add game-level lock check: if game within 90min of first pitch AND lineup confirmed AND all conditions met → auto-lock
+- [x] Integrate auto-lock check into getHRRPicks procedure (runs after stable board merge)
+- [x] Add gameLockStatus to pick response: { gameId, lockedAt, lockReason, isEarlyLock }
+- [x] Update pickStatus assignment: early-locked picks get 'confirmed' status (not 'preliminary')
+- [x] UI: Add 🔒 EARLY LOCKED badge to picks from early-locked games
+- [x] UI: Add game lock status indicator in slate header showing count of early-locked games
+- [x] TypeScript: 0 errors

@@ -105,6 +105,10 @@ interface MoneyPick {
   lastUpdated?: string | null; // ISO timestamp of last score update
   scoreChanged?: boolean;       // true when confirmed-locked pick score dropped >15 pts
   scoreDrop?: number;           // how many pts the score dropped since lock
+  // Phase AT: Early auto-lock fields
+  isEarlyLocked?: boolean;      // true when game was early-locked before scheduled pull
+  gameLockTime?: string | null; // ISO timestamp when game was locked
+  gameLockReason?: 'early_auto_lock' | 'scheduled_pull' | null;
 }
 
 // S/A/B/C Tier system based on overallScore — Phase W calibration: S=83+, A=74-82, B/Lean=68-73
@@ -638,6 +642,17 @@ function MoneyPickCard({
             </div>
           ) : null}
 
+          {/* Phase AT: Early auto-lock badge */}
+          {pick.isEarlyLocked && pick.pickStatus === 'confirmed' && (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+              style={{ background: "oklch(0.72 0.18 165 / 15%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 40%)" }}
+              title={pick.gameLockTime ? `Early locked at ${new Date(pick.gameLockTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET` : 'Game locked early — confirmed lineup + 30min stability'}
+            >
+              🔒 EARLY LOCKED
+            </div>
+          )}
+
           {/* Phase AM: Score-change warning for confirmed-locked picks */}
           {pick.pickStatus === 'locked_confirmed' && pick.scoreChanged && (
             <div
@@ -951,6 +966,11 @@ export function MoneyPicksTab() {
   const officialPullPhase: string = (data as any)?.officialPullPhase ?? slatePhase;
   const officialPullTime: string | null = (data as any)?.officialPullTime ?? null;
 
+  // Phase AT: Early auto-lock metadata
+  const earlyLockedCount: number = (data as any)?.earlyLockedCount ?? 0;
+  const earlyLockedGames: Array<{ gameId: string; lockedAt: string | null; firstPitchMs: number }> =
+    (data as any)?.earlyLockedGames ?? [];
+
   const slatePhaseBadge = (() => {
     if (slatePhase === 'final') return { label: '🔥 FINAL OFFICIAL BOARD', color: 'oklch(0.82 0.17 85)', bg: 'oklch(0.82 0.17 85 / 12%)', border: 'oklch(0.82 0.17 85 / 40%)' };
     if (slatePhase === 'confirmed') return { label: '✓ MIDDAY CONFIRMED BOARD', color: 'oklch(0.72 0.18 165)', bg: 'oklch(0.72 0.18 165 / 12%)', border: 'oklch(0.72 0.18 165 / 35%)' };
@@ -1052,6 +1072,10 @@ export function MoneyPicksTab() {
           // Phase AK: stability fields
           pickStatus: pick.pickStatus ?? undefined,
           lastUpdated: pick.lastUpdated ?? null,
+          // Phase AT: early auto-lock fields
+          isEarlyLocked: (pick as any).isEarlyLocked ?? false,
+          gameLockTime: (pick as any).gameLockTime ?? null,
+          gameLockReason: (pick as any).gameLockReason ?? null,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)
@@ -1232,6 +1256,17 @@ export function MoneyPicksTab() {
             </div>
             {/* Next pull hint */}
             <div className="text-[8px] text-right" style={{ color: 'oklch(0.40 0.015 255)' }}>{nextPullLabel}</div>
+
+            {/* Phase AT: Early locked games indicator */}
+            {earlyLockedCount > 0 && (
+              <div
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+                style={{ background: "oklch(0.72 0.18 165 / 12%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 35%)" }}
+                title={earlyLockedGames.map(g => `${g.gameId} locked at ${g.lockedAt ? new Date(g.lockedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : '?'} ET`).join(', ')}
+              >
+                🔒 {earlyLockedCount} EARLY GAME{earlyLockedCount > 1 ? 'S' : ''} LOCKED
+              </div>
+            )}
 
             {/* Phase AL: Manual Refresh button */}
             <button
