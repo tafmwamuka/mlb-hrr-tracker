@@ -216,8 +216,13 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
 
   // VS gate: always use mlbMatchupService scores (0-10 scale)
   // STRONG >= 7.0, MODERATE >= 5.5 (with secondary signals), < 5.5 excluded
-  const STRONG_THRESHOLD = 7.0;
-  const MODERATE_THRESHOLD = 5.5;
+  // For projected lineups, lower thresholds to avoid empty slates from incomplete pitcher data
+  const isProjectedLineup = (lineupData.lineupSource as string) !== 'confirmed';
+  const STRONG_THRESHOLD = isProjectedLineup ? 5.5 : 7.0;
+  const MODERATE_THRESHOLD = isProjectedLineup ? 4.0 : 5.5;
+  if (isProjectedLineup) {
+    console.log(`[HRRPicks] Projected lineups — VS gate thresholds lowered (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD})`);
+  }
 
   const gatedMatchups = vsGradeMap.size > 0
     ? matchups.filter((m: any) => {
@@ -254,7 +259,9 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     gameTotalsMap,
     statcastCache,
     undefined,  // ballparkMatchups (legacy, unused)
-    bullpenFatigueMap ?? new Map()
+    bullpenFatigueMap ?? new Map(),
+    undefined,  // edgeScoreMap
+    lineupData.lineupSource  // lower thresholds for projected lineups
   );
 
   const matrixPlayerNames = new Set(matrixPicks.map((p: any) => p.playerName));

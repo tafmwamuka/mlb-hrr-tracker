@@ -1047,3 +1047,10 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Each podium card takes full width, swipe left/right to navigate
 - [x] Show dot indicators for current card position
 - [x] Keep 3-column layout on desktop (>=640px)
+
+## Phase AH — Fix 0 Picks Bug (May 16)
+- [ ] Replace 150 individual MLB API stat calls with bulk team-roster stats fetch
+- [ ] Use Statcast cache (829 players) as primary stats source when individual API calls fail
+- [ ] Lower qualifying threshold from 83→78 when lineups are PROJECTED (not confirmed)
+- [ ] Ensure enrichment cache always produces 50+ enriched players for scoring
+- [ ] Add fallback: if enriched player count < 20, use Statcast-only scoring path

@@ -697,7 +697,9 @@ export const aiPicksRouter = router({
         gameTotalsMap,
         statcastCache,
         undefined, // ballparkMatchups (legacy)
-        bullpenFatigueMap ?? new Map()
+        bullpenFatigueMap ?? new Map(),
+        undefined, // edgeScoreMap
+        lineupData.lineupSource // lower thresholds for projected lineups
       );
       
       // Enrich with Savant data
@@ -796,7 +798,9 @@ export const aiPicksRouter = router({
         gameTotalsMap,
         statcastCache2,
         undefined, // ballparkMatchups (legacy)
-        bullpenFatigueMap2 ?? new Map()
+        bullpenFatigueMap2 ?? new Map(),
+        undefined, // edgeScoreMap
+        lineupData.lineupSource // lower thresholds for projected lineups
       );
       
       // Enrich all picks with Savant data

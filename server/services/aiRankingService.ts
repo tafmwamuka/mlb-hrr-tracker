@@ -560,7 +560,9 @@ export function rankAIPicks(
   // S3: Bullpen fatigue map (opponentTeamId -> BullpenFatigue)
   bullpenFatigueMap?: Map<number, BullpenFatigue>,
   // S4: theLAB edge scores (playerName -> edgeScore 0-100)
-  edgeScoreMap?: Map<string, number>
+  edgeScoreMap?: Map<string, number>,
+  // Lineup source: 'confirmed' | 'projected' | 'mixed' — lowers thresholds for projected lineups
+  lineupSource?: string
 ): AIPick[] {
 
       // ── Auto-exclude: only when ALL 4 negatives stack ─────────────────────────
@@ -947,9 +949,15 @@ export function rankAIPicks(
   // ── Quality gate: 4 Elite (83+) + 6 Strong (74-82) + 3 Lean (68-73) = max 13 picks ──
   // Phase W calibration: S=83+, A=74-82, B/Lean=68-73, hidden below 68
   // If none qualify, return empty array (UI shows "No official HRR play today")
-  const ELITE_THRESHOLD = 83;
-  const STRONG_THRESHOLD = 74;
-  const LEAN_THRESHOLD = 68;
+  // For projected lineups, lower thresholds by 8 pts to account for incomplete enrichment data
+  const isProjected = lineupSource === 'projected' || lineupSource === 'mixed';
+  const THRESHOLD_REDUCTION = isProjected ? 8 : 0;
+  const ELITE_THRESHOLD = 83 - THRESHOLD_REDUCTION;   // 75 for projected, 83 for confirmed
+  const STRONG_THRESHOLD = 74 - THRESHOLD_REDUCTION;  // 66 for projected, 74 for confirmed
+  const LEAN_THRESHOLD = 68 - THRESHOLD_REDUCTION;    // 60 for projected, 68 for confirmed
+  if (isProjected) {
+    console.log(`[rankAIPicks] Projected lineups detected — thresholds lowered by ${THRESHOLD_REDUCTION} pts (Elite≥${ELITE_THRESHOLD}, Strong≥${STRONG_THRESHOLD}, Lean≥${LEAN_THRESHOLD})`);
+  }
   const MAX_ELITE = 4;
   const MAX_STRONG = 6;
   const MAX_LEAN = 3;

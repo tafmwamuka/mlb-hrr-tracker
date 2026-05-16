@@ -428,46 +428,125 @@ export async function fetchPlayerStats(playerId: number, playerName: string, tea
   }
 }
 
-// ─── Get all players in today's lineups with their stats ──────────────────────
+// ─── Bulk fetch stats for a team (one call instead of per-player) ─────────────
+async function fetchTeamBulkStats(teamId: number, season: number): Promise<Map<number, any>> {
+  const url = `${MLB_API_BASE}/teams/${teamId}/roster?rosterType=active&season=${season}&hydrate=person(stats(type=season,group=hitting,season=${season}))`;
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
+    if (!response.ok) return new Map();
+    const json = await response.json() as any;
+    const result = new Map<number, any>();
+    for (const entry of (json.roster ?? [])) {
+      const person = entry.person;
+      if (!person?.id) continue;
+      const splits = person.stats?.[0]?.splits ?? [];
+      if (splits.length > 0) {
+        result.set(person.id, splits[0].stat);
+      }
+    }
+    return result;
+  } catch {
+    return new Map();
+  }
+}
+
+// ─── Get all players in today's lineups with their stats ────────────────────────────────────────────────
 
 export async function getTodaysPlayersWithStats(): Promise<PlayerWithContext[]> {
   const games = await fetchTodaysGames();
   const players: PlayerWithContext[] = [];
 
-  // Fetch stats for all players in parallel (batched to avoid rate limits)
   const allLineupPlayers: { player: LineupPlayer; game: MLBGame; isHome: boolean }[] = [];
+  const teamIds = new Set<number>();
 
   for (const game of games) {
-    // Skip games that are already final or postponed
     if (game.status === "Postponed" || game.status === "Cancelled") continue;
+    teamIds.add(game.awayTeam.id);
+    teamIds.add(game.homeTeam.id);
+    for (const p of game.awayLineup) allLineupPlayers.push({ player: p, game, isHome: false });
+    for (const p of game.homeLineup) allLineupPlayers.push({ player: p, game, isHome: true });
+  }
 
-    for (const p of game.awayLineup) {
-      allLineupPlayers.push({ player: p, game, isHome: false });
-    }
-    for (const p of game.homeLineup) {
-      allLineupPlayers.push({ player: p, game, isHome: true });
+  if (allLineupPlayers.length === 0) return [];
+
+  const season = new Date().getFullYear();
+
+  // Strategy 1: Bulk fetch by team (1 call per team instead of 1 per player)
+  // This reduces ~150 individual calls to ~30 team calls, far more reliable.
+  const bulkStatMaps = await Promise.all(
+    Array.from(teamIds).map(async (teamId) => {
+      // Check if we already have all players cached for this team
+      const teamPlayers = allLineupPlayers.filter(lp => lp.player.teamId === teamId);
+      const allCached = teamPlayers.every(lp => {
+        const c = statsCache.get(lp.player.id);
+        return c && Date.now() - c.timestamp < STATS_CACHE_TTL;
+      });
+      if (allCached) return { teamId, stats: new Map<number, any>() }; // cache hit, skip bulk
+      const stats = await fetchTeamBulkStats(teamId, season);
+      return { teamId, stats };
+    })
+  );
+
+  // Populate statsCache from bulk results
+  for (const { stats } of bulkStatMaps) {
+    for (const [pid, stat] of Array.from(stats.entries())) {
+      if (!statsCache.has(pid) || Date.now() - statsCache.get(pid)!.timestamp >= STATS_CACHE_TTL) {
+        const gamesPlayed = stat.gamesPlayed || 1;
+        // We need fullName/teamId/teamName/teamAbbr — look them up from lineup
+        const lp = allLineupPlayers.find(l => l.player.id === pid);
+        if (!lp) continue;
+        const playerStats: PlayerSeasonStats = {
+          playerId: pid,
+          fullName: lp.player.fullName,
+          teamId: lp.player.teamId,
+          teamName: lp.player.teamName,
+          teamAbbreviation: lp.player.teamAbbreviation,
+          gamesPlayed,
+          atBats: stat.atBats || 0,
+          hits: stat.hits || 0,
+          runs: stat.runs || 0,
+          rbi: stat.rbi || 0,
+          homeRuns: stat.homeRuns || 0,
+          avg: stat.avg || ".000",
+          obp: stat.obp || ".000",
+          slg: stat.slg || ".000",
+          ops: stat.ops || ".000",
+          strikeOuts: stat.strikeOuts || 0,
+          baseOnBalls: stat.baseOnBalls || 0,
+          stolenBases: stat.stolenBases || 0,
+          hitsPerGame: (stat.hits || 0) / gamesPlayed,
+          runsPerGame: (stat.runs || 0) / gamesPlayed,
+          rbiPerGame: (stat.rbi || 0) / gamesPlayed,
+          hrrPerGame: ((stat.hits || 0) + (stat.runs || 0) + (stat.rbi || 0)) / gamesPlayed,
+        };
+        statsCache.set(pid, { data: playerStats, timestamp: Date.now() });
+      }
     }
   }
 
-  // Fetch all player stats in parallel — each call has a 5s timeout so this
-  // completes in ~5s even if the MLB API is slow, instead of 27 × 5s = 135s sequentially.
-  const allResults = await Promise.all(
-    allLineupPlayers.map(({ player }) =>
-      fetchPlayerStats(player.id, player.fullName, player.teamId, player.teamName, player.teamAbbreviation)
-    )
-  );
+  // Strategy 2: For any player still missing from cache, fall back to individual fetch
+  const missing = allLineupPlayers.filter(lp => {
+    const c = statsCache.get(lp.player.id);
+    return !c || Date.now() - c.timestamp >= STATS_CACHE_TTL;
+  });
+  if (missing.length > 0) {
+    console.log(`[LineupService] Bulk fetch complete. ${missing.length} players missing stats, falling back to individual fetch.`);
+    await Promise.all(
+      missing.map(({ player }) =>
+        fetchPlayerStats(player.id, player.fullName, player.teamId, player.teamName, player.teamAbbreviation)
+      )
+    );
+  }
 
-  for (let j = 0; j < allLineupPlayers.length; j++) {
-    const stats = allResults[j];
-    if (!stats || stats.gamesPlayed < 5) continue; // Skip players with too few games
+  const enrichedCount = allLineupPlayers.filter(lp => statsCache.has(lp.player.id)).length;
+  console.log(`[LineupService] Stats loaded: ${enrichedCount}/${allLineupPlayers.length} lineup players enriched.`);
 
-    const { player, game, isHome } = allLineupPlayers[j];
-    const opposingPitcher = isHome
-      ? game.awayTeam.probablePitcher
-      : game.homeTeam.probablePitcher;
-
+  for (const { player, game, isHome } of allLineupPlayers) {
+    const cached = statsCache.get(player.id);
+    if (!cached || cached.data.gamesPlayed < 5) continue;
+    const opposingPitcher = isHome ? game.awayTeam.probablePitcher : game.homeTeam.probablePitcher;
     players.push({
-      ...stats,
+      ...cached.data,
       game,
       battingPosition: player.battingOrder,
       opposingPitcher,
@@ -478,7 +557,7 @@ export async function getTodaysPlayersWithStats(): Promise<PlayerWithContext[]> 
   return players;
 }
 
-// ─── Get games summary (for game cards UI) ────────────────────────────────────
+// ─── Get games summary (for game cards UI) ────────────────────────────────────────────────
 
 export async function getTodaysGamesSummary(): Promise<MLBGame[]> {
   return fetchTodaysGames();
