@@ -13,6 +13,7 @@ import { poissonOverProbability, calculateAlternateLines, findFairLine, calculat
 import { getAdaptedLineupData, getGamesForUI } from "../services/lineupAdapter";
 import { getDataDate, type MLBGame } from "../services/mlbLineupService";
 import { getEnrichmentData } from "../services/enrichmentCache";
+import { fetchGameTotals } from "../services/gameTotalsService";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -1272,9 +1273,28 @@ export const aiPicksRouter = router({
     try {
       const games = await getGamesForUI();
       const dataDate = await getDataDate();
+
+      // Fetch game totals (O/U) from Odds API for display on game cards
+      const teamMatchups = games.flatMap(g => [
+        { batter: g.awayTeam.abbreviation, team: g.awayTeam.abbreviation },
+        { batter: g.homeTeam.abbreviation, team: g.homeTeam.abbreviation },
+      ]);
+      const gameTotalsMap = await fetchGameTotals(process.env.ODDS_API_KEY, teamMatchups).catch(() => new Map());
+
+      // Attach O/U and moneyline to each game
+      const gamesWithOdds = games.map(g => {
+        const awayData = gameTotalsMap.get(g.awayTeam.abbreviation);
+        const homeData = gameTotalsMap.get(g.homeTeam.abbreviation);
+        const overUnder = awayData?.overUnder ?? homeData?.overUnder ?? null;
+        return {
+          ...g,
+          overUnder,
+        };
+      });
+
       return {
         success: true,
-        games,
+        games: gamesWithOdds,
         dataDate,
         timestamp: new Date(),
         lineupAvailable: games.some(g => g.homeLineup.length > 0 || g.awayLineup.length > 0),

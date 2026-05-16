@@ -964,3 +964,10 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [ ] Wire internal VS gate into hrrPicksService as the sole matchup filter
 - [ ] Ensure pipeline runs immediately on cold start (no BallparkPal warm-up delay)
 - [ ] Update UI to remove any BallparkPal-specific labels (VS grade, BP boost, etc.)
+
+## Phase AD — Odds Window, UI Odds Display, Pipeline Docs (May 16)
+- [x] Extend Odds API time window from 11 PM to 11:30 PM ET in oddsApiService.ts
+- [x] Show O/U game totals on Live Edge Board game cards (from Odds API via gameTotalsService)
+- [x] Show player prop odds on Money Picks cards with sportsbook label (FD/DK/MGM) or MDL badge
+- [x] Confirm Diamond Edge uses internal Statcast calculations only (BallparkPal fully removed)
+- [x] Document full Diamond Edge pipeline steps for user

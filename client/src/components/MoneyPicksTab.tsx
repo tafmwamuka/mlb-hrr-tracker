@@ -274,14 +274,28 @@ function MoneyPickCard({
             >
               HRR O {pick.recommendedLine}
             </div>
-            {/* Model-derived American odds */}
+            {/* Odds display — sportsbook or model-derived */}
             {pick.odds ? (
-              <div className="flex items-center gap-1">
+              <div
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
+                style={{ background: "oklch(0.82 0.17 85 / 12%)", border: "1px solid oklch(0.82 0.17 85 / 30%)" }}
+              >
                 <DollarSign size={10} style={{ color: "oklch(0.82 0.17 85)" }} />
                 <span className="text-xs font-bold" style={{ color: "oklch(0.82 0.17 85)" }}>
                   {pick.odds}
                 </span>
-                <span className="text-[9px] text-[oklch(0.38_0.015_255)]" title="Model-derived odds (not sportsbook)">MDL</span>
+                <span
+                  className="text-[9px] font-semibold uppercase tracking-wide"
+                  style={{ color: pick.oddsProvider ? "oklch(0.72 0.18 165)" : "oklch(0.45 0.015 255)" }}
+                  title={pick.oddsProvider ? `Odds from ${pick.oddsProvider}` : "Model-derived odds"}
+                >
+                  {pick.oddsProvider
+                    ? (pick.oddsProvider === 'fanduel' ? 'FD' :
+                       pick.oddsProvider === 'draftkings' ? 'DK' :
+                       pick.oddsProvider === 'betmgm' ? 'MGM' :
+                       pick.oddsProvider.toUpperCase().slice(0, 4))
+                    : 'MDL'}
+                </span>
               </div>
             ) : (
               <div className="flex items-center gap-1">

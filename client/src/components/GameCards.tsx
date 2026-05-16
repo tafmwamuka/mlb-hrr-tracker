@@ -34,6 +34,7 @@ interface Game {
   homeTeam: Team;
   awayLineup: LineupPlayer[];
   homeLineup: LineupPlayer[];
+  overUnder?: number | null;
 }
 
 function GameCard({ game }: { game: Game }) {
@@ -106,11 +107,28 @@ function GameCard({ game }: { game: Game }) {
           </div>
         </div>
 
-        {/* Venue */}
-        <div className="mt-2 flex items-center gap-1 text-[oklch(0.40_0.015_255)] text-[10px]">
-          <MapPin size={9} />
-          <span className="truncate">{game.venue}</span>
-        </div>
+        {/* O/U line */}
+        {game.overUnder != null && (
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex items-center gap-1 text-[oklch(0.40_0.015_255)] text-[10px]">
+              <MapPin size={9} />
+              <span className="truncate">{game.venue}</span>
+            </div>
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+              style={{ background: "oklch(0.82 0.17 85 / 15%)", color: "oklch(0.82 0.17 85)" }}
+            >
+              <span>O/U</span>
+              <span>{game.overUnder}</span>
+            </div>
+          </div>
+        )}
+        {game.overUnder == null && (
+          <div className="mt-2 flex items-center gap-1 text-[oklch(0.40_0.015_255)] text-[10px]">
+            <MapPin size={9} />
+            <span className="truncate">{game.venue}</span>
+          </div>
+        )}
       </div>
 
       {/* Expand lineups */}
