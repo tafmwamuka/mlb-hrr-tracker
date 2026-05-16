@@ -870,13 +870,31 @@ function MetricBox({ label, value, good }: { label: string; value: string; good:
 }
 
 export function MoneyPicksTab() {
-  const { data, isLoading } = trpc.aiPicks.getHRRPicks.useQuery(undefined, {
+  const utils = trpc.useUtils();
+  const { data, isLoading, refetch, isRefetching } = trpc.aiPicks.getHRRPicks.useQuery(undefined, {
     refetchInterval: 10 * 60 * 1000,
     staleTime: 10 * 60 * 1000,
     gcTime: 60 * 60 * 1000, // 60 min — keep cached even if tab unmounts
     refetchOnWindowFocus: false, // don't re-fetch just because user switches apps
     refetchOnMount: false,       // use cached data immediately on remount
   });
+
+  // Phase AL: manual refresh — clears lock store then re-fetches
+  const [lastManualRefresh, setLastManualRefresh] = useState<Date | null>(null);
+  const clearLocksMutation = trpc.aiPicks.clearPickLocks.useMutation({
+    onSuccess: async () => {
+      // Invalidate cache so the next fetch is truly fresh
+      await utils.aiPicks.getHRRPicks.invalidate();
+      await refetch();
+      setLastManualRefresh(new Date());
+    },
+  });
+  const isManualRefreshing = clearLocksMutation.isPending || isRefetching;
+
+  const handleManualRefresh = () => {
+    if (isManualRefreshing) return;
+    clearLocksMutation.mutate();
+  };
   const { data: yesterdayData } = trpc.results.getYesterdayResults.useQuery(undefined, {
     staleTime: 30 * 60 * 1000,
     gcTime: 60 * 60 * 1000,
@@ -1151,7 +1169,7 @@ export function MoneyPicksTab() {
               </div>
             )}
           </div>
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col items-end gap-1.5">
             {/* Lineup source badge */}
             <div
               className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-bold tracking-wide"
@@ -1163,6 +1181,41 @@ export function MoneyPicksTab() {
               <div className={`w-1.5 h-1.5 rounded-full ${isProjected ? 'bg-[oklch(0.82_0.17_85)] animate-pulse' : 'bg-[oklch(0.72_0.18_165)]'}`} />
               {isProjected ? 'PROJECTED' : 'CONFIRMED'}
             </div>
+
+            {/* Phase AL: Manual Refresh button */}
+            <button
+              onClick={handleManualRefresh}
+              disabled={isManualRefreshing}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 disabled:opacity-60"
+              style={{
+                background: isManualRefreshing
+                  ? "oklch(0.55 0.15 255 / 12%)"
+                  : "oklch(0.55 0.15 255 / 18%)",
+                border: "1px solid oklch(0.55 0.15 255 / 35%)",
+                color: isManualRefreshing ? "oklch(0.55 0.15 255)" : "oklch(0.72 0.18 165)",
+              }}
+              title="Force refresh — clears the 30-min lock window and re-evaluates all picks"
+            >
+              <RefreshCw
+                size={10}
+                className={isManualRefreshing ? "animate-spin" : ""}
+              />
+              {isManualRefreshing ? "Refreshing…" : "Force Refresh"}
+            </button>
+
+            {/* Last manual refresh label */}
+            {lastManualRefresh && !isManualRefreshing && (() => {
+              const diffMs = Date.now() - lastManualRefresh.getTime();
+              const diffMin = Math.round(diffMs / 60000);
+              const label = diffMin < 1 ? 'Refreshed just now' : `Refreshed ${diffMin}m ago`;
+              return (
+                <div className="flex items-center gap-1 text-[9px]" style={{ color: "oklch(0.72 0.18 165)" }}>
+                  <CheckCircle2 size={9} />
+                  {label}
+                </div>
+              );
+            })()}
+
             {oddsUpdatedLabel && (
               <div className="flex items-center gap-1">
                 <RefreshCw size={9} style={{ color: "oklch(0.40 0.015 255)" }} />

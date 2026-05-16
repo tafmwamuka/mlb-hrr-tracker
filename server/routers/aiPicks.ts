@@ -1459,4 +1459,16 @@ export const aiPicksRouter = router({
       };
     }
   }),
+
+  /**
+   * Phase AL: Manual refresh — clears the pick lock store so the next
+   * getHRRPicks call re-evaluates all picks from scratch without the
+   * 30-minute retention window.
+   */
+  clearPickLocks: publicProcedure.mutation(() => {
+    const count = lockedPicksStore.size;
+    lockedPicksStore.clear();
+    console.log(`[HRR] clearPickLocks: cleared ${count} locked pick(s) by user request`);
+    return { success: true, clearedCount: count, clearedAt: new Date().toISOString() };
+  }),
 });

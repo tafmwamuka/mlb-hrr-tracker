@@ -1080,3 +1080,12 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Server returns dedicated moneyPicks array (stability-aware, separate from raw picks)
 - [x] MoneyPicksTab reads from moneyPicks array with backward-compat fallback
 - [x] LockedPick interface and constants at module level (TypeScript clean)
+
+## Phase AL — Manual Refresh Button for Money Picks (May 16)
+- [x] Add clearPickLocks mutation to aiPicks router (clears lockedPicksStore)
+- [x] Add manual refresh button to MoneyPicksTab header (Slate Header, top-right)
+- [x] Button triggers clearPickLocks mutation then invalidates getHRRPicks query
+- [x] Show spinning animation while refreshing
+- [x] Show "✓ Refreshed just now" label after success
+- [x] Button disabled and shows "Refreshing…" while in-flight
+- [x] Tooltip explains lock-window bypass behavior
