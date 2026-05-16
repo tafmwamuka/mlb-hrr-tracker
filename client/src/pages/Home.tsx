@@ -625,62 +625,41 @@ export default function Home() {
       </header>
 
       {/* ── Content Area ─────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-hidden flex flex-col">
-        <AnimatePresence mode="wait">
-          {activeTab === "topPlays" && (
-            <motion.div
-              key="topPlays"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 overflow-y-auto flex flex-col"
-            >
-              <GameCards />
-              <MoneyPicksTab />
-            </motion.div>
-          )}
+      {/* All tabs are always mounted (never unmounted) so picks/state/scroll position
+          are fully preserved when switching tabs. Visibility is controlled via CSS only. */}
+      <main className="flex-1 overflow-hidden flex flex-col relative">
+        {/* Money Picks tab — always mounted */}
+        <div
+          className="flex-1 overflow-y-auto flex flex-col absolute inset-0 transition-opacity duration-200"
+          style={{ opacity: activeTab === "topPlays" ? 1 : 0, pointerEvents: activeTab === "topPlays" ? "auto" : "none", zIndex: activeTab === "topPlays" ? 1 : 0 }}
+        >
+          <GameCards />
+          <MoneyPicksTab />
+        </div>
 
-          {activeTab === "parlays" && (
-            <motion.div
-              key="parlays"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 overflow-y-auto flex flex-col"
-            >
-              <ParlaysTab />
-            </motion.div>
-          )}
+        {/* Parlays tab — always mounted */}
+        <div
+          className="flex-1 overflow-y-auto flex flex-col absolute inset-0 transition-opacity duration-200"
+          style={{ opacity: activeTab === "parlays" ? 1 : 0, pointerEvents: activeTab === "parlays" ? "auto" : "none", zIndex: activeTab === "parlays" ? 1 : 0 }}
+        >
+          <ParlaysTab />
+        </div>
 
+        {/* Stats tab — always mounted */}
+        <div
+          className="flex-1 overflow-y-auto absolute inset-0 transition-opacity duration-200"
+          style={{ opacity: activeTab === "stats" ? 1 : 0, pointerEvents: activeTab === "stats" ? "auto" : "none", zIndex: activeTab === "stats" ? 1 : 0 }}
+        >
+          <PerformanceDashboard />
+        </div>
 
-          {activeTab === "stats" && (
-            <motion.div
-              key="stats"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 overflow-y-auto"
-            >
-              <PerformanceDashboard />
-            </motion.div>
-          )}
-
-          {activeTab === "results" && (
-            <motion.div
-              key="results"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 overflow-y-auto"
-            >
-              <ResultsTab />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Results tab — always mounted */}
+        <div
+          className="flex-1 overflow-y-auto absolute inset-0 transition-opacity duration-200"
+          style={{ opacity: activeTab === "results" ? 1 : 0, pointerEvents: activeTab === "results" ? "auto" : "none", zIndex: activeTab === "results" ? 1 : 0 }}
+        >
+          <ResultsTab />
+        </div>
       </main>
 
       {/* ── Bottom nav links ─────────────────────────────────────────────── */}

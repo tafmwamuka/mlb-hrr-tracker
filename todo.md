@@ -1010,3 +1010,9 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Show "Last Updated: 12:34 PM ET" timestamp on the health bar
 - [x] Show degraded-mode messages (e.g. "Weather enrichment delayed — using cached data")
 - [x] Health bar should be collapsible (tap to expand/collapse)
+
+## Phase AF — Money Picks Persistence (May 16)
+- [x] Keep all tabs always-mounted using CSS opacity/pointerEvents instead of AnimatePresence unmount
+- [x] Set refetchOnWindowFocus: false and refetchOnMount: false on getHRRPicks query
+- [x] Increase gcTime to 60 minutes on getHRRPicks query
+- [x] Fix getHitRateStats SQL error (hits_actual → type-safe Drizzle isNotNull filter)

@@ -16,7 +16,7 @@
 import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { propPredictions } from "../../drizzle/schema";
-import { eq, and, gte, lt, desc, sql } from "drizzle-orm";
+import { eq, and, gte, lt, desc, sql, isNotNull, or } from "drizzle-orm";
 import { getAdaptedLineupData } from "../services/lineupAdapter";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import { getMockSavantData, calculateCombinedScore } from "../services/savantService";
@@ -470,7 +470,7 @@ export const resultsRouter = router({
       const allPreds = await db
         .select()
         .from(propPredictions)
-        .where(sql`hits_actual IS NOT NULL OR runs_actual IS NOT NULL OR rbi_actual IS NOT NULL`);
+        .where(or(isNotNull(propPredictions.hitsActual), isNotNull(propPredictions.runsActual), isNotNull(propPredictions.rbiActual)));
 
       let totalPredictions = 0;
       let totalHits = 0;

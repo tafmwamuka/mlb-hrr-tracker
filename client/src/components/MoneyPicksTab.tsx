@@ -694,7 +694,9 @@ export function MoneyPicksTab() {
   const { data, isLoading } = trpc.aiPicks.getHRRPicks.useQuery(undefined, {
     refetchInterval: 10 * 60 * 1000,
     staleTime: 10 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000, // 60 min — keep cached even if tab unmounts
+    refetchOnWindowFocus: false, // don't re-fetch just because user switches apps
+    refetchOnMount: false,       // use cached data immediately on remount
   });
   const { data: yesterdayData } = trpc.results.getYesterdayResults.useQuery(undefined, {
     staleTime: 30 * 60 * 1000,
