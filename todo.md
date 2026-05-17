@@ -1305,3 +1305,10 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Clean Results tab — remove old picks/plays data from previous format
 - [x] Activate Stats page (PerformanceDashboard) with real data from results/history routers
 - [x] TypeScript check and checkpoint
+
+## Phase BE: Timezone — Change ET to NDT (UTC-2:30)
+- [x] Find all ET timezone references in frontend and backend
+- [x] Update game time displays from ET to NDT
+- [x] Update active window labels and pick timestamps from ET to NDT
+- [x] Update any hardcoded "America/New_York" timezone to "America/St_Johns" (display only — server logic stays ET)
+- [x] TypeScript check and checkpoint

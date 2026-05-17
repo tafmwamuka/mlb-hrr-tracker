@@ -1163,8 +1163,8 @@ export function MoneyPicksTab() {
   })();
 
   const nextPullLabel = (() => {
-    if (slatePhase === 'preliminary') return 'Next official pull: 1 PM ET';
-    if (slatePhase === 'confirmed') return 'Next official pull: 7 PM ET';
+    if (slatePhase === 'preliminary') return 'Next official pull: 2:30 PM NDT';
+    if (slatePhase === 'confirmed') return 'Next official pull: 8:30 PM NDT';
     return 'Evening lock active — final board';
   })();
 
@@ -1294,12 +1294,12 @@ export function MoneyPicksTab() {
     try {
       const d = new Date(gameTimeISO);
       if (isNaN(d.getTime())) return 'main';
-      // Convert to ET hour
-      const etStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
-      const etHour = parseInt(etStr, 10);
-      if (etHour < 16) return 'early';   // before 4 PM ET
-      if (etHour < 20) return 'main';    // 4–8 PM ET
-      return 'late';                      // 8 PM+ ET
+      // Convert to NDT hour (America/St_Johns)
+      const ndtStr = d.toLocaleString('en-US', { timeZone: 'America/St_Johns', hour: 'numeric', hour12: false });
+      const ndtHour = parseInt(ndtStr, 10);
+      if (ndtHour < 17) return 'early';   // before 5:30 PM NDT (= 4 PM ET)
+      if (ndtHour < 21) return 'main';    // 5:30–9:30 PM NDT (= 4–8 PM ET)
+      return 'late';                      // 9:30 PM+ NDT (= 8 PM+ ET)
     } catch {
       return 'main';
     }
@@ -1356,7 +1356,7 @@ export function MoneyPicksTab() {
     try {
       const d = new Date(fp);
       if (isNaN(d.getTime())) return null;
-      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York', timeZoneName: 'short' });
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/St_Johns', timeZoneName: 'short' });
     } catch { return null; }
   })();
 
@@ -1756,9 +1756,9 @@ export function MoneyPicksTab() {
           {hasMultipleWindows ? (
             // ── Phase AU: Grouped by slate window ─────────────────────────────────────────────────
             ([
-              { key: 'early' as const, label: '🌅 EARLY SLATE', sublabel: 'Before 4 PM ET', items: slateGroups.early },
-              { key: 'main'  as const, label: '⚾ MAIN SLATE',  sublabel: '4–8 PM ET',      items: slateGroups.main  },
-              { key: 'late'  as const, label: '🌙 LATE SLATE',  sublabel: '8 PM+ ET',       items: slateGroups.late  },
+              { key: 'early' as const, label: '🌅 EARLY SLATE', sublabel: 'Before 5:30 PM NDT', items: slateGroups.early },
+              { key: 'main'  as const, label: '⚾ MAIN SLATE',  sublabel: '5:30–9:30 PM NDT',  items: slateGroups.main  },
+              { key: 'late'  as const, label: '🌙 LATE SLATE',  sublabel: '9:30 PM+ NDT',       items: slateGroups.late  },
             ] as Array<{ key: 'early' | 'main' | 'late'; label: string; sublabel: string; items: Array<{ pick: MoneyPick; globalIndex: number }> }>)
               .filter(section => section.items.length > 0)
               .map(section => {

@@ -311,7 +311,7 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
       return {
         gamePk: g.gamePk,
         gameDate: g.gameDate,
-        gameTime: g.gameDate ? new Date(g.gameDate).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }) : "TBD",
+        gameTime: g.gameDate ? new Date(g.gameDate).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/St_Johns" }) : "TBD",
         status: g.status?.abstractGameState || "Scheduled",
         dayNight: g.dayNight || "night",
         venue: g.venue?.name || "Unknown",

@@ -53,7 +53,7 @@ function GameCard({ game }: { game: Game }) {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5 text-[oklch(0.55_0.015_255)] text-xs">
             <Clock size={11} />
-            <span>{game.gameTime} ET</span>
+            <span>{game.gameTime} NDT</span>
           </div>
           <div className="flex items-center gap-1.5">
             {/* Per-game lineup status badge */}

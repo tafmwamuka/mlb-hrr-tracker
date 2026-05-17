@@ -54,7 +54,7 @@ async function fetchGames(date: string): Promise<Game[]> {
         score: g.teams?.home?.score,
       },
       venue: g.venue?.name || "Unknown",
-      gameTime: g.gameDate ? new Date(g.gameDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+      gameTime: g.gameDate ? new Date(g.gameDate).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/St_Johns" }) : "",
     }));
   } catch (error) {
     console.error("Error fetching games:", error);
