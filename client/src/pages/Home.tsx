@@ -10,7 +10,6 @@
 
 import { useState, useCallback, useRef } from "react";
 import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
-import { Link } from "wouter";
 import { SearchBar } from "@/components/SearchBar";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -715,24 +714,7 @@ export default function Home() {
         </div>
       </main>
 
-      {/* ── Bottom nav links ─────────────────────────────────────────────── */}
-      <nav
-        className="shrink-0 flex items-center justify-around px-4 py-3 border-t"
-        style={{ background: "oklch(0.10 0.020 255)", borderColor: "oklch(1 0 0 / 8%)" }}
-      >
-        <Link href="/history">
-          <button className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors" style={{ color: "oklch(0.55 0.015 255)" }}>
-            <Trophy size={16} />
-            <span className="text-[10px] font-semibold">History</span>
-          </button>
-        </Link>
-        <Link href="/favorites">
-          <button className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors" style={{ color: "oklch(0.55 0.015 255)" }}>
-            <Sparkles size={16} />
-            <span className="text-[10px] font-semibold">Favorites</span>
-          </button>
-        </Link>
-      </nav>
+      {/* Bottom nav removed — History and Favourites tabs removed (Phase BD) */}
     </div>
   );
 }

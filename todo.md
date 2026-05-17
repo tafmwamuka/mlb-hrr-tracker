@@ -1299,3 +1299,9 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Replaced STAGE 3c qualifyingPicks3 with hrrPicksService cached result (Phase BC)
 - [x] All devices now read from the same 15-min picks cache — no more divergence based on enrichment timing
 - [x] TypeScript: 0 errors
+
+## Phase BD: UI Cleanup — Results, Stats, Bottom Nav
+- [x] Remove History and Favourites tabs from bottom nav in Home.tsx
+- [x] Clean Results tab — remove old picks/plays data from previous format
+- [x] Activate Stats page (PerformanceDashboard) with real data from results/history routers
+- [x] TypeScript check and checkpoint
