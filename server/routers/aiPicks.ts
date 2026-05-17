@@ -1039,10 +1039,10 @@ export const aiPicksRouter = router({
       }
 
       // Filter matchups through VS gate before HRR projections
-      // Phase AQ calibration: STRONG 7.0→6.0, MODERATE 5.5→4.5
-      // Previous thresholds only let 2/269 players through (0.7% pass rate)
-      const HRR_STRONG_THRESHOLD = 6.0;
-      const HRR_MODERATE_THRESHOLD = 4.5;
+      // Phase BB: Thresholds aligned with hrrPicksService.ts (5.0/3.5) for consistent board sizing.
+      // MODERATE secondary check relaxed: default true when no ERA data, barrel threshold lowered to 6.0.
+      const HRR_STRONG_THRESHOLD = 5.0;   // was 6.0
+      const HRR_MODERATE_THRESHOLD = 3.5; // was 4.5
       // Phase BA fix: skip VS gate when vsGradeMap is empty or all neutral (5.0 fallback)
       const allNeutral3 = vsGradeMap.size > 0 && Array.from(vsGradeMap.values()).every(v => v === 5.0);
       const skipVsGate3 = vsGradeMap.size === 0 || allNeutral3;
@@ -1059,10 +1059,11 @@ export const aiPicksRouter = router({
               const pitcherHand = m.pitcher?.handedness ?? 'R';
               const hasPlatoonAdvantage = batterHand !== pitcherHand;
               const pitcherERA = m.pitcher?.era ?? null;
-              const pitcherIsVulnerable = pitcherERA !== null ? pitcherERA >= 4.50 : false;
+              const pitcherIsVulnerable = pitcherERA !== null ? pitcherERA >= 4.00 : true; // default true when no ERA data
               const savantEntry = savantMap.get(m.playerName);
-              const isBarrelThreat = savantEntry ? savantEntry.barrelPct >= 8.0 : false;
-              return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat;
+              const isBarrelThreat = savantEntry ? savantEntry.barrelPct >= 6.0 : false; // lowered from 8.0
+              const isPrimeLineupSpot = m.battingPosition !== undefined && m.battingPosition <= 5;
+              return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat || isPrimeLineupSpot;
             }
             return false;
           });
@@ -1173,8 +1174,8 @@ export const aiPicksRouter = router({
 
       // ── STAGE 3c: Money picks selection — pure relative ranking, NO probability gates ──
       // Phase AS: All 75% / 65% / 55% thresholds removed.
-      // Take top 5–8 pre-game picks by overallScore (same as hrrPicksService).
-      const MAX_MONEY_PICKS_3 = 8;
+      // Phase BB: Raised cap to 12 — show more picks when good ones exist.
+      const MAX_MONEY_PICKS_3 = 12;
       const MIN_MONEY_PICKS_3 = 5;
       const qualifyingPicks3 = preGamePicks3
         .slice(0, Math.min(Math.max(preGamePicks3.length, MIN_MONEY_PICKS_3), MAX_MONEY_PICKS_3))

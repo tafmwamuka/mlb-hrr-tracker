@@ -225,11 +225,12 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   // STRONG >= 7.0, MODERATE >= 5.5 (with secondary signals), < 5.5 excluded
   // For projected lineups, lower thresholds to avoid empty slates from incomplete pitcher data
   const isProjectedLineup = (lineupData.lineupSource as string) !== 'confirmed';
-  // Phase AQ calibration: STRONG threshold lowered from 7.0→6.0 (confirmed) and 5.5→5.0 (projected)
-  // Previous thresholds were too strict: only 2/269 players qualified as STRONG (0.7% pass rate)
-  // New thresholds: ~8-12% of players qualify as STRONG, ~15-20% as MODERATE
-  const STRONG_THRESHOLD = isProjectedLineup ? 5.0 : 6.0;
-  const MODERATE_THRESHOLD = isProjectedLineup ? 3.5 : 4.5;
+  // Phase BB: VS gate thresholds further relaxed so more players reach the quality gate.
+  // The quality gate (Elite/Strong/Lean tiers) is the real filter — VS gate is a coarse pre-filter.
+  // STRONG: passes immediately. MODERATE: passes with any one secondary signal.
+  // Confirmed lineups now use same thresholds as projected (5.0/3.5) to avoid under-staffed boards.
+  const STRONG_THRESHOLD = 5.0;   // was 6.0 confirmed / 5.0 projected
+  const MODERATE_THRESHOLD = 3.5; // was 4.5 confirmed / 3.5 projected
   if (isProjectedLineup) {
     console.log(`[HRRPicks] Projected lineups — VS gate thresholds lowered (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD})`);
   }
@@ -246,15 +247,18 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
         if (vsScore === null) return true; // no entry = neutral, let through
         if (vsScore >= STRONG_THRESHOLD) return true;
         if (vsScore >= MODERATE_THRESHOLD) {
+          // Phase BB: MODERATE players pass with any one positive signal, or if no data available
           const playerData = players.get(m.playerId);
           const batterHand = playerData?.handedness ?? 'R';
           const pitcherHand = m.pitcher?.handedness ?? 'R';
           const hasPlatoonAdvantage = batterHand !== pitcherHand;
           const pitcherERA = m.pitcher?.era ?? null;
-          const pitcherIsVulnerable = pitcherERA !== null ? pitcherERA >= 4.50 : false;
+          const pitcherIsVulnerable = pitcherERA !== null ? pitcherERA >= 4.00 : true; // default true when no ERA data
           const savantEntry = savantMap.get(m.playerName);
-          const isBarrelThreat = savantEntry ? savantEntry.barrelPct >= 8.0 : false;
-          return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat;
+          const isBarrelThreat = savantEntry ? savantEntry.barrelPct >= 6.0 : false; // lowered from 8.0
+          // Also pass players batting 1-5 in lineup (prime scoring spots)
+          const isPrimeLineupSpot = m.battingPosition !== undefined && m.battingPosition <= 5;
+          return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat || isPrimeLineupSpot;
         }
         return false;
       });
@@ -384,7 +388,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
 
   // Phase AX: No pre-game gate — all picks kept regardless of game start time.
   // ── Money Picks selection: pure relative ranking, NO probability thresholds ──
-  const MAX_MONEY_PICKS = 8;
+  const MAX_MONEY_PICKS = 12;  // raised from 8 — show more picks when good ones exist
   const MIN_MONEY_PICKS = 5;
 
   const withRecommendedLine = enrichedPicks.map((pick: any) => {

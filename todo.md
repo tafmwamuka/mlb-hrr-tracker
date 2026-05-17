@@ -1280,3 +1280,16 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Wire onEnrichmentWarm in aiPicks.ts — resets officialPullStore=null + bustPicksCache() when enrichment becomes warm
 - [x] Verified: cold-cache 6-pick board correctly replaced by warm-data 8-pick board after ~23s enrichment warm
 - [x] TypeScript: 0 errors
+
+## Phase BB: Expand Board — More Picks When Good Ones Exist
+- [x] Raise MAX_MONEY_PICKS in hrrPicksService.ts from 8 to 12
+- [x] Raise MAX_ELITE/MAX_STRONG/MAX_LEAN quality gate caps in aiRankingService.ts (4/6/6 → 5/8/8)
+- [x] Lower LEAN_THRESHOLD in aiRankingService.ts from 55 to 50 (42 projected)
+- [x] Raise MAX_PER_GAME correlation cap from 3 to 4, MAX_PER_TEAM from 4 to 5
+- [x] Lower VS gate STRONG threshold from 6.0 to 5.0 in hrrPicksService.ts (both confirmed + projected)
+- [x] Lower VS gate MODERATE threshold from 4.5 to 3.5 in hrrPicksService.ts
+- [x] Relax MODERATE secondary check: default pitcherIsVulnerable=true when no ERA data, barrel threshold 8.0→6.0, add isPrimeLineupSpot (bat 1-5)
+- [x] Raise MAX_MONEY_PICKS_3 in aiPicks.ts from 8 to 12
+- [x] Lower internal VS gate in aiPicks.ts from 6.0/4.5 to 5.0/3.5 with same relaxed secondary checks
+- [x] Verified: VS Gate now passes 115 matchups (was 9), quality gate produces 16 picks, official board saved: 12 picks
+- [x] TypeScript: 0 errors

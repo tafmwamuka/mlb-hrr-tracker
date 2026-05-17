@@ -1025,19 +1025,19 @@ export function rankAIPicks(
   const THRESHOLD_REDUCTION = isProjected ? 8 : 0;
   const ELITE_THRESHOLD = 78 - THRESHOLD_REDUCTION;   // 70 for projected, 78 for confirmed
   const STRONG_THRESHOLD = 68 - THRESHOLD_REDUCTION;  // 60 for projected, 68 for confirmed
-  const LEAN_THRESHOLD = 55 - THRESHOLD_REDUCTION;    // 47 for projected, 55 for confirmed
+  const LEAN_THRESHOLD = 50 - THRESHOLD_REDUCTION;    // 42 for projected, 50 for confirmed (lowered from 55 to include more good picks)
   if (isProjected) {
     console.log(`[rankAIPicks] Projected lineups detected — thresholds lowered by ${THRESHOLD_REDUCTION} pts (Elite≥${ELITE_THRESHOLD}, Strong≥${STRONG_THRESHOLD}, Lean≥${LEAN_THRESHOLD})`);
   }
-  const MAX_ELITE = 4;
-  const MAX_STRONG = 6;
-  const MAX_LEAN = 6;  // expanded from 3 to 6 to guarantee 5-8 picks
+  const MAX_ELITE = 5;   // raised from 4
+  const MAX_STRONG = 8;   // raised from 6
+  const MAX_LEAN = 8;     // raised from 6 — more lean picks when slate is deep
   const GUARANTEED_MIN = 5; // always surface at least this many picks
 
   // S5: Correlation cap — prevent over-stacking same game or same team
-  // Max 3 picks per game (gamePk), max 4 picks per team
-  const MAX_PER_GAME = 3;
-  const MAX_PER_TEAM = 4;
+  // Max 4 picks per game (gamePk), max 5 picks per team (raised to allow more good picks)
+  const MAX_PER_GAME = 4;
+  const MAX_PER_TEAM = 5;
 
   function applyCorrelationCap(candidates: AIPick[], maxCount: number): AIPick[] {
     const gameCount = new Map<number, number>();
