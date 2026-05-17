@@ -1319,3 +1319,19 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Fix slate window grouping thresholds to use NDT hours at same numerical boundaries
 - [x] Update all "ET" label references to "NDT" without shifting the numbers
 - [x] TypeScript check and checkpoint
+
+## Phase BG: Money Picks → Results → Stats Pipeline
+- [ ] Audit DB schema for picks, results, and stats tables
+- [ ] Save official money picks to DB on each official pull
+- [ ] Auto-grade picks in Results tab after game ends (hit/miss per stat line)
+- [ ] Accumulate graded results into Stats history (hit rate, ROI, units)
+- [ ] Stats page shows real accumulated history at end of day
+- [ ] TypeScript check and checkpoint
+
+## Phase BG: Money Picks → Results → Stats Pipeline (Completed)
+- [x] Audit Money Picks save, Results grading, and Stats accumulation pipeline
+- [x] Create server/jobs/autoGradeResults.ts — server-side background job that grades money picks against live MLB boxscores every 30 min (7 PM–2 AM NDT) and saves Final game results to daily_results DB table
+- [x] Wire autoGradeResults job into server/_core/index.ts startup sequence
+- [x] Update results.getHitRateStats to read from dailyResults table (same source as auto-grade job) instead of legacy propPredictions table
+- [x] All three Stats page queries (getSevenDayStats, getPerformanceSummary, getHitRateStats) now read from the same dailyResults table
+- [x] TypeScript: 0 errors

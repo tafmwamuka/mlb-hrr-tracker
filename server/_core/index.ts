@@ -10,6 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import scheduledBackfillRouter from "../routes/scheduledBackfill";
 import { warmEnrichmentCacheOnStartup } from "../services/enrichmentCache";
+import { startAutoGradeJob } from "../jobs/autoGradeResults";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -71,6 +72,10 @@ async function startServer() {
         console.error('[Startup] Enrichment cache warm failed:', err);
       });
     }, 2000); // 2s delay to let Vite/Express finish initializing
+
+    // Start server-side auto-grade results job
+    // Grades money picks against live boxscores and saves to DB every 30 min (7 PM–2 AM NDT)
+    startAutoGradeJob();
   });
 }
 

@@ -15,8 +15,8 @@
 
 import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { propPredictions } from "../../drizzle/schema";
-import { eq, and, gte, lt, desc, sql, isNotNull, or } from "drizzle-orm";
+import { propPredictions, dailyResults } from "../../drizzle/schema";
+import { eq, and, gte, lt, desc, sql, isNotNull, or, ne } from "drizzle-orm";
 import { getAdaptedLineupData } from "../services/lineupAdapter";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import { getMockSavantData, calculateCombinedScore } from "../services/savantService";
@@ -467,22 +467,34 @@ export const resultsRouter = router({
         return { success: false, stats: { overallHitRate: 0, totalPredictions: 0, totalHits: 0, byStatType: { hits: 0, runs: 0, rbi: 0 }, last7Days: 0, last30Days: 0 } };
       }
 
-      const allPreds = await db
+      // Read from dailyResults (the table the auto-grade job writes to)
+      const allRows = await db
         .select()
-        .from(propPredictions)
-        .where(or(isNotNull(propPredictions.hitsActual), isNotNull(propPredictions.runsActual), isNotNull(propPredictions.rbiActual)));
+        .from(dailyResults)
+        .where(ne(dailyResults.result, "pending"));
 
-      let totalPredictions = 0;
-      let totalHits = 0;
-      const byStatType = { hits: { total: 0, correct: 0 }, runs: { total: 0, correct: 0 }, rbi: { total: 0, correct: 0 } };
-
-      for (const pred of allPreds) {
-        if (pred.hitsCorrect !== null) { totalPredictions++; byStatType.hits.total++; if (pred.hitsCorrect === 1) { totalHits++; byStatType.hits.correct++; } }
-        if (pred.runsCorrect !== null) { totalPredictions++; byStatType.runs.total++; if (pred.runsCorrect === 1) { totalHits++; byStatType.runs.correct++; } }
-        if (pred.rbiCorrect !== null) { totalPredictions++; byStatType.rbi.total++; if (pred.rbiCorrect === 1) { totalHits++; byStatType.rbi.correct++; } }
-      }
-
+      const totalPredictions = allRows.length;
+      const totalHits = allRows.filter(r => r.result === "hit").length;
       const overallHitRate = totalPredictions > 0 ? Math.round((totalHits / totalPredictions) * 100) : 0;
+
+      // 7-day and 30-day hit rates
+      const now = new Date();
+      const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(now.getDate() - 7);
+      const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(now.getDate() - 30);
+      const sevenDayStr = sevenDaysAgo.toISOString().split("T")[0];
+      const thirtyDayStr = thirtyDaysAgo.toISOString().split("T")[0];
+
+      const last7Rows = allRows.filter(r => r.gameDate >= sevenDayStr);
+      const last30Rows = allRows.filter(r => r.gameDate >= thirtyDayStr);
+      const last7Days = last7Rows.length > 0 ? Math.round((last7Rows.filter(r => r.result === "hit").length / last7Rows.length) * 100) : 0;
+      const last30Days = last30Rows.length > 0 ? Math.round((last30Rows.filter(r => r.result === "hit").length / last30Rows.length) * 100) : 0;
+
+      // By stat type
+      const hrrRows = allRows.filter(r => r.statType === "hrr");
+      const hitsRows = allRows.filter(r => r.statType === "hits");
+      const runsRows = allRows.filter(r => r.statType === "runs");
+      const rbiRows = allRows.filter(r => r.statType === "rbi");
+      const hrrHitRate = hrrRows.length > 0 ? Math.round((hrrRows.filter(r => r.result === "hit").length / hrrRows.length) * 100) : 0;
 
       return {
         success: true,
@@ -491,12 +503,12 @@ export const resultsRouter = router({
           totalPredictions,
           totalHits,
           byStatType: {
-            hits: byStatType.hits.total > 0 ? Math.round((byStatType.hits.correct / byStatType.hits.total) * 100) : 0,
-            runs: byStatType.runs.total > 0 ? Math.round((byStatType.runs.correct / byStatType.runs.total) * 100) : 0,
-            rbi: byStatType.rbi.total > 0 ? Math.round((byStatType.rbi.correct / byStatType.rbi.total) * 100) : 0,
+            hits: hitsRows.length > 0 ? Math.round((hitsRows.filter(r => r.result === "hit").length / hitsRows.length) * 100) : hrrHitRate,
+            runs: runsRows.length > 0 ? Math.round((runsRows.filter(r => r.result === "hit").length / runsRows.length) * 100) : 0,
+            rbi: rbiRows.length > 0 ? Math.round((rbiRows.filter(r => r.result === "hit").length / rbiRows.length) * 100) : 0,
           },
-          last7Days: overallHitRate,
-          last30Days: overallHitRate,
+          last7Days,
+          last30Days,
         },
       };
     } catch (error) {
