@@ -667,7 +667,7 @@ function MoneyPickCard({
             <div
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
               style={{ background: "oklch(0.72 0.18 165 / 15%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 40%)" }}
-              title={pick.gameLockTime ? `Early locked at ${new Date(pick.gameLockTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET` : 'Game locked early — confirmed lineup + 30min stability'}
+              title={pick.gameLockTime ? `Early locked at ${new Date(pick.gameLockTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/St_Johns' })} NDT` : 'Game locked early — confirmed lineup + 30min stability'}
             >
               🔒 EARLY LOCKED
             </div>
@@ -1163,8 +1163,8 @@ export function MoneyPicksTab() {
   })();
 
   const nextPullLabel = (() => {
-    if (slatePhase === 'preliminary') return 'Next official pull: 2:30 PM NDT';
-    if (slatePhase === 'confirmed') return 'Next official pull: 8:30 PM NDT';
+    if (slatePhase === 'preliminary') return 'Next official pull: 1:00 PM NDT';
+    if (slatePhase === 'confirmed') return 'Next official pull: 7:00 PM NDT';
     return 'Evening lock active — final board';
   })();
 
@@ -1286,7 +1286,7 @@ export function MoneyPicksTab() {
     }
   }, [moneyPicks, activeFilter, isProjected]);
 
-  // Phase AU: Slate window grouping — Early (<4PM ET), Main (4-8PM ET), Late (8PM+ ET)
+  // Phase AU: Slate window grouping — Early (<4PM NDT), Main (4-8PM NDT), Late (8PM+ NDT)
   type SlateWindow = 'early' | 'main' | 'late';
 
   function getSlateWindow(gameTimeISO: string | null | undefined): SlateWindow {
@@ -1294,12 +1294,12 @@ export function MoneyPicksTab() {
     try {
       const d = new Date(gameTimeISO);
       if (isNaN(d.getTime())) return 'main';
-      // Convert to NDT hour (America/St_Johns)
+      // Convert to NDT hour (America/St_Johns) — same numerical boundaries as before
       const ndtStr = d.toLocaleString('en-US', { timeZone: 'America/St_Johns', hour: 'numeric', hour12: false });
       const ndtHour = parseInt(ndtStr, 10);
-      if (ndtHour < 17) return 'early';   // before 5:30 PM NDT (= 4 PM ET)
-      if (ndtHour < 21) return 'main';    // 5:30–9:30 PM NDT (= 4–8 PM ET)
-      return 'late';                      // 9:30 PM+ NDT (= 8 PM+ ET)
+      if (ndtHour < 16) return 'early';   // before 4:00 PM NDT
+      if (ndtHour < 20) return 'main';    // 4:00–8:00 PM NDT
+      return 'late';                      // 8:00 PM+ NDT
     } catch {
       return 'main';
     }
@@ -1484,7 +1484,7 @@ export function MoneyPicksTab() {
               <div
                 className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
                 style={{ background: "oklch(0.72 0.18 165 / 12%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 35%)" }}
-                title={earlyLockedGames.map(g => `${g.gameId} locked at ${g.lockedAt ? new Date(g.lockedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : '?'} ET`).join(', ')}
+                title={earlyLockedGames.map(g => `${g.gameId} locked at ${g.lockedAt ? new Date(g.lockedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/St_Johns' }) : '?'} NDT`).join(', ')}
               >
                 🔒 {earlyLockedCount} EARLY GAME{earlyLockedCount > 1 ? 'S' : ''} LOCKED
               </div>
@@ -1756,9 +1756,9 @@ export function MoneyPicksTab() {
           {hasMultipleWindows ? (
             // ── Phase AU: Grouped by slate window ─────────────────────────────────────────────────
             ([
-              { key: 'early' as const, label: '🌅 EARLY SLATE', sublabel: 'Before 5:30 PM NDT', items: slateGroups.early },
-              { key: 'main'  as const, label: '⚾ MAIN SLATE',  sublabel: '5:30–9:30 PM NDT',  items: slateGroups.main  },
-              { key: 'late'  as const, label: '🌙 LATE SLATE',  sublabel: '9:30 PM+ NDT',       items: slateGroups.late  },
+              { key: 'early' as const, label: '🌅 EARLY SLATE', sublabel: 'Before 4:00 PM NDT', items: slateGroups.early },
+              { key: 'main'  as const, label: '⚾ MAIN SLATE',  sublabel: '4:00–8:00 PM NDT',   items: slateGroups.main  },
+              { key: 'late'  as const, label: '🌙 LATE SLATE',  sublabel: '8:00 PM+ NDT',        items: slateGroups.late  },
             ] as Array<{ key: 'early' | 'main' | 'late'; label: string; sublabel: string; items: Array<{ pick: MoneyPick; globalIndex: number }> }>)
               .filter(section => section.items.length > 0)
               .map(section => {

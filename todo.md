@@ -1312,3 +1312,10 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Update active window labels and pick timestamps from ET to NDT
 - [x] Update any hardcoded "America/New_York" timezone to "America/St_Johns" (display only — server logic stays ET)
 - [x] TypeScript check and checkpoint
+
+## Phase BF: Timezone Fix — NDT Labels at Same Numerical Times
+- [x] Revert incorrect 2:30 PM / 8:30 PM labels back to 1:00 PM / 7:00 PM NDT
+- [x] Change server phase boundary logic from America/New_York to America/St_Johns (so 1 PM NDT and 7 PM NDT are the actual triggers)
+- [x] Fix slate window grouping thresholds to use NDT hours at same numerical boundaries
+- [x] Update all "ET" label references to "NDT" without shifting the numbers
+- [x] TypeScript check and checkpoint

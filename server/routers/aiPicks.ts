@@ -648,21 +648,21 @@ onEnrichmentWarm(() => {
   bustPicksCache();
 });
 
-/** Return which pull phase applies right now (ET time) */
-function getSlatePhase(nowET: Date): SlatePhase {
-  const h = nowET.getHours();
-  const m = nowET.getMinutes();
+/** Return which pull phase applies right now (NDT time) */
+function getSlatePhase(nowNDT: Date): SlatePhase {
+  const h = nowNDT.getHours();
+  const m = nowNDT.getMinutes();
   const totalMinutes = h * 60 + m;
-  if (totalMinutes >= 19 * 60) return 'final';       // 7:00 PM ET+
-  if (totalMinutes >= 13 * 60) return 'confirmed';   // 1:00 PM ET+
-  return 'preliminary';                               // before 1 PM ET
+  if (totalMinutes >= 19 * 60) return 'final';       // 7:00 PM NDT+
+  if (totalMinutes >= 13 * 60) return 'confirmed';   // 1:00 PM NDT+
+  return 'preliminary';                               // before 1 PM NDT
 }
 
 /** True if we should trigger a new official pull (phase boundary crossed or new day) */
-function shouldTriggerOfficialPull(nowET: Date, slateDate: string): boolean {
+function shouldTriggerOfficialPull(nowNDT: Date, slateDate: string): boolean {
   if (!officialPullStore) return true;                         // first pull of the day
   if (officialPullStore.slateDate !== slateDate) return true;  // new day
-  const currentPhase = getSlatePhase(nowET);
+  const currentPhase = getSlatePhase(nowNDT);
   if (officialPullStore.phase !== currentPhase) return true;   // phase boundary crossed
   return false;
 }
@@ -1184,8 +1184,8 @@ export const aiPicksRouter = router({
       }));
 
       // ── STAGE 3d: Official Pull Store — 3-pull stability system + Early Auto-Lock ─────
-      // Determine current ET time and slate phase
-      const nowET3 = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      // Determine current NDT time and slate phase
+      const nowET3 = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/St_Johns' }));
       const todayETDate3 = `${nowET3.getFullYear()}-${String(nowET3.getMonth() + 1).padStart(2, '0')}-${String(nowET3.getDate()).padStart(2, '0')}`;
       const currentSlatePhase: SlatePhase = getSlatePhase(nowET3);
       const currentLineupSource = lineupData.lineupSource;
@@ -1373,9 +1373,9 @@ export const aiPicksRouter = router({
 
       // Build slate metadata for UI display
       const now = new Date();
-      const todayET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-      const todayETDate = `${todayET.getFullYear()}-${String(todayET.getMonth() + 1).padStart(2, '0')}-${String(todayET.getDate()).padStart(2, '0')}`;
-      const isStaleSlate = dataDate !== todayETDate && todayET.getHours() >= 5;
+      const todayNDT = new Date(now.toLocaleString('en-US', { timeZone: 'America/St_Johns' }));
+      const todayETDate = `${todayNDT.getFullYear()}-${String(todayNDT.getMonth() + 1).padStart(2, '0')}-${String(todayNDT.getDate()).padStart(2, '0')}`;
+      const isStaleSlate = dataDate !== todayETDate && todayNDT.getHours() >= 5;
 
       // Find first pitch time from games
       const games3 = await getGamesForUI();
