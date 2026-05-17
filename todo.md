@@ -1293,3 +1293,9 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Lower internal VS gate in aiPicks.ts from 6.0/4.5 to 5.0/3.5 with same relaxed secondary checks
 - [x] Verified: VS Gate now passes 115 matchups (was 9), quality gate produces 16 picks, official board saved: 12 picks
 - [x] TypeScript: 0 errors
+
+## Phase BC: Single Source of Truth for moneyPicks (fix different-picks-per-device bug)
+- [x] Imported getEnrichedMoneyPicks into aiPicks.ts
+- [x] Replaced STAGE 3c qualifyingPicks3 with hrrPicksService cached result (Phase BC)
+- [x] All devices now read from the same 15-min picks cache — no more divergence based on enrichment timing
+- [x] TypeScript: 0 errors

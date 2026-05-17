@@ -14,7 +14,7 @@ import { getAdaptedLineupData, getGamesForUI } from "../services/lineupAdapter";
 import { getDataDate, type MLBGame } from "../services/mlbLineupService";
 import { getEnrichmentData, onEnrichmentWarm } from "../services/enrichmentCache";
 import { fetchGameTotals } from "../services/gameTotalsService";
-import { bustPicksCache } from "../services/hrrPicksService";
+import { bustPicksCache, getEnrichedMoneyPicks } from "../services/hrrPicksService";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -1172,18 +1172,16 @@ export const aiPicksRouter = router({
       const nowMs3 = Date.now();
       const preGamePicks3 = enrichedPicks;
 
-      // ── STAGE 3c: Money picks selection — pure relative ranking, NO probability gates ──
-      // Phase AS: All 75% / 65% / 55% thresholds removed.
-      // Phase BB: Raised cap to 12 — show more picks when good ones exist.
-      const MAX_MONEY_PICKS_3 = 12;
-      const MIN_MONEY_PICKS_3 = 5;
-      const qualifyingPicks3 = preGamePicks3
-        .slice(0, Math.min(Math.max(preGamePicks3.length, MIN_MONEY_PICKS_3), MAX_MONEY_PICKS_3))
-        .map((pick: any) => ({
-          ...pick,
-          recommendedLine: pick.fairLine ?? pick.hrrLine ?? 1.5,
-          recommendedProb: pick.overProbability ?? 55,
-        }));
+      // ── STAGE 3c: Money picks selection — use shared cached board from hrrPicksService ──
+      // Phase BC: getEnrichedMoneyPicks() is the single source of truth for moneyPicks.
+      // This ensures all devices see the same board regardless of enrichment timing.
+      // The local enrichedPicks pipeline still runs for the All Plays tab.
+      const hrrCachedResult = await getEnrichedMoneyPicks();
+      const qualifyingPicks3: any[] = hrrCachedResult.moneyPicks.map((pick: any) => ({
+        ...pick,
+        recommendedLine: pick.recommendedLine ?? pick.fairLine ?? pick.hrrLine ?? 1.5,
+        recommendedProb: pick.recommendedProb ?? pick.overProbability ?? 55,
+      }));
 
       // ── STAGE 3d: Official Pull Store — 3-pull stability system + Early Auto-Lock ─────
       // Determine current ET time and slate phase
