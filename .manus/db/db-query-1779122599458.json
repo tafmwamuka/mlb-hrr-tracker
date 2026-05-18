@@ -1,0 +1,45 @@
+{
+  "query": "SELECT gameDate, source, COUNT(*) as cnt, SUM(CASE WHEN result = 'hit' THEN 1 ELSE 0 END) as hits, SUM(CASE WHEN result = 'miss' THEN 1 ELSE 0 END) as misses FROM daily_results GROUP BY gameDate, source ORDER BY gameDate DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT gameDate, source, COUNT(*) as cnt, SUM(CASE WHEN result = 'hit' THEN 1 ELSE 0 END) as hits, SUM(CASE WHEN result = 'miss' THEN 1 ELSE 0 END) as misses FROM daily_results GROUP BY gameDate, source ORDER BY gameDate DESC LIMIT 20;",
+  "rows": [
+    {
+      "gameDate": "2026-05-17",
+      "source": "money",
+      "cnt": "12",
+      "hits": "4",
+      "misses": "8"
+    },
+    {
+      "gameDate": "2026-05-16",
+      "source": "money",
+      "cnt": "10",
+      "hits": "5",
+      "misses": "5"
+    },
+    {
+      "gameDate": "2026-05-15",
+      "source": "money",
+      "cnt": "6",
+      "hits": "2",
+      "misses": "4"
+    },
+    {
+      "gameDate": "2026-05-14",
+      "source": "money",
+      "cnt": "15",
+      "hits": "11",
+      "misses": "4"
+    },
+    {
+      "gameDate": "2026-05-13",
+      "source": "money",
+      "cnt": "15",
+      "hits": "8",
+      "misses": "7"
+    }
+  ],
+  "messages": [],
+  "stdout": "gameDate\tsource\tcnt\thits\tmisses\n2026-05-17\tmoney\t12\t4\t8\n2026-05-16\tmoney\t10\t5\t5\n2026-05-15\tmoney\t6\t2\t4\n2026-05-14\tmoney\t15\t11\t4\n2026-05-13\tmoney\t15\t8\t7\n",
+  "stderr": "",
+  "execution_time_ms": 271
+}

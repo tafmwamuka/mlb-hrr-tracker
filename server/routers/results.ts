@@ -311,65 +311,58 @@ export const resultsRouter = router({
         return { success: false, error: "Database not available", results: [], hitRate: 0, totalPlays: 0, date: "", hasActuals: false };
       }
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split("T")[0];
+      // Compute yesterday's date string in NDT (America/St_Johns)
+      const nowNDT = new Date(new Date().toLocaleString("en-US", { timeZone: "America/St_Johns" }));
+      const yesterdayNDT = new Date(nowNDT);
+      yesterdayNDT.setDate(nowNDT.getDate() - 1);
+      const yesterdayStr = yesterdayNDT.toISOString().split("T")[0];
 
-      const predictions = await db
+      // Read from dailyResults — money picks only
+      const rows = await db
         .select()
-        .from(propPredictions)
-        .where(and(gte(propPredictions.gameDate, yesterday), lt(propPredictions.gameDate, today)))
-        .orderBy(desc(propPredictions.createdAt));
+        .from(dailyResults)
+        .where(and(
+          eq(dailyResults.gameDate, yesterdayStr),
+          eq(dailyResults.source, "money"),
+        ))
+        .orderBy(desc(dailyResults.probability));
 
-      if (predictions.length === 0) {
+      if (rows.length === 0) {
         return { success: true, results: [], hitRate: 0, totalPlays: 0, date: yesterdayStr, hasActuals: false };
       }
 
-      const results: any[] = [];
-      for (const pred of predictions) {
-        const statTypes = [
-          { key: "hits" as const, predCol: pred.hitsPrediction, actualCol: pred.hitsActual, correctCol: pred.hitsCorrect, reasoning: pred.hitsReasoning },
-          { key: "runs" as const, predCol: pred.runsPrediction, actualCol: pred.runsActual, correctCol: pred.runsCorrect, reasoning: pred.runsReasoning },
-          { key: "rbi" as const, predCol: pred.rbiPrediction, actualCol: pred.rbiActual, correctCol: pred.rbiCorrect, reasoning: pred.rbiReasoning },
-        ];
+      const results = rows.map(row => ({
+        id: row.id,
+        playerId: row.playerId,
+        playerName: row.playerName,
+        team: row.playerTeam,
+        stat: row.statType,
+        line: row.line,
+        prediction: "over",
+        confidence: row.probability,
+        actualValue: row.actualValue,
+        hit: row.result === "hit" ? true : row.result === "miss" ? false : null,
+        reasoning: "",
+        gameId: null,
+        tier: row.tier,
+        matrixScore: row.matrixScore,
+        odds: row.odds,
+        streakLabel: row.streakLabel,
+      }));
 
-        for (const st of statTypes) {
-          if (!st.predCol) continue;
-          try {
-            const parsed = JSON.parse(st.predCol);
-            results.push({
-              id: pred.id,
-              playerId: pred.playerId,
-              playerName: pred.playerName,
-              team: "",
-              stat: st.key,
-              line: parsed.line || 0,
-              prediction: "over",
-              confidence: parsed.confidence || 0,
-              actualValue: st.actualCol,
-              hit: st.correctCol !== null ? st.correctCol === 1 : null,
-              reasoning: st.reasoning || "",
-              gameId: pred.gameId,
-            });
-          } catch {}
-        }
-      }
-
-      const resultsWithActuals = results.filter(r => r.actualValue !== null);
-      const hitCount = resultsWithActuals.filter(r => r.hit === true).length;
-      const hitRate = resultsWithActuals.length > 0 ? Math.round((hitCount / resultsWithActuals.length) * 100) : 0;
+      const settled = results.filter(r => r.hit !== null);
+      const hitCount = settled.filter(r => r.hit === true).length;
+      const hitRate = settled.length > 0 ? Math.round((hitCount / settled.length) * 100) : 0;
 
       return {
         success: true,
         results,
         hitRate,
         totalPlays: results.length,
-        totalWithActuals: resultsWithActuals.length,
+        totalWithActuals: settled.length,
         totalHits: hitCount,
         date: yesterdayStr,
-        hasActuals: resultsWithActuals.length > 0,
+        hasActuals: settled.length > 0,
       };
     } catch (error) {
       console.error("Error fetching yesterday's results:", error);
