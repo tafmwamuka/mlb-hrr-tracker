@@ -1,6 +1,7 @@
 /**
  * History Router
- * Stores and retrieves daily pick results for historical performance tracking
+ * Stores and retrieves daily pick results for historical performance tracking.
+ * All queries are scoped to source='money' (Money Picks) only.
  */
 
 import { router, publicProcedure } from "../_core/trpc";
@@ -25,7 +26,8 @@ function subtractDays(days: number): string {
 
 export const historyRouter = router({
   /**
-   * Store today's picks results (called after games go Final)
+   * Store today's money picks results (called after games go Final).
+   * Only accepts source='money' — allplays entries are rejected.
    */
   storeDailyResults: publicProcedure
     .input(z.object({
@@ -44,32 +46,36 @@ export const historyRouter = router({
         oddsProvider: z.string().nullable().optional(),
         streakLabel: z.string().nullable().optional(),
         dayNightLabel: z.string().nullable().optional(),
-        // Phase AE: new tracking fields
-        tier: z.string().nullable().optional(), // S, A, Lean
-        edge: z.number().nullable().optional(), // model edge %
-        closingLineValue: z.number().nullable().optional(), // CLV
-        matrixScore: z.number().nullable().optional(), // 10-factor score
+        tier: z.string().nullable().optional(),
+        edge: z.number().nullable().optional(),
+        closingLineValue: z.number().nullable().optional(),
+        matrixScore: z.number().nullable().optional(),
       })),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database not available");
-      
-      // Delete existing entries for this date to avoid duplicates
+
+      // Only store money picks — filter out any allplays entries
+      const moneyPlays = input.plays.filter(p => p.source === "money");
+
+      // Delete existing money entries for this date to avoid duplicates
       await db.delete(dailyResults)
-        .where(eq(dailyResults.gameDate, input.gameDate));
-      
-      if (input.plays.length === 0) return { stored: 0 };
-      
-      // Insert all plays for this date
+        .where(and(
+          eq(dailyResults.gameDate, input.gameDate),
+          eq(dailyResults.source, "money"),
+        ));
+
+      if (moneyPlays.length === 0) return { stored: 0 };
+
       await db.insert(dailyResults).values(
-        input.plays.map(play => ({
+        moneyPlays.map(play => ({
           gameDate: input.gameDate,
           playerId: play.playerId,
           playerName: play.playerName,
           playerTeam: play.playerTeam,
           statType: play.statType,
-          source: play.source,
+          source: "money" as const,
           line: play.line,
           probability: play.probability,
           actualValue: play.actualValue ?? null,
@@ -78,19 +84,19 @@ export const historyRouter = router({
           oddsProvider: play.oddsProvider ?? null,
           streakLabel: play.streakLabel ?? null,
           dayNightLabel: play.dayNightLabel ?? null,
-          // Phase AE: tracking fields
           tier: play.tier ?? null,
           edge: play.edge ?? null,
           closingLineValue: play.closingLineValue ?? null,
           matrixScore: play.matrixScore ?? null,
         }))
       );
-      
-      return { stored: input.plays.length };
+
+      return { stored: moneyPlays.length };
     }),
 
   /**
-   * Get performance summary for a date range (past week / past month)
+   * Get performance summary for a date range (past week / past month / all time).
+   * Scoped to money picks only.
    */
   getPerformanceSummary: publicProcedure
     .input(z.object({
@@ -98,48 +104,34 @@ export const historyRouter = router({
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { period: input.period, totalPlays: 0, hits: 0, misses: 0, hitRate: 0, moneyHitRate: 0, allPlaysHitRate: 0, byDate: [] };
-      
+      const empty = { period: input.period, totalPlays: 0, hits: 0, misses: 0, hitRate: 0, moneyHitRate: 0, allPlaysHitRate: 0, byDate: [] };
+      if (!db) return empty;
+
       const startDate = input.period === "week"
         ? subtractDays(7)
         : input.period === "month"
         ? subtractDays(30)
         : "2020-01-01";
-      
+
+      // Only fetch money picks
       const rows = await db.select()
         .from(dailyResults)
         .where(
           and(
             gte(dailyResults.gameDate, startDate),
-            // Only count settled results
+            eq(dailyResults.source, "money"),
             sql`${dailyResults.result} != 'pending'`
           )
         )
         .orderBy(desc(dailyResults.gameDate));
-      
-      if (rows.length === 0) {
-        return {
-          period: input.period,
-          totalPlays: 0,
-          hits: 0,
-          misses: 0,
-          hitRate: 0,
-          moneyHitRate: 0,
-          allPlaysHitRate: 0,
-          byDate: [],
-        };
-      }
-      
+
+      if (rows.length === 0) return empty;
+
       const hits = rows.filter(r => r.result === "hit").length;
       const misses = rows.filter(r => r.result === "miss").length;
       const total = hits + misses;
-      
-      const moneyRows = rows.filter(r => r.source === "money");
-      const moneyHits = moneyRows.filter(r => r.result === "hit").length;
-      
-      const allPlaysRows = rows.filter(r => r.source === "allplays");
-      const allPlaysHits = allPlaysRows.filter(r => r.result === "hit").length;
-      
+      const hitRate = total > 0 ? Math.round((hits / total) * 100) : 0;
+
       // Group by date for the chart
       const byDateMap = new Map<string, { date: string; hits: number; total: number; hitRate: number }>();
       for (const row of rows) {
@@ -149,27 +141,24 @@ export const historyRouter = router({
         existing.hitRate = Math.round((existing.hits / existing.total) * 100);
         byDateMap.set(row.gameDate, existing);
       }
-      
+
       const byDate = Array.from(byDateMap.values())
         .sort((a, b) => a.date.localeCompare(b.date));
-      
-      const moneySettled = moneyRows.filter((r: typeof rows[0]) => r.result !== "pending").length;
-      const allPlaysSettled = allPlaysRows.filter((r: typeof rows[0]) => r.result !== "pending").length;
 
       return {
         period: input.period,
         totalPlays: total,
         hits,
         misses,
-        hitRate: total > 0 ? Math.round((hits / total) * 100) : 0,
-        moneyHitRate: moneySettled > 0 ? Math.round((moneyHits / moneySettled) * 100) : 0,
-        allPlaysHitRate: allPlaysSettled > 0 ? Math.round((allPlaysHits / allPlaysSettled) * 100) : 0,
+        hitRate,
+        moneyHitRate: hitRate, // same — all rows are money picks
+        allPlaysHitRate: 0,    // not tracked here
         byDate,
       };
     }),
 
   /**
-   * Get detailed results for a specific date
+   * Get detailed results for a specific date (money picks only).
    */
   getResultsByDate: publicProcedure
     .input(z.object({
@@ -178,12 +167,17 @@ export const historyRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { date: input.date, plays: [], hits: 0, misses: 0, pending: 0, total: 0, hitRate: 0 };
-      
+
       const rows = await db.select()
         .from(dailyResults)
-        .where(eq(dailyResults.gameDate, input.date))
+        .where(
+          and(
+            eq(dailyResults.gameDate, input.date),
+            eq(dailyResults.source, "money"),
+          )
+        )
         .orderBy(desc(dailyResults.probability));
-      
+
       return {
         date: input.date,
         plays: rows,
@@ -199,7 +193,7 @@ export const historyRouter = router({
 
   /**
    * Rolling 7-day performance stats with ROI tracking.
-   * Used in Results tab header to show recent trend.
+   * Scoped to money picks only.
    */
   getSevenDayStats: publicProcedure.query(async () => {
     const db = await getDb();
@@ -213,10 +207,12 @@ export const historyRouter = router({
     const sevenDaysAgo = subtractDays(7);
     const fourteenDaysAgo = subtractDays(14);
 
+    // Both queries scoped to money picks only
     const [recentRows, prevRows] = await Promise.all([
       db.select().from(dailyResults)
         .where(and(
           gte(dailyResults.gameDate, sevenDaysAgo),
+          eq(dailyResults.source, "money"),
           sql`${dailyResults.result} != 'pending'`
         ))
         .orderBy(desc(dailyResults.gameDate)),
@@ -224,6 +220,7 @@ export const historyRouter = router({
         .where(and(
           gte(dailyResults.gameDate, fourteenDaysAgo),
           lte(dailyResults.gameDate, sevenDaysAgo),
+          eq(dailyResults.source, "money"),
           sql`${dailyResults.result} != 'pending'`
         ))
         .orderBy(desc(dailyResults.gameDate)),
@@ -235,15 +232,10 @@ export const historyRouter = router({
     const misses = recentRows.filter(r => r.result === 'miss').length;
     const total = hits + misses;
     const hitRate = total > 0 ? Math.round((hits / total) * 100) : 0;
-
-    // Money picks hit rate
-    const moneyRows = recentRows.filter(r => r.source === 'money');
-    const moneyHits = moneyRows.filter(r => r.result === 'hit').length;
-    const moneySettled = moneyRows.filter(r => r.result !== 'pending').length;
-    const moneyHitRate = moneySettled > 0 ? Math.round((moneyHits / moneySettled) * 100) : 0;
+    const moneyHitRate = hitRate; // all rows are money picks
 
     // ROI: assume -110 odds (1 unit risk = 0.909 units profit on win, -1 on loss)
-    const WIN_PAYOUT = 0.909; // profit per unit at -110
+    const WIN_PAYOUT = 0.909;
     const unitsWon = (hits * WIN_PAYOUT) - misses;
     const roi = total > 0 ? Math.round((unitsWon / total) * 100) : 0;
 
@@ -276,19 +268,20 @@ export const historyRouter = router({
   }),
 
   /**
-   * Get list of dates that have stored results (for calendar view)
+   * Get list of dates that have stored money pick results (for calendar view).
    */
   getResultDates: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    
+
     const rows = await db
       .select({ gameDate: dailyResults.gameDate })
       .from(dailyResults)
+      .where(eq(dailyResults.source, "money"))
       .groupBy(dailyResults.gameDate)
       .orderBy(desc(dailyResults.gameDate))
-      .limit(60); // Last 60 days
-    
+      .limit(60);
+
     return rows.map((r: { gameDate: string }) => r.gameDate);
   }),
 });

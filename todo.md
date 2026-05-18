@@ -1335,3 +1335,11 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Update results.getHitRateStats to read from dailyResults table (same source as auto-grade job) instead of legacy propPredictions table
 - [x] All three Stats page queries (getSevenDayStats, getPerformanceSummary, getHitRateStats) now read from the same dailyResults table
 - [x] TypeScript: 0 errors
+
+## Phase BH: Stats Tab — Money Picks Only (Completed)
+- [x] Audit all Stats tab queries — found 3 queries not filtering to money source at DB level
+- [x] Rewrote history.ts: all queries (getSevenDayStats, getPerformanceSummary, getResultsByDate, getResultDates) now filter eq(source, "money") at the DB query level
+- [x] Updated results.getHitRateStats to filter eq(source, "money") at DB level
+- [x] Updated storeDailyResults to reject allplays entries and only write source="money" rows
+- [x] Purged all non-money rows from daily_results DB table
+- [x] TypeScript: 0 errors

@@ -467,11 +467,14 @@ export const resultsRouter = router({
         return { success: false, stats: { overallHitRate: 0, totalPredictions: 0, totalHits: 0, byStatType: { hits: 0, runs: 0, rbi: 0 }, last7Days: 0, last30Days: 0 } };
       }
 
-      // Read from dailyResults (the table the auto-grade job writes to)
+      // Read from dailyResults — money picks only
       const allRows = await db
         .select()
         .from(dailyResults)
-        .where(ne(dailyResults.result, "pending"));
+        .where(and(
+          eq(dailyResults.source, "money"),
+          ne(dailyResults.result, "pending")
+        ));
 
       const totalPredictions = allRows.length;
       const totalHits = allRows.filter(r => r.result === "hit").length;
