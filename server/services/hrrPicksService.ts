@@ -147,19 +147,24 @@ export function selectBestLine(
     });
 
   // Select best line:
-  //   1. Must have positive EV (edge > 0)
-  //   2. Among positive-EV lines, pick highest EV
-  //   3. Tiebreak: prefer lower risk (lower line)
+  //   Priority 1: Highest model probability among positive-EV lines (edge > 0)
+  //               — always prefer the safest line that still has value
+  //               — e.g. O 1.5 at 85% model prob beats O 3 at 44% model prob
+  //   Priority 2: If no positive-EV lines exist, fall back to highest model probability
+  //
+  //   NOTE: We intentionally do NOT sort by highest EV first because a high-EV line
+  //   is often a high-risk line (e.g. O 3 at +126) that we want to avoid suggesting.
+  //   The goal is to recommend the SAFEST line that still has a positive edge.
   const positiveEvLines = evaluations.filter(e => (e.edge ?? 0) > 0);
 
   let bestEval: LineEvaluation | null = null;
 
   if (positiveEvLines.length > 0) {
-    // Sort by EV desc, then by modelProb desc (lower risk tiebreak)
+    // Sort by model probability desc (safest first), then by edge desc as tiebreak
     positiveEvLines.sort((a, b) => {
-      const evDiff = (b.ev ?? 0) - (a.ev ?? 0);
-      if (Math.abs(evDiff) >= 2) return evDiff; // meaningful EV difference
-      return b.modelProb - a.modelProb; // tiebreak: higher probability = safer
+      const probDiff = b.modelProb - a.modelProb;
+      if (Math.abs(probDiff) >= 5) return probDiff; // meaningful probability difference
+      return (b.edge ?? 0) - (a.edge ?? 0); // tiebreak: higher edge
     });
     bestEval = positiveEvLines[0];
   } else {

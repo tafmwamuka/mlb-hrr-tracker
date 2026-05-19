@@ -224,8 +224,27 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
     }
   }
 
-  // Sort alternate lines by line value
+  // Ensure the featured line is also present in alternateLines so selectBestLine
+  // can evaluate ALL available lines together (not just the alternate market lines).
   playerMap.forEach((playerData) => {
+    if (
+      playerData.featuredLine !== null &&
+      playerData.featuredOverOdds !== null &&
+      !playerData.alternateLines.some((l: { line: number }) => l.line === playerData.featuredLine)
+    ) {
+      const overProb = americanToImpliedProbability(playerData.featuredOverOdds);
+      const underProb = playerData.featuredUnderOdds
+        ? americanToImpliedProbability(playerData.featuredUnderOdds)
+        : 1 - overProb;
+      const { trueOver } = removeVig(overProb, underProb);
+      playerData.alternateLines.push({
+        line: playerData.featuredLine,
+        overOdds: playerData.featuredOverOdds,
+        underOdds: playerData.featuredUnderOdds || 0,
+        impliedOverProb: trueOver,
+      });
+    }
+    // Sort ascending: 0.5, 1.5, 2.5, 3.5 ...
     playerData.alternateLines.sort((a: { line: number }, b: { line: number }) => a.line - b.line);
   });
 
