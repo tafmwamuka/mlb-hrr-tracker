@@ -359,13 +359,10 @@ export function ResultsTab() {
   const hitRate = finalResults.length > 0 ? Math.round((hits.length / finalResults.length) * 100) : 0;
   const hasActuals = finalResults.length > 0;
 
-  // Source-based breakdown
-  const moneyFinal = finalResults.filter((r: any) => r.source === "money");
-  const allPlaysFinal = finalResults.filter((r: any) => r.source === "allPlays");
-  const moneyHits = moneyFinal.filter((r: any) => r.hit === true);
-  const allPlaysHits = allPlaysFinal.filter((r: any) => r.hit === true);
-  const moneyHitRate = moneyFinal.length > 0 ? Math.round((moneyHits.length / moneyFinal.length) * 100) : 0;
-  const allPlaysHitRate = allPlaysFinal.length > 0 ? Math.round((allPlaysHits.length / allPlaysFinal.length) * 100) : 0;
+  // All results are money picks — no allPlays breakdown needed
+  const moneyFinal = finalResults;
+  const moneyHits = hits;
+  const moneyHitRate = hitRate;
 
   return (
     <div className="flex-1 overflow-y-auto pb-20">
@@ -608,13 +605,12 @@ export function ResultsTab() {
             )}
           </div>
 
-          {/* Source-based hit rate breakdown */}
+          {/* Money Picks hit rate breakdown */}
           {hasActuals && (
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-3">
+            <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mt-3">
               {[
-                { value: `${moneyHitRate}%`, label: "Money Picks", sublabel: `${moneyHits.length}/${moneyFinal.length}`, icon: Flame, color: "oklch(0.75 0.18 55)" },
-                { value: `${allPlaysHitRate}%`, label: "All Plays", sublabel: `${allPlaysHits.length}/${allPlaysFinal.length}`, icon: TrendingUp, color: "oklch(0.82 0.17 85)" },
-                { value: `${resultsData?.totalPlays || 0}`, label: "Total Plays", sublabel: `${resultsData?.moneyPlays || 0} + ${resultsData?.allPlaysCount || 0}`, icon: Target, color: "oklch(0.72 0.18 165)" },
+                { value: `${moneyHitRate}%`, label: "Hit Rate", sublabel: `${moneyHits.length} hits / ${moneyFinal.length} settled`, icon: Flame, color: "oklch(0.75 0.18 55)" },
+                { value: `${resultsData?.totalPlays || 0}`, label: "Money Picks", sublabel: `${hits.length} ✓  ${misses.length} ✗  ${pendingResults.length} pending`, icon: Target, color: "oklch(0.72 0.18 165)" },
               ].map((stat, i) => (
                 <motion.div
                   key={stat.label}
