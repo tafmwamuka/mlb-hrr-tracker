@@ -283,8 +283,8 @@ function isWithinActiveWindow(): boolean {
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const hour = nowET.getHours();
   const minute = nowET.getMinutes();
-  // 11:00 AM to 11:30 PM ET (23:30)
-  if (hour < 11) return false;
+  // 9:00 AM to 11:30 PM ET (23:30) — widened from 11 AM to capture early-morning lines
+  if (hour < 9) return false;
   if (hour > 23) return false;
   if (hour === 23 && minute > 30) return false;
   return true;

@@ -686,8 +686,15 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     const featuredOverOdds = pick.bookOdds
       ? parseInt(String(pick.bookOdds).replace(/[^0-9+-]/g, ''), 10)
       : null;
+    const finalFeaturedOverOdds = isNaN(featuredOverOdds as number) ? null : featuredOverOdds;
+    if (pick.playerName && pick.playerName.toLowerCase().includes('baldwin')) {
+      console.log(`[BK-DEBUG] ${pick.playerName}: lambda=${lambda}, featuredLine=${featuredLine}, featuredOverOdds=${finalFeaturedOverOdds}, sbAltLines=${JSON.stringify(sbAltLines)}`);
+    }
     const { recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations } =
-      selectBestLine(lambda, sbAltLines, featuredLine, isNaN(featuredOverOdds as number) ? null : featuredOverOdds);
+      selectBestLine(lambda, sbAltLines, featuredLine, finalFeaturedOverOdds);
+    if (pick.playerName && pick.playerName.toLowerCase().includes('baldwin')) {
+      console.log(`[BK-DEBUG] ${pick.playerName}: recommendedLine=${recommendedLine}, verdict=${bestLineVerdict}, reason=${bestLineReason}`);
+    }
     pick.recommendedLine = recommendedLine;
     pick.recommendedProb = recommendedProb;
     pick.bestLineVerdict = bestLineVerdict;
