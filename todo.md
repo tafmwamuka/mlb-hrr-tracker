@@ -1391,3 +1391,16 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Ensure later-game picks continue to appear as they become ready (no blocking)
 - [x] TypeScript: 0 errors
 - [x] Checkpoint
+
+## Phase BM: Smart Alt Line Selection with Historical Hit Rates
+
+- [x] Upgrade `LineEvaluation` type: add `historicalHitRate`, `historicalHitRateLong`, `consistencyScore` fields
+- [x] Add `calcHistoricalHitRate(line, games)` helper inside `selectBestLine` — computes % of last 5 games where HRR > line
+- [x] Pass `last5Games` parameter to both `selectBestLine` calls (preliminary and second-pass)
+- [x] Multi-factor composite scoring: 40% model prob + 30% historical hit rate + 20% EV (normalized) + 10% consistency
+- [x] Tiebreak rule: prefer lower line (safer) when composite scores are within 3 points
+- [x] No-positive-EV fallback: when all lines are negative-EV, pick highest composite score
+- [x] Update `MoneyPicksTab` `lineEvaluations` interface: add `historicalHitRate`, `historicalHitRateLong`, `consistencyScore`
+- [x] Update alt line table: add **L5 Hit%** column with green/yellow/red coloring
+- [x] TypeScript: 0 errors
+- [ ] Checkpoint

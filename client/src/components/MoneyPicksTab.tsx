@@ -115,14 +115,17 @@ interface MoneyPick {
   lockReason?: string | null;           // Human-readable lock reason
   isLaterQualifier?: boolean;           // true when pick qualified after board was full
   laterQualifierReason?: string | null;  // human-readable reason (e.g. 'Board full at time of qualification')
-  // Phase BK: Alt Line Optimization
+  // Phase BK/BM: Alt Line Optimization with historical hit rates
   lineEvaluations?: Array<{
     line: number;
     bookOdds: number | null;
     bookImpliedProb: number | null;
     modelProb: number;
+    historicalHitRate: number | null;     // % of last 5 games where HRR cleared this line
+    historicalHitRateLong: number | null; // same (extended in future)
     edge: number | null;
     ev: number | null;
+    consistencyScore: number | null;      // model vs history agreement (0-100)
     riskGrade: 'LOW' | 'MEDIUM' | 'HIGH' | 'LONGSHOT';
     lineType: 'SAFE LINE' | 'VALUE LINE' | 'AGGRESSIVE LINE' | 'LONGSHOT LINE';
     verdict: 'BEST SAFE LINE' | 'GOOD VALUE' | 'HIGHER RISK' | 'LONGSHOT' | 'OVERPRICED' | 'NO ODDS' | 'BEST LINE';
@@ -802,13 +805,14 @@ function MoneyPickCard({
             {pick.bestLineReason && (
               <p className="text-[10px] text-[oklch(0.50_0.015_255)] mb-2 leading-relaxed">{pick.bestLineReason}</p>
             )}
-            {/* Table header */}
+            {/* Phase BM: Alt Line Table with Historical Hit Rate column */}
             <div className="rounded-lg overflow-hidden" style={{ border: '1px solid oklch(1 0 0 / 8%)' }}>
-              <div className="grid text-[9px] font-bold uppercase tracking-wider px-2 py-1.5" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1.5fr 1.5fr 2fr', background: 'oklch(0.16 0.02 255)', color: 'oklch(0.40 0.015 255)' }}>
+              <div className="grid text-[9px] font-bold uppercase tracking-wider px-2 py-1.5" style={{ gridTemplateColumns: '1.8fr 1.3fr 1.3fr 1.3fr 1.3fr 1.3fr 1.8fr', background: 'oklch(0.16 0.02 255)', color: 'oklch(0.40 0.015 255)' }}>
                 <span>Line</span>
                 <span className="text-right">Odds</span>
                 <span className="text-right">Book %</span>
                 <span className="text-right">Model %</span>
+                <span className="text-right">L5 Hit%</span>
                 <span className="text-right">Edge</span>
                 <span className="text-right">Verdict</span>
               </div>
@@ -821,12 +825,18 @@ function MoneyPickCard({
                   ev.verdict === 'LONGSHOT' ? 'oklch(0.55 0.15 255)' :
                   'oklch(0.40 0.015 255)';
                 const edgeColor = (ev.edge ?? 0) > 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)';
+                // Phase BM: color the historical hit rate
+                const histRate = ev.historicalHitRate;
+                const histColor = histRate === null ? 'oklch(0.40 0.015 255)' :
+                  histRate >= 80 ? 'oklch(0.72 0.18 165)' :
+                  histRate >= 60 ? 'oklch(0.82 0.17 85)' :
+                  histRate >= 40 ? 'oklch(0.68 0.22 25)' : 'oklch(0.55 0.15 255)';
                 return (
                   <div
                     key={ev.line}
                     className="grid px-2 py-1.5 text-[10px] border-t"
                     style={{
-                      gridTemplateColumns: '2fr 1.5fr 1.5fr 1.5fr 1.5fr 2fr',
+                      gridTemplateColumns: '1.8fr 1.3fr 1.3fr 1.3fr 1.3fr 1.3fr 1.8fr',
                       borderColor: 'oklch(1 0 0 / 6%)',
                       background: ev.isRecommended ? `${probColor}12` : 'transparent',
                     }}
@@ -842,6 +852,10 @@ function MoneyPickCard({
                     </span>
                     <span className="text-right font-bold" style={{ color: ev.modelProb >= 75 ? 'oklch(0.72 0.18 165)' : ev.modelProb >= 55 ? 'oklch(0.82 0.17 85)' : 'oklch(0.65 0.015 255)' }}>
                       {ev.modelProb}%
+                    </span>
+                    {/* Phase BM: Historical Hit Rate column */}
+                    <span className="text-right font-bold" style={{ color: histColor }}>
+                      {histRate !== null ? `${histRate}%` : '—'}
                     </span>
                     <span className="text-right font-bold" style={{ color: edgeColor }}>
                       {ev.edge !== null ? (ev.edge > 0 ? `+${ev.edge}%` : `${ev.edge}%`) : '—'}

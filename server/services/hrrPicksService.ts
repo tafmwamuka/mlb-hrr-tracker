@@ -35,8 +35,11 @@ export interface LineEvaluation {
   bookOdds: number | null;      // American odds from sportsbook (null = not available)
   bookImpliedProb: number | null; // Vig-free implied probability (0-100)
   modelProb: number;    // Poisson model probability (0-100)
+  historicalHitRate: number | null; // % of last 5 games where player cleared this line (0-100)
+  historicalHitRateLong: number | null; // % of all available games (up to 7) where player cleared this line
   edge: number | null;  // modelProb - bookImpliedProb (percentage points; null if no book odds)
   ev: number | null;    // Expected value % (null if no book odds)
+  consistencyScore: number | null; // 0-100: composite of model + history agreement
   riskGrade: 'LOW' | 'MEDIUM' | 'HIGH' | 'LONGSHOT'; // risk classification
   lineType: 'SAFE LINE' | 'VALUE LINE' | 'AGGRESSIVE LINE' | 'LONGSHOT LINE';
   verdict: 'BEST SAFE LINE' | 'GOOD VALUE' | 'HIGHER RISK' | 'LONGSHOT' | 'OVERPRICED' | 'NO ODDS' | 'BEST LINE';
@@ -46,10 +49,12 @@ export interface LineEvaluation {
 /**
  * Select the best playable HRR line for a player.
  *
- * Priority:
- *  1. Positive EV (edge > 0) — never recommend negative-EV even if safer
- *  2. Highest EV among positive-EV lines
- *  3. When EV is similar (<2pp), prefer lower risk (lower line = safer)
+ * Phase BM: Multi-factor scoring:
+ *  1. Must have positive EV (edge > 0) — never recommend negative-EV even if safer
+ *  2. Composite score: 40% model probability + 30% historical hit rate + 20% EV + 10% consistency
+ *  3. Historical hit rate is computed from last5Games (HRR = hits+runs+rbi per game)
+ *  4. Consistency score = agreement between model probability and historical hit rate
+ *  5. Tiebreak: prefer lower line (safer) when composite scores are within 3 points
  *
  * Returns the recommended line + full per-line evaluation table.
  */
@@ -58,6 +63,7 @@ export function selectBestLine(
   sbAlternateLines: Array<{ line: number; overOdds: number; underOdds?: number; impliedOverProb?: number }>,
   featuredLine: number | null,
   featuredOverOdds: number | null,
+  last5Games?: Array<{ hits: number; runs: number; rbi: number }>, // Phase BM: player game log
 ): { recommendedLine: number; recommendedProb: number; bestLineVerdict: string; bestLineReason: string; lineEvaluations: LineEvaluation[] } {
 
   // Build the candidate set from sportsbook lines (only use lines actually available)
@@ -75,10 +81,20 @@ export function selectBestLine(
     }
   }
 
+  // Phase BM: Pre-compute historical hit rates per line from last5Games
+  // HRR per game = hits + runs + rbi; hit rate at line X = % of games where HRR > X
+  const hrrGames: number[] = (last5Games ?? []).map((g: { hits: number; runs: number; rbi: number }) => g.hits + g.runs + g.rbi);
+  function calcHistoricalHitRate(line: number, games: number[]): number | null {
+    if (games.length === 0) return null;
+    const cleared = games.filter(hrr => hrr > line).length;
+    return Math.round((cleared / games.length) * 100);
+  }
+
   // If no sportsbook lines available, fall back to model fair line
   if (candidateLines.length === 0) {
     const fairLine = findFairLine(lambda);
     const modelProb = Math.round(poissonOverProbability(fairLine, lambda) * 100);
+    const historicalHitRate = calcHistoricalHitRate(fairLine, hrrGames);
     return {
       recommendedLine: fairLine,
       recommendedProb: modelProb,
@@ -89,8 +105,11 @@ export function selectBestLine(
         bookOdds: null,
         bookImpliedProb: null,
         modelProb,
+        historicalHitRate,
+        historicalHitRateLong: historicalHitRate,
         edge: null,
         ev: null,
+        consistencyScore: null,
         riskGrade: modelProb >= 75 ? 'LOW' : modelProb >= 55 ? 'MEDIUM' : modelProb >= 35 ? 'HIGH' : 'LONGSHOT',
         lineType: modelProb >= 75 ? 'SAFE LINE' : modelProb >= 55 ? 'VALUE LINE' : modelProb >= 35 ? 'AGGRESSIVE LINE' : 'LONGSHOT LINE',
         verdict: 'NO ODDS',
@@ -98,78 +117,80 @@ export function selectBestLine(
       }],
     };
   }
-
-  // Evaluate every candidate line
+  // Phase BM: Evaluate every candidate line with multi-factor scoring
   const evaluations: LineEvaluation[] = candidateLines
     .sort((a, b) => a.line - b.line) // ascending: 0.5, 1.5, 2.5 ...
     .map(({ line, overOdds }) => {
       const modelProbFrac = poissonOverProbability(line, lambda);
       const modelProb = Math.round(modelProbFrac * 100);
-
       // Vig-free book implied probability
       const rawImplied = americanToImpliedProbability(overOdds); // 0-1
       const vigFreeImplied = Math.round((rawImplied / 1.045) * 1000) / 10; // 0-100
-
       const edge = Math.round((modelProb - vigFreeImplied) * 10) / 10;
       const ev = calcEV(modelProb, overOdds);
-
-      // Risk grade based on model probability
+      // Phase BM: Historical hit rate at this line
+      const historicalHitRate = calcHistoricalHitRate(line, hrrGames);
+      const historicalHitRateLong = historicalHitRate;
+      // Phase BM: Consistency score - how well model and history agree (0-100)
+      const consistencyScore = historicalHitRate !== null
+        ? Math.round(Math.max(0, 100 - Math.abs(modelProb - historicalHitRate) * 1.5))
+        : null;
+      // Phase BM: Effective probability blends model + history for risk grading
+      const effectiveProb = historicalHitRate !== null
+        ? Math.round(modelProb * 0.6 + historicalHitRate * 0.4)
+        : modelProb;
       const riskGrade: LineEvaluation['riskGrade'] =
-        modelProb >= 75 ? 'LOW' :
-        modelProb >= 55 ? 'MEDIUM' :
-        modelProb >= 35 ? 'HIGH' : 'LONGSHOT';
-
-      // Line type classification
+        effectiveProb >= 75 ? 'LOW' :
+        effectiveProb >= 55 ? 'MEDIUM' :
+        effectiveProb >= 35 ? 'HIGH' : 'LONGSHOT';
       const lineType: LineEvaluation['lineType'] =
-        modelProb >= 75 ? 'SAFE LINE' :
-        modelProb >= 55 ? 'VALUE LINE' :
-        modelProb >= 35 ? 'AGGRESSIVE LINE' : 'LONGSHOT LINE';
-
-      // Preliminary verdict (will be updated after best-line selection)
+        effectiveProb >= 75 ? 'SAFE LINE' :
+        effectiveProb >= 55 ? 'VALUE LINE' :
+        effectiveProb >= 35 ? 'AGGRESSIVE LINE' : 'LONGSHOT LINE';
       const verdict: LineEvaluation['verdict'] =
         edge <= 0 ? 'OVERPRICED' :
-        modelProb >= 75 ? 'BEST SAFE LINE' :
-        modelProb >= 55 ? 'GOOD VALUE' :
-        modelProb >= 35 ? 'HIGHER RISK' : 'LONGSHOT';
-
+        effectiveProb >= 75 ? 'BEST SAFE LINE' :
+        effectiveProb >= 55 ? 'GOOD VALUE' :
+        effectiveProb >= 35 ? 'HIGHER RISK' : 'LONGSHOT';
       return {
         line,
         bookOdds: overOdds,
         bookImpliedProb: vigFreeImplied,
         modelProb,
+        historicalHitRate,
+        historicalHitRateLong,
         edge,
         ev,
+        consistencyScore,
         riskGrade,
         lineType,
         verdict,
         isRecommended: false,
       };
     });
-
-  // Select best line:
-  //   Priority 1: Highest model probability among positive-EV lines (edge > 0)
-  //               — always prefer the safest line that still has value
-  //               — e.g. O 1.5 at 85% model prob beats O 3 at 44% model prob
-  //   Priority 2: If no positive-EV lines exist, fall back to highest model probability
-  //
-  //   NOTE: We intentionally do NOT sort by highest EV first because a high-EV line
-  //   is often a high-risk line (e.g. O 3 at +126) that we want to avoid suggesting.
-  //   The goal is to recommend the SAFEST line that still has a positive edge.
+  // Phase BM: Multi-factor composite scoring for best-line selection
+  // Composite = 40% model prob + 30% historical hit rate + 20% EV (normalized) + 10% consistency
+  // Must have positive EV - never recommend negative-EV even if safer
+  function compositeScore(e: LineEvaluation): number {
+    const modelScore = e.modelProb;
+    const histScore = e.historicalHitRate ?? e.modelProb;
+    const evNorm = Math.min(100, Math.max(0, ((e.ev ?? 0) + 10) * 5));
+    const consistScore = e.consistencyScore ?? 50;
+    return modelScore * 0.40 + histScore * 0.30 + evNorm * 0.20 + consistScore * 0.10;
+  }
   const positiveEvLines = evaluations.filter(e => (e.edge ?? 0) > 0);
-
   let bestEval: LineEvaluation | null = null;
-
   if (positiveEvLines.length > 0) {
-    // Sort by model probability desc (safest first), then by edge desc as tiebreak
+    // Sort by composite score desc; tiebreak: prefer lower line (safer)
     positiveEvLines.sort((a, b) => {
-      const probDiff = b.modelProb - a.modelProb;
-      if (Math.abs(probDiff) >= 5) return probDiff; // meaningful probability difference
-      return (b.edge ?? 0) - (a.edge ?? 0); // tiebreak: higher edge
+      const scoreDiff = compositeScore(b) - compositeScore(a);
+      if (Math.abs(scoreDiff) >= 3) return scoreDiff;
+      return a.line - b.line;
     });
     bestEval = positiveEvLines[0];
   } else {
-    // No positive-EV lines — fall back to highest model probability (safest play)
-    const sorted = [...evaluations].sort((a, b) => b.modelProb - a.modelProb);
+    // No positive-EV lines - fall back to highest composite score
+    const sorted = [...evaluations].sort((a, b) => compositeScore(b) - compositeScore(a));
     bestEval = sorted[0] ?? null;
   }
 
@@ -589,7 +610,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       overOdds: al.overOdds ?? null, // may be null at this stage
     })).filter((al: any) => al.overOdds !== null);
     const { recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations } =
-      selectBestLine(lambda, modelAltLines, null, null);
+      selectBestLine(lambda, modelAltLines, null, null, pick.last5Games ?? []);
     return { ...pick, recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations };
   });
 
@@ -691,7 +712,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       console.log(`[BK-DEBUG] ${pick.playerName}: lambda=${lambda}, featuredLine=${featuredLine}, featuredOverOdds=${finalFeaturedOverOdds}, sbAltLines=${JSON.stringify(sbAltLines)}`);
     }
     const { recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations } =
-      selectBestLine(lambda, sbAltLines, featuredLine, finalFeaturedOverOdds);
+      selectBestLine(lambda, sbAltLines, featuredLine, finalFeaturedOverOdds, pick.last5Games ?? []);
     if (pick.playerName && pick.playerName.toLowerCase().includes('baldwin')) {
       console.log(`[BK-DEBUG] ${pick.playerName}: recommendedLine=${recommendedLine}, verdict=${bestLineVerdict}, reason=${bestLineReason}`);
     }
