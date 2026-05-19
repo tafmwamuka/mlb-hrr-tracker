@@ -1308,7 +1308,10 @@ export const aiPicksRouter = router({
       // ── STAGE 3d: Official Pull Store — 3-pull stability system + Early Auto-Lock ─────
       // Determine current NDT time and slate phase
       const nowET3 = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/St_Johns' }));
-      const todayETDate3 = `${nowET3.getFullYear()}-${String(nowET3.getMonth() + 1).padStart(2, '0')}-${String(nowET3.getDate()).padStart(2, '0')}`;
+      // Phase BN fix: use ET (America/New_York) for the DB date key to match getDataDate() in results.ts
+      // NDT is UTC-2:30, ET is UTC-4; using NDT here caused date mismatches around midnight
+      const nowET3_forDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const todayETDate3 = `${nowET3_forDate.getFullYear()}-${String(nowET3_forDate.getMonth() + 1).padStart(2, '0')}-${String(nowET3_forDate.getDate()).padStart(2, '0')}`;
       const currentSlatePhase: SlatePhase = getSlatePhase(nowET3);
       const currentLineupSource = lineupData.lineupSource;
 
@@ -1520,6 +1523,46 @@ export const aiPicksRouter = router({
 
         moneyPicks3 = stableBoard;
         console.log(`[HRRPicks] Serving stable board (${officialPullStore?.phase} pull): ${moneyPicks3.length} picks`);
+        // Phase BN fix: lazy DB sync — if the DB has no rows for today, re-persist the current board
+        // This ensures Results tab always mirrors Money Picks even if the server restarted after the official pull
+        void (async () => {
+          try {
+            const db = await getDb();
+            if (!db || moneyPicks3.length === 0) return;
+            const { count: countResult } = await import('drizzle-orm');
+            const existing = await db.select({ id: dailyResults.id })
+              .from(dailyResults)
+              .where(and(eq(dailyResults.gameDate, todayETDate3), eq(dailyResults.source, 'money')))
+              .limit(1);
+            if (existing.length > 0) return; // DB already has rows — no need to re-persist
+            const rows = (moneyPicks3 as any[]).map((p: any) => ({
+              gameDate: todayETDate3,
+              playerId: p.playerId,
+              playerName: p.playerName,
+              playerTeam: p.team ?? p.playerTeam ?? '',
+              statType: 'hrr' as const,
+              source: 'money' as const,
+              line: String(p.recommendedLine ?? p.hrrLine ?? 1.5),
+              probability: Math.round(p.recommendedProb ?? p.overProb ?? 0),
+              actualValue: null,
+              result: 'pending' as const,
+              odds: p.bookOdds != null ? String(p.bookOdds) : null,
+              oddsProvider: p.bookOddsProvider ?? null,
+              streakLabel: null,
+              dayNightLabel: null,
+              tier: p.overallScore >= 83 ? 'S' : p.overallScore >= 74 ? 'A' : p.overallScore >= 68 ? 'Lean' : null,
+              edge: null,
+              closingLineValue: null,
+              matrixScore: p.overallScore ?? null,
+            }));
+            if (rows.length > 0) {
+              await db.insert(dailyResults).values(rows);
+              console.log(`[HRRPicks] Lazy DB sync: persisted ${rows.length} picks to DB for ${todayETDate3}`);
+            }
+          } catch (err) {
+            console.error('[HRRPicks] Lazy DB sync failed:', err);
+          }
+        })();
       }
 
       // Compute early-locked game count for UI

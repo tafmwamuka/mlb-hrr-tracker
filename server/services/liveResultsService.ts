@@ -2,6 +2,9 @@
  * Live Results Service
  * Fetches real-time game statuses and player boxscore stats from MLB API.
  * Used by the Results page to show pick outcomes as games finish.
+ *
+ * Phase BN: added player-name secondary index so grading works even when
+ * the stored playerId doesn't match the MLB boxscore person.id.
  */
 
 const MLB_API_BASE = "https://statsapi.mlb.com/api/v1";
@@ -12,6 +15,8 @@ const GAME_STATUS_TTL = 60 * 1000; // 1 minute
 
 // Cache for boxscores (longer TTL since final games don't change)
 const boxscoreCache = new Map<number, { data: Map<number, PlayerBoxStats>; timestamp: number }>();
+// Phase BN: secondary name-based index for fallback grading
+const boxscoreNameCache = new Map<number, { data: Map<string, PlayerBoxStats>; timestamp: number }>();
 const BOXSCORE_TTL = 5 * 60 * 1000; // 5 minutes for final games
 const LIVE_BOXSCORE_TTL = 90 * 1000; // 90 seconds for live games
 
@@ -92,8 +97,9 @@ function mapGameStatus(abstractState: string): GameStatus["status"] {
 }
 
 /**
- * Fetch boxscore stats for a specific game
- * Returns a map of playerId -> PlayerBoxStats
+ * Fetch boxscore stats for a specific game.
+ * Returns a map of playerId -> PlayerBoxStats.
+ * Also populates the name-based secondary index (boxscoreNameCache).
  */
 export async function fetchGameBoxscore(gamePk: number, gameStatus: string): Promise<Map<number, PlayerBoxStats>> {
   // Check cache
@@ -104,6 +110,7 @@ export async function fetchGameBoxscore(gamePk: number, gameStatus: string): Pro
   }
 
   const statsMap = new Map<number, PlayerBoxStats>();
+  const nameMap = new Map<string, PlayerBoxStats>(); // Phase BN: name-keyed fallback
 
   try {
     const url = `${MLB_API_BASE}/game/${gamePk}/boxscore`;
@@ -118,10 +125,11 @@ export async function fetchGameBoxscore(gamePk: number, gameStatus: string): Pro
 
       for (const [, player] of Object.entries(team.players) as [string, any][]) {
         const playerId = player?.person?.id;
+        const fullName: string = (player?.person?.fullName || "").toLowerCase().trim();
         const batting = player?.stats?.batting;
 
         if (playerId && batting) {
-          statsMap.set(playerId, {
+          const stats: PlayerBoxStats = {
             playerId,
             hits: batting.hits || 0,
             runs: batting.runs || 0,
@@ -130,13 +138,16 @@ export async function fetchGameBoxscore(gamePk: number, gameStatus: string): Pro
             homeRuns: batting.homeRuns || 0,
             gameStatus,
             gamePk,
-          });
+          };
+          statsMap.set(playerId, stats);
+          if (fullName) nameMap.set(fullName, stats);
         }
       }
     }
 
-    // Cache the result
+    // Cache both indexes
     boxscoreCache.set(gamePk, { data: statsMap, timestamp: Date.now() });
+    boxscoreNameCache.set(gamePk, { data: nameMap, timestamp: Date.now() });
   } catch (error) {
     console.error(`[LiveResults] Error fetching boxscore for game ${gamePk}:`, error);
   }
@@ -145,12 +156,14 @@ export async function fetchGameBoxscore(gamePk: number, gameStatus: string): Pro
 }
 
 /**
- * Get live stats for specific players across all today's games
- * Only fetches boxscores for games that are In Progress or Final
+ * Get live stats for specific players across all today's games.
+ * Only fetches boxscores for games that are In Progress or Final.
+ * Phase BN: also returns a name-based map for fallback grading.
  */
 export async function getLivePlayerStats(
   playerIds: number[],
-  dateStr: string
+  dateStr: string,
+  playerNames?: string[] // Phase BN: optional name list for fallback lookup
 ): Promise<Map<number, PlayerBoxStats>> {
   const result = new Map<number, PlayerBoxStats>();
 
@@ -174,11 +187,44 @@ export async function getLivePlayerStats(
       batch.map((g) => fetchGameBoxscore(g.gamePk, g.status))
     );
 
-    for (const boxscore of boxscores) {
+    for (let j = 0; j < batch.length; j++) {
+      const boxscore = boxscores[j];
+      const gamePk = batch[j].gamePk;
+
       for (const playerId of playerIds) {
         const stats = boxscore.get(playerId);
         if (stats) {
           result.set(playerId, stats);
+        }
+      }
+
+      // Phase BN: fallback by player name for IDs that didn't resolve
+      if (playerNames && playerNames.length > 0) {
+        const nameBoxscore = boxscoreNameCache.get(gamePk)?.data;
+        if (nameBoxscore) {
+          for (let k = 0; k < playerIds.length; k++) {
+            if (!result.has(playerIds[k]) && playerNames[k]) {
+              const nameLower = playerNames[k].toLowerCase().trim();
+              // Try exact match first
+              let nameStats = nameBoxscore.get(nameLower);
+              // Try partial match (last name) if exact fails
+              if (!nameStats) {
+                const lastName = nameLower.split(" ").pop() || "";
+                if (lastName.length > 2) {
+                  Array.from(nameBoxscore.entries()).some(([key, val]) => {
+                    if (key.includes(lastName)) {
+                      nameStats = val;
+                      return true;
+                    }
+                    return false;
+                  });
+                }
+              }
+              if (nameStats) {
+                result.set(playerIds[k], nameStats);
+              }
+            }
+          }
         }
       }
     }
@@ -193,4 +239,5 @@ export async function getLivePlayerStats(
 export function clearLiveResultsCache() {
   gameStatusCache = null;
   boxscoreCache.clear();
+  boxscoreNameCache.clear();
 }

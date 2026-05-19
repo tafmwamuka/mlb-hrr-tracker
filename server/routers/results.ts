@@ -152,8 +152,10 @@ export const resultsRouter = router({
       }
 
       // Get live stats for money pick players only
+      // Phase BN: also pass player names for fallback grading when IDs don't match boxscore
       const uniquePlayerIds = Array.from(new Set(moneyPickResults.map(p => p.playerId)));
-      const liveStats = await getLivePlayerStats(uniquePlayerIds, dateStr);
+      const uniquePlayerNames = moneyPickResults.map(p => p.playerName);
+      const liveStats = await getLivePlayerStats(uniquePlayerIds, dateStr, uniquePlayerNames);
 
       // ═══════════════════════════════════════════════════════════════════
       // BUILD RESULTS

@@ -1405,7 +1405,7 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] TypeScript: 0 errors
 - [x] Checkpoint
 
-## Phase BN: Results Tab Fix — DB Snapshot Persistence
+## Phase BN: Results Tab Fix — DB Snapshot Persistence (COMPLETED)
 
 - [x] Audit Results pipeline: found getTodayResults was re-running getEnrichedMoneyPicks() (different result set each call)
 - [x] Audit playerGameMap: found ID-only lookup missed early-game picks where lineup ID didn't match
@@ -1414,4 +1414,4 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Add player-name fallback in playerGameMap lookup for early-game picks
 - [x] Keep pipeline fallback when DB has no rows yet (first pull of the day)
 - [x] TypeScript: 0 errors
-- [ ] Checkpoint
+- [x] Checkpoint
