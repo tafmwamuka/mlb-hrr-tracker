@@ -1403,4 +1403,15 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Update `MoneyPicksTab` `lineEvaluations` interface: add `historicalHitRate`, `historicalHitRateLong`, `consistencyScore`
 - [x] Update alt line table: add **L5 Hit%** column with green/yellow/red coloring
 - [x] TypeScript: 0 errors
+- [x] Checkpoint
+
+## Phase BN: Results Tab Fix — DB Snapshot Persistence
+
+- [x] Audit Results pipeline: found getTodayResults was re-running getEnrichedMoneyPicks() (different result set each call)
+- [x] Audit playerGameMap: found ID-only lookup missed early-game picks where lineup ID didn't match
+- [x] Add DB persistence in aiPicks.ts: persist officialPullStore picks to dailyResults table on every official board save
+- [x] Rewrite getTodayResults to read from DB snapshot first (exact same picks as Money Picks board)
+- [x] Add player-name fallback in playerGameMap lookup for early-game picks
+- [x] Keep pipeline fallback when DB has no rows yet (first pull of the day)
+- [x] TypeScript: 0 errors
 - [ ] Checkpoint

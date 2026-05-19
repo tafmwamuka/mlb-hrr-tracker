@@ -4,6 +4,9 @@
  */
 
 import { router, publicProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+import { dailyResults } from "../../drizzle/schema";
+import { eq, and } from "drizzle-orm";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import type { AIPick } from "../services/aiRankingService";
 // Phase AP: getMockSavantData removed — savant enrichment now uses real statcastCache only
@@ -1414,6 +1417,42 @@ export const aiPicksRouter = router({
             officialPicks: moneyPicks3,
           };
           console.log(`[HRRPicks] Official board saved: ${moneyPicks3.length} picks (phase=${currentSlatePhase}, earlyLocked=${earlyLockedGameIds.size} games)`);
+          // Phase BN: Persist the official board to DB so Results tab always mirrors Money Picks exactly
+          void (async () => {
+            try {
+              const db = await getDb();
+              if (!db) return;
+              const rows = moneyPicks3.map((p: any) => ({
+                gameDate: todayETDate3,
+                playerId: p.playerId,
+                playerName: p.playerName,
+                playerTeam: p.team ?? p.playerTeam ?? "",
+                statType: "hrr" as const,
+                source: "money" as const,
+                line: String(p.recommendedLine ?? p.hrrLine ?? 1.5),
+                probability: Math.round(p.recommendedProb ?? p.overProb ?? 0),
+                actualValue: null,
+                result: "pending" as const,
+                odds: p.bookOdds != null ? String(p.bookOdds) : null,
+                oddsProvider: p.bookOddsProvider ?? null,
+                streakLabel: null,
+                dayNightLabel: null,
+                tier: p.overallScore >= 83 ? "S" : p.overallScore >= 74 ? "A" : p.overallScore >= 68 ? "Lean" : null,
+                edge: null,
+                closingLineValue: null,
+                matrixScore: p.overallScore ?? null,
+              }));
+              // Delete existing pending rows for today (money source) then re-insert
+              await db.delete(dailyResults)
+                .where(and(eq(dailyResults.gameDate, todayETDate3), eq(dailyResults.source, "money"), eq(dailyResults.result, "pending")));
+              if (rows.length > 0) {
+                await db.insert(dailyResults).values(rows);
+              }
+              console.log(`[HRRPicks] Persisted ${rows.length} picks to DB for ${todayETDate3}`);
+            } catch (err) {
+              console.error("[HRRPicks] Failed to persist picks to DB:", err);
+            }
+          })();
         } else if (officialPullStore?.officialPicks?.length) {
           moneyPicks3 = officialPullStore.officialPicks;
           console.warn(`[HRRPicks] New official pull returned 0 picks — keeping previous board (${moneyPicks3.length} picks)`);

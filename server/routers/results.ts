@@ -55,50 +55,92 @@ export const resultsRouter = router({
   getTodayResults: publicProcedure.query(async () => {
     try {
       const dateStr = await getDataDate();
+      const db = await getDb();
 
       // ═══════════════════════════════════════════════════════════════════
-      // MONEY PICKS: use the SAME pipeline as getHRRPicks → MoneyPicksTab
+      // Phase BN: Read from DB snapshot (persisted at pull time by aiPicks.ts)
+      // This guarantees Results always shows EXACTLY the same picks as Money Picks.
+      // If DB has no rows yet (first pull of the day), fall back to live pipeline.
       // ═══════════════════════════════════════════════════════════════════
-      const hrrResult = await getEnrichedMoneyPicks();
-      if (hrrResult.lineupsPending) {
-        return {
-          success: true,
-          results: [],
-          lineupsPending: true,
-          date: dateStr,
-          hitRate: 0,
-          totalPlays: 0,
-          hasActuals: false,
-          gamesInProgress: 0,
-          gamesCompleted: 0,
-          gamesScheduled: 0,
-        };
+      let moneyPickResults: Array<{
+        playerId: number;
+        playerName: string;
+        team: string;
+        line: number;
+        probability: number;
+        pitcher?: string;
+        pitcherTeam?: string;
+        expectedTotal?: number;
+        reasoning?: string;
+        odds?: string | null;
+      }> = [];
+
+      if (db) {
+        const dbRows = await db
+          .select()
+          .from(dailyResults)
+          .where(and(
+            eq(dailyResults.gameDate, dateStr),
+            eq(dailyResults.source, "money"),
+          ))
+          .orderBy(desc(dailyResults.probability));
+
+        if (dbRows.length > 0) {
+          moneyPickResults = dbRows.map(row => ({
+            playerId: row.playerId,
+            playerName: row.playerName,
+            team: row.playerTeam,
+            line: parseFloat(row.line) || 1.5,
+            probability: row.probability,
+            odds: row.odds,
+          }));
+        }
       }
 
-      const moneyPickResults = hrrResult.moneyPicks.map(p => ({
-        playerId: p.playerId,
-        playerName: p.playerName,
-        team: p.team,
-        line: p.recommendedLine,
-        probability: p.recommendedProb,
-        pitcher: p.pitcher,
-        pitcherTeam: p.pitcherTeam,
-        expectedTotal: p.expectedTotal,
-        reasoning: p.reasoning,
-      }));
-
-      // All Plays section removed — Results tab shows Money Picks only
+      // Fallback: re-run pipeline if DB has no rows yet
+      if (moneyPickResults.length === 0) {
+        const hrrResult = await getEnrichedMoneyPicks();
+        if (hrrResult.lineupsPending) {
+          return {
+            success: true,
+            results: [],
+            lineupsPending: true,
+            date: dateStr,
+            hitRate: 0,
+            totalPlays: 0,
+            hasActuals: false,
+            gamesInProgress: 0,
+            gamesCompleted: 0,
+            gamesScheduled: 0,
+          };
+        }
+        moneyPickResults = hrrResult.moneyPicks.map(p => ({
+          playerId: p.playerId,
+          playerName: p.playerName,
+          team: p.team,
+          line: p.recommendedLine,
+          probability: p.recommendedProb,
+          pitcher: p.pitcher,
+          pitcherTeam: p.pitcherTeam,
+          expectedTotal: p.expectedTotal,
+          reasoning: p.reasoning,
+        }));
+      }
 
       // ═══════════════════════════════════════════════════════════════════
       // GAME STATUS + BOXSCORES
       // ═══════════════════════════════════════════════════════════════════
 
       // Build player -> gamePk map from lineup data
+      // Use BOTH player id AND player name as keys for robustness
       const lineupData2 = await getAdaptedLineupData();
       const playerGameMap = new Map<number, number>();
+      const playerNameGameMap = new Map<string, number>(); // fallback by name
       for (const game of lineupData2.games) {
         for (const p of [...game.homeLineup, ...game.awayLineup]) {
           playerGameMap.set(p.id, game.gamePk);
+          const pName = (p as any).name ?? (p as any).fullName ?? "";
+          playerNameGameMap.set(pName.toLowerCase(), game.gamePk);
         }
       }
 
@@ -120,7 +162,11 @@ export const resultsRouter = router({
 
       // Money Picks results (HRR combined)
       for (const pick of moneyPickResults) {
-        const gamePk = playerGameMap.get(pick.playerId) || 0;
+        // Try ID lookup first, then name fallback
+        let gamePk = playerGameMap.get(pick.playerId) || 0;
+        if (!gamePk) {
+          gamePk = playerNameGameMap.get(pick.playerName?.toLowerCase() ?? "") || 0;
+        }
         const gameStatus = gameStatusMap.get(gamePk);
         const playerStats = liveStats.get(pick.playerId);
 
@@ -161,8 +207,6 @@ export const resultsRouter = router({
         });
       }
 
-      // All Plays section removed — Results tab shows Money Picks only
-
       // Sort: Final games first, then In Progress, then Scheduled; within each group sort by probability
       const statusOrder = { "Final": 0, "In Progress": 1, "Scheduled": 2, "Postponed": 3 };
       results.sort((a, b) => {
@@ -176,9 +220,6 @@ export const resultsRouter = router({
       const hitCount = finalResults.filter(r => r.hit === true).length;
       const hitRate = finalResults.length > 0 ? Math.round((hitCount / finalResults.length) * 100) : 0;
 
-      // All money picks — no allplays breakdown needed
-      const moneyHitRate = hitRate;
-
       // Game counts
       const gamesInProgress = gameStatuses.filter(g => g.status === "In Progress").length;
       const gamesCompleted = gameStatuses.filter(g => g.status === "Final").length;
@@ -189,7 +230,7 @@ export const resultsRouter = router({
         results,
         date: dateStr,
         hitRate,
-        moneyHitRate,
+        moneyHitRate: hitRate,
         allPlaysHitRate: 0,
         totalPlays: results.length,
         moneyPlays: moneyPickResults.length,
