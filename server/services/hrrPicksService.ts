@@ -628,6 +628,37 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
             pick.bookOdds = featuredOverOdds > 0 ? `+${featuredOverOdds}` : `${featuredOverOdds}`;
             pick.bookOddsProvider = oddsData.bookmaker;
           }
+          // Phase BK fix: merge sportsbook alternateLines onto pick so selectBestLine
+          // can evaluate ALL available lines with real book odds (not just the featured line)
+          if (oddsData.alternateLines && oddsData.alternateLines.length > 0) {
+            // Build a map of existing model-only alternateLines keyed by line value
+            const existingMap = new Map<number, any>();
+            for (const al of (pick.alternateLines ?? [])) {
+              existingMap.set(al.line, al);
+            }
+            // Merge sportsbook alternateLines — add overOdds to existing entries or create new ones
+            for (const sbAlt of oddsData.alternateLines) {
+              const existing = existingMap.get(sbAlt.line);
+              if (existing) {
+                existing.overOdds = sbAlt.overOdds;
+                existing.underOdds = sbAlt.underOdds;
+                existing.sbImpliedOverProb = sbAlt.impliedOverProb;
+              } else {
+                // Line exists in sportsbook but not in model — add it
+                const modelProb = Math.round(poissonOverProbability(sbAlt.line, pick.expectedTotal ?? 1.5) * 100);
+                existingMap.set(sbAlt.line, {
+                  line: sbAlt.line,
+                  overProb: modelProb,
+                  underProb: 100 - modelProb,
+                  overOdds: sbAlt.overOdds,
+                  underOdds: sbAlt.underOdds,
+                  sbImpliedOverProb: sbAlt.impliedOverProb,
+                });
+              }
+            }
+            // Replace pick.alternateLines with the merged set, sorted ascending by line
+            pick.alternateLines = Array.from(existingMap.values()).sort((a: any, b: any) => a.line - b.line);
+          }
         }
       }
     } catch (err) {

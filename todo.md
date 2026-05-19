@@ -1381,7 +1381,7 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Update pick card: show Recommended Line, Book Odds, Book %, Model %, Edge, Risk, Reason
 - [x] Update expanded alt line table: Line | Odds | Book % | Model % | Edge | Verdict columns
 - [x] TypeScript: 0 errors
-- [ ] Checkpoint
+- [x] Checkpoint
 
 ## Phase BL: Early Game Final Lock System
 - [x] Verify isGameReadyForEarlyLock already checks: confirmed lineup + 30-min stabilization + odds loaded + within 90 min of first pitch
@@ -1390,4 +1390,4 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Add "EARLY LOCKED PICKS" section header in MoneyPicksTab when earlyLockedCount > 0
 - [x] Ensure later-game picks continue to appear as they become ready (no blocking)
 - [x] TypeScript: 0 errors
-- [ ] Checkpoint
+- [x] Checkpoint

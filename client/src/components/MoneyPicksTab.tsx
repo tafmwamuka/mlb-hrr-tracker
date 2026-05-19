@@ -1393,6 +1393,10 @@ export function MoneyPicksTab() {
           confirmedOddsProvider: (pick as any).confirmedOddsProvider ?? null,
           lockReason: (pick as any).lockReason ?? null,
           isLaterQualifier: (pick as any).isLaterQualifier ?? false,
+          // Phase BK: alt line optimization fields
+          lineEvaluations: (pick as any).lineEvaluations ?? null,
+          bestLineVerdict: (pick as any).bestLineVerdict ?? null,
+          bestLineReason: (pick as any).bestLineReason ?? null,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)
