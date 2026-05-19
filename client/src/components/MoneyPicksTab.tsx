@@ -108,6 +108,13 @@ interface MoneyPick {
   isEarlyLocked?: boolean;      // true when game was early-locked before scheduled pull
   gameLockTime?: string | null; // ISO timestamp when game was locked
   gameLockReason?: 'early_auto_lock' | 'scheduled_pull' | null;
+  // Phase BJ: Strict locked board fields
+  confirmedAt?: string | null;          // ISO timestamp when pick was locked onto the board
+  confirmedOdds?: number | null;        // American odds at time of lock
+  confirmedOddsProvider?: string | null; // Sportsbook that provided the locked odds
+  lockReason?: string | null;           // Human-readable lock reason
+  isLaterQualifier?: boolean;           // true when pick qualified after board was full
+  laterQualifierReason?: string | null;  // human-readable reason (e.g. 'Board full at time of qualification')
   // Phase AW: Value Intelligence System
   valueAnalysis?: {
     trueProb: number;
@@ -670,6 +677,35 @@ function MoneyPickCard({
               title={pick.gameLockTime ? `Early locked at ${new Date(pick.gameLockTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/St_Johns' })} NDT` : 'Game locked early — confirmed lineup + 30min stability'}
             >
               🔒 EARLY LOCKED
+            </div>
+          )}
+
+          {/* Phase BJ: Confirmed-at lock time badge */}
+          {pick.confirmedAt && (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+              style={{ background: "oklch(0.72 0.18 165 / 10%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 25%)" }}
+              title={pick.lockReason ?? 'Locked on confirmed board'}
+            >
+              🔒 LOCKED {new Date(pick.confirmedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/St_Johns' })} NDT
+            </div>
+          )}
+
+          {/* Phase BJ: Confirmed odds vs current odds comparison */}
+          {pick.confirmedAt && pick.confirmedOdds != null && pick.bookOdds != null && pick.confirmedOdds !== pick.bookOdds && (
+            <div
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold"
+              style={{ background: "oklch(0.82 0.17 85 / 10%)", border: "1px solid oklch(0.82 0.17 85 / 25%)" }}
+              title="Odds have moved since this pick was locked">
+              <span style={{ color: 'oklch(0.50 0.015 255)' }}>Locked</span>
+              <span style={{ color: 'oklch(0.82 0.17 85)' }}>{pick.confirmedOdds > 0 ? '+' : ''}{pick.confirmedOdds}</span>
+              <span style={{ color: 'oklch(0.35 0.015 255)' }}>→</span>
+              <span style={{ color: 'oklch(0.50 0.015 255)' }}>Now</span>
+              <span style={{
+                color: (pick.bookOdds > pick.confirmedOdds)
+                  ? 'oklch(0.72 0.18 165)'  // odds got better (higher = more +EV for over)
+                  : 'oklch(0.68 0.22 25)',  // odds got worse
+              }}>{pick.bookOdds > 0 ? '+' : ''}{pick.bookOdds}</span>
             </div>
           )}
 
@@ -1259,6 +1295,12 @@ export function MoneyPicksTab() {
           isEarlyLocked: (pick as any).isEarlyLocked ?? false,
           gameLockTime: (pick as any).gameLockTime ?? null,
           gameLockReason: (pick as any).gameLockReason ?? null,
+          // Phase BJ: strict locked board fields
+          confirmedAt: (pick as any).confirmedAt ?? null,
+          confirmedOdds: (pick as any).confirmedOdds ?? null,
+          confirmedOddsProvider: (pick as any).confirmedOddsProvider ?? null,
+          lockReason: (pick as any).lockReason ?? null,
+          isLaterQualifier: (pick as any).isLaterQualifier ?? false,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)
@@ -1324,6 +1366,28 @@ export function MoneyPicksTab() {
     const nonEmpty = [slateGroups.early, slateGroups.main, slateGroups.late].filter(g => g.length > 0);
     return nonEmpty.length > 1;
   }, [slateGroups]);
+
+  // Phase BJ: Later qualifiers — picks that qualified after the board was full
+  const laterQuals: MoneyPick[] = useMemo(() => {
+    const rawLater = (data as any)?.laterQualifiers ?? [];
+    return rawLater.map((pick: any) => {
+      const alternateLines: AlternateLine[] = pick.alternateLines || [];
+      const qualifyingLines = alternateLines.filter((a: AlternateLine) => a.overProb >= 75).sort((a: AlternateLine, b: AlternateLine) => b.line - a.line);
+      const recommended = pick.recommendedLine != null ? { line: pick.recommendedLine, overProb: pick.recommendedProb } : qualifyingLines[0];
+      if (!recommended) return null;
+      return {
+        ...pick,
+        alternateLines,
+        recommendedLine: recommended.line,
+        recommendedProb: recommended.overProb,
+        streak: pick.streakInfo ? (pick.streakInfo.isOnStreak && pick.streakInfo.streakLength >= 3 ? `🔥 ${pick.streakInfo.streakLength}-game streak` : `${pick.streakInfo.last5HitRate}% last 5`) : generateStreak(pick.expectedTotal, recommended.line, recommended.overProb),
+        odds: pick.bookOdds ? String(pick.bookOdds) : null,
+        oddsProvider: pick.bookOddsProvider && pick.bookOddsProvider !== 'model' ? pick.bookOddsProvider : null,
+        isLaterQualifier: true,
+        laterQualifierReason: pick.laterQualifierReason ?? 'Board full at time of qualification',
+      } as MoneyPick;
+    }).filter(Boolean) as MoneyPick[];
+  }, [data]);
 
   const toggleSelect = (index: number) => {
     setSelectedPicks(prev => {
@@ -1838,6 +1902,47 @@ export function MoneyPicksTab() {
             ))
           )}
         </div>
+      )}
+
+      {/* Phase BJ: Later Qualifiers Section */}
+      {laterQuals.length > 0 && (
+          <div className="rounded-2xl overflow-hidden border" style={{ background: "oklch(0.13 0.022 255)", borderColor: "oklch(0.72 0.10 220 / 25%)" }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "oklch(1 0 0 / 6%)" }}>
+              <div className="flex items-center gap-2">
+                <Clock size={13} style={{ color: "oklch(0.72 0.10 220)" }} />
+                <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "oklch(0.72 0.10 220)" }}>Later Qualifiers</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "oklch(0.72 0.10 220 / 12%)", color: "oklch(0.72 0.10 220)", border: "1px solid oklch(0.72 0.10 220 / 25%)" }}>
+                  {laterQuals.length} PLAY{laterQuals.length !== 1 ? 'S' : ''}
+                </span>
+              </div>
+              <span className="text-[9px] text-[oklch(0.40_0.015_255)]" title="These picks qualified for the board after it was already full">BOARD FULL</span>
+            </div>
+            {/* Explanation */}
+            <div className="px-4 py-2.5 text-[10px] leading-relaxed" style={{ color: "oklch(0.50 0.015 255)", background: "oklch(0.72 0.10 220 / 4%)" }}>
+              These plays <strong className="text-white">qualified for the board</strong> but arrived after the {(data as any)?.lockedBoardSize ?? 10}-pick limit was reached. They meet all model thresholds and are worth tracking.
+            </div>
+            {/* Pick rows */}
+            <div className="px-4 pb-4 pt-2 space-y-2">
+              {laterQuals.map((pick, i) => (
+                <div key={i} className="flex items-center justify-between p-2.5 rounded-xl" style={{ background: "oklch(0.16 0.022 255)", border: "1px solid oklch(1 0 0 / 6%)" }}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-white truncate">{pick.playerName}</span>
+                      {(() => { const tier = getScoreTier(pick.overallScore ?? pick.recommendedProb); return <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: tier.bg, color: tier.color, border: `1px solid ${tier.border}` }}>{tier.label}</span>; })()}
+                    </div>
+                    <div className="text-[10px] text-[oklch(0.45_0.015_255)] mt-0.5">{pick.team} vs {pick.pitcherTeam} · #{pick.battingPosition}</div>
+                    <div className="text-[9px] text-[oklch(0.40_0.015_255)] mt-0.5">{pick.laterQualifierReason ?? 'Board full at time of qualification'}</div>
+                  </div>
+                  <div className="text-right shrink-0 ml-3">
+                    <div className="text-sm font-bold" style={{ color: getProbColor(pick.recommendedProb) }}>HRR O {pick.recommendedLine}</div>
+                    <div className="text-[10px] font-bold" style={{ color: getProbColor(pick.recommendedProb) }}>{pick.recommendedProb}%</div>
+                    {pick.odds && <div className="text-[9px] text-[oklch(0.50_0.015_255)]">{pick.odds}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
       )}
 
       {/* Disclaimer */}

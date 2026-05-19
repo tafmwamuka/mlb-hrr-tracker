@@ -603,6 +603,14 @@ interface LockedPick {
   lineupSource: 'confirmed' | 'projected';
   lockType: 'time' | 'confirmed'; // 'confirmed' = permanent until game start
   gameTime: string | null;        // ISO game start time for expiry check
+  // Phase BJ: snapshot of odds at confirmation time
+  confirmedAt: number | null;           // ms timestamp when pick was first confirmed
+  confirmedOdds: string | null;         // American odds at confirmation (e.g. "-115")
+  confirmedOddsProvider: string | null; // bookmaker at confirmation
+  lockReason: string | null;            // human-readable reason for lock
+  pitcherId: number | null;             // pitcher id at lock time — for pitcher-change detection
+  pitcherName: string | null;           // pitcher name at lock time
+  gamePk: number | null;                // game pk for postponement detection
 }
 
 const PICK_LOCK_WINDOW_MS = 30 * 60 * 1000; // 30 minutes (time locks only)
@@ -610,6 +618,117 @@ const SCORE_BUFFER = 5;                       // allow 5-pt drop before removing
 const SCORE_CHANGE_THRESHOLD = 15;            // flag confirmed picks that drop >15 pts
 const GAME_GRACE_MS = 5 * 60 * 1000;         // keep picks 5 min after game start
 const lockedPicksStore = new Map<string, LockedPick>();
+
+// ─── Phase BJ: Strict Locked Board Store ─────────────────────────────────────
+// Once a pick reaches 'confirmed' or 'final_official' status it is added here.
+// The locked board is the source of truth between official pulls — new qualifying
+// picks that cannot fit (board already full) are routed to laterQualifiers instead.
+//
+// Major-event invalidation rules (the ONLY reasons to remove a confirmed pick):
+//   1. Player confirmed scratched / not in any lineup
+//   2. Game postponed or cancelled
+//   3. Probable pitcher changed (different pitcher id)
+//   4. Sportsbook market removed (no odds data + was previously live)
+//   5. Score drops ≥8 pts since lock (hard downgrade)
+//   6. Injury flag detected in riskFlags
+const MAX_BOARD_SIZE = 12; // maximum locked picks on the official board
+
+interface LockedBoardEntry {
+  pick: any;                    // full pick object at lock time
+  lockedAt: number;             // ms timestamp
+  lockPhase: SlatePhase;        // phase when locked
+  confirmedOdds: string | null; // odds snapshot at lock time
+  confirmedOddsProvider: string | null;
+  pitcherId: number | null;     // pitcher id at lock time
+  pitcherName: string | null;
+  gamePk: number | null;
+  scoreAtLock: number;          // overallScore at lock time
+}
+
+// The persistent locked board — survives between recalculations
+const lockedBoardStore = new Map<string, LockedBoardEntry>(); // playerName → entry
+
+/** Add or refresh a pick in the locked board */
+function addToLockedBoard(pick: any, phase: SlatePhase, matchups: any[]): void {
+  const existing = lockedBoardStore.get(pick.playerName);
+  if (existing) return; // already locked — do not overwrite
+  const matchup = matchups.find((m: any) => m.playerName === pick.playerName);
+  lockedBoardStore.set(pick.playerName, {
+    pick,
+    lockedAt: Date.now(),
+    lockPhase: phase,
+    confirmedOdds: pick.bookOdds ?? null,
+    confirmedOddsProvider: pick.bookOddsProvider ?? null,
+    pitcherId: matchup?.pitcher?.id ?? null,
+    pitcherName: matchup?.pitcher?.name ?? pick.pitcher ?? null,
+    gamePk: matchup?.gamePk ?? null,
+    scoreAtLock: pick.overallScore ?? 0,
+  });
+  console.log(`[BJ] Locked board: added ${pick.playerName} (score=${pick.overallScore}, phase=${phase})`);
+}
+
+/**
+ * Phase BJ: Validate the locked board against current lineup/game state.
+ * Removes picks that have a major invalidating event.
+ * Returns the list of removed picks with reasons for UI display.
+ */
+function validateLockedBoard(
+  currentMatchups: any[],
+  currentScoreMap: Map<string, number>,
+  games: any[],
+): { removedName: string; reason: string }[] {
+  const removed: { removedName: string; reason: string }[] = [];
+  const allLineupNames = new Set(currentMatchups.map((m: any) => m.playerName));
+
+  for (const [playerName, entry] of Array.from(lockedBoardStore.entries())) {
+    let invalidateReason: string | null = null;
+
+    // Rule 1: Player not in any lineup (confirmed scratch)
+    if (!allLineupNames.has(playerName)) {
+      invalidateReason = 'Player scratched from lineup';
+    }
+
+    // Rule 2: Game postponed or cancelled
+    if (!invalidateReason && entry.gamePk !== null) {
+      const game = games.find((g: any) => g.gamePk === entry.gamePk);
+      if (game && (game.status === 'Postponed' || game.status === 'Cancelled' || game.status === 'Suspended')) {
+        invalidateReason = `Game ${game.status.toLowerCase()}`;
+      }
+    }
+
+    // Rule 3: Probable pitcher changed
+    if (!invalidateReason && entry.pitcherId !== null) {
+      const matchup = currentMatchups.find((m: any) => m.playerName === playerName);
+      if (matchup?.pitcher?.id && matchup.pitcher.id !== entry.pitcherId) {
+        invalidateReason = `Pitcher changed: ${entry.pitcherName} → ${matchup.pitcher.name}`;
+      }
+    }
+
+    // Rule 4: Score drops ≥8 pts since lock (hard downgrade)
+    if (!invalidateReason) {
+      const currentScore = currentScoreMap.get(playerName);
+      if (currentScore !== undefined && entry.scoreAtLock - currentScore >= 8) {
+        invalidateReason = `Score dropped ${Math.round(entry.scoreAtLock - currentScore)} pts since lock`;
+      }
+    }
+
+    // Rule 5: Injury flag in current pick riskFlags
+    if (!invalidateReason) {
+      const currentMatchup = currentMatchups.find((m: any) => m.playerName === playerName);
+      const riskFlags: string[] = entry.pick?.riskFlags ?? [];
+      if (riskFlags.some((f: string) => f.toLowerCase().includes('injur') || f.toLowerCase().includes('scratch') || f.toLowerCase().includes('dl') || f.toLowerCase().includes('il'))) {
+        invalidateReason = 'Injury/IL flag detected';
+      }
+    }
+
+    if (invalidateReason) {
+      lockedBoardStore.delete(playerName);
+      removed.push({ removedName: playerName, reason: invalidateReason });
+      console.log(`[BJ] Locked board: removed ${playerName} — ${invalidateReason}`);
+    }
+  }
+  return removed;
+}
 
 // ─── Official Pull Store ─────────────────────────────────────────────────────
 // Diamond Edge uses a structured 3-pull system:
@@ -1235,6 +1354,7 @@ export const aiPicksRouter = router({
           const existing = lockedPicksStore.get(pick.playerName);
           const newLockType: 'time' | 'confirmed' =
             currentLineupSource === 'confirmed' ? 'confirmed' : (existing?.lockType ?? 'time');
+          const matchupForPick = lineupData.matchups.find((m: any) => m.playerName === pick.playerName);
           lockedPicksStore.set(pick.playerName, {
             playerName: pick.playerName,
             team: pick.team,
@@ -1246,6 +1366,14 @@ export const aiPicksRouter = router({
             lineupSource: currentLineupSource,
             lockType: newLockType,
             gameTime: pick.gameTime ?? existing?.gameTime ?? null,
+            // Phase BJ: snapshot fields
+            confirmedAt: existing?.confirmedAt ?? (newLockType === 'confirmed' ? nowMs3 : null),
+            confirmedOdds: existing?.confirmedOdds ?? (newLockType === 'confirmed' ? (pick.bookOdds ?? null) : null),
+            confirmedOddsProvider: existing?.confirmedOddsProvider ?? (newLockType === 'confirmed' ? (pick.bookOddsProvider ?? null) : null),
+            lockReason: newLockType === 'confirmed' ? 'Official lineup confirmed' : 'Preliminary — projected lineup',
+            pitcherId: matchupForPick?.pitcher?.id ?? existing?.pitcherId ?? null,
+            pitcherName: matchupForPick?.pitcher?.name ?? pick.pitcher ?? existing?.pitcherName ?? null,
+            gamePk: matchupForPick?.gamePk ?? existing?.gamePk ?? null,
           });
         }
 
@@ -1358,6 +1486,56 @@ export const aiPicksRouter = router({
       // Compute early-locked game count for UI
       const earlyLockedCount = Array.from(gameLockStore.values()).filter(g => g.isLocked && g.lockReason === 'early_auto_lock').length;
 
+      // ─── Phase BJ: Strict Locked Board ─────────────────────────────────────────
+      // 1. Validate existing locked board (remove major-event invalidated picks)
+      const bjCurrentScoreMap = new Map<string, number>();
+      for (const p of preGamePicks3 as any[]) {
+        bjCurrentScoreMap.set(p.playerName, p.overallScore ?? 0);
+      }
+      validateLockedBoard(lineupData.matchups, bjCurrentScoreMap, games3ForLock);
+
+      // 2. Lock confirmed/final picks from the current moneyPicks3 board
+      for (const pick of moneyPicks3 as any[]) {
+        if (pick.pickStatus === 'confirmed' || pick.pickStatus === 'final_official') {
+          addToLockedBoard(pick, currentSlatePhase, lineupData.matchups);
+        }
+      }
+
+      // 3. Build merged board: locked picks + new open-slot picks
+      const lockedBoardPicks: any[] = Array.from(lockedBoardStore.values()).map(entry => {
+        const livePick = moneyPicks3.find((p: any) => p.playerName === entry.pick.playerName);
+        return {
+          ...entry.pick,
+          bookOdds: livePick?.bookOdds ?? entry.pick.bookOdds,
+          bookOddsProvider: livePick?.bookOddsProvider ?? entry.pick.bookOddsProvider,
+          edge: livePick?.edge ?? entry.pick.edge,
+          overProbability: livePick?.overProbability ?? entry.pick.overProbability,
+          confirmedAt: new Date(entry.lockedAt).toISOString(),
+          confirmedOdds: entry.confirmedOdds,
+          confirmedOddsProvider: entry.confirmedOddsProvider,
+          lockReason: entry.lockPhase === 'final' ? 'Final official board' : 'Official lineup confirmed',
+          lastUpdated: new Date().toISOString(),
+        };
+      });
+
+      const lockedNames = new Set(lockedBoardStore.keys());
+      const newUnlockedPicks = moneyPicks3.filter((p: any) => !lockedNames.has(p.playerName));
+      const openSlots = Math.max(0, MAX_BOARD_SIZE - lockedBoardPicks.length);
+      const newBoardPicks = newUnlockedPicks.slice(0, openSlots);
+      const laterQualifiers: any[] = newUnlockedPicks.slice(openSlots).map((p: any) => ({
+        ...p,
+        isLaterQualifier: true,
+        laterQualifierReason: 'Board full at time of qualification',
+      }));
+
+      if (lockedBoardPicks.length > 0) {
+        moneyPicks3 = [...lockedBoardPicks, ...newBoardPicks];
+        console.log(`[BJ] Locked board: ${lockedBoardPicks.length} locked + ${newBoardPicks.length} new = ${moneyPicks3.length} total, ${laterQualifiers.length} later qualifiers`);
+      } else {
+        console.log(`[BJ] No locked picks yet — serving standard board (${moneyPicks3.length} picks)`);
+      }
+      // ─── End Phase BJ ──────────────────────────────────────────────────────────
+
       // ── STAGE 4: Sort by matrix score first, then Poisson quality ────────────
       // Primary sort: matrix overallScore (same ranking as All Plays / Top Plays)
       // Secondary sort: Poisson pick quality + over probability
@@ -1461,6 +1639,9 @@ export const aiPicksRouter = router({
             lockedAt: g.lockedAt ? new Date(g.lockedAt).toISOString() : null,
             firstPitchMs: g.firstPitchMs,
           })),
+        // Phase BJ: later qualifiers (picks that qualified after the board was full)
+        laterQualifiers,
+        lockedBoardSize: lockedBoardStore.size,
       };
     } catch (error) {
       console.error("Error generating HRR picks:", error);

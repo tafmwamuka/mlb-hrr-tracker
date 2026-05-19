@@ -1343,3 +1343,28 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Updated storeDailyResults to reject allplays entries and only write source="money" rows
 - [x] Purged all non-money rows from daily_results DB table
 - [x] TypeScript: 0 errors
+
+## Phase BI: Results Tab — Money Picks Only (Completed)
+- [x] Remove All Plays section from getTodayResults server procedure
+- [x] Remove All Plays stat card from Results hero banner
+- [x] Simplify Results hero to 2-card layout: Hit Rate + Money Picks count
+- [x] TypeScript: 0 errors
+
+## Phase BJ: Strict Money Picks Locking System
+- [x] Add `confirmedAt` and `confirmedOdds` / `confirmedOddsProvider` fields to pick objects
+- [x] Create `lockedBoardStore` — persistent in-memory store that survives between recalculations
+- [x] Implement lock logic: once pickStatus=confirmed or final_official, add to lockedBoardStore
+- [x] Modify officialPullStore logic: keep locked picks, only fill open slots with new picks
+- [x] New qualifying picks that cannot fit into locked board go to `laterQualifiers` array
+- [x] Add major-event invalidation: remove locked pick only for scratch/not-in-lineup/postponed/pitcher-change/market-removed/injury/8pt-score-drop
+- [x] Return `laterQualifiers: any[]` from getHRRPicks router response
+- [x] Update MoneyPick interface in MoneyPicksTab.tsx: add `confirmedAt`, `confirmedOdds`, `confirmedOddsProvider`, `lockReason`
+- [x] Update MoneyPicksTab confirmed badge: show "🔒 CONFIRMED — Locked at [time] NDT"
+- [x] Update MoneyPicksTab final_official badge: show "🔥 FINAL OFFICIAL PLAY"
+- [x] Update MoneyPicksTab confidence_reduced badge: show "⚠️ MONITORING — Odds movement only"
+- [x] Add Confirmed Odds vs Current Odds dual display on confirmed pick cards
+- [x] Add "LATER QUALIFIERS" section below main board in MoneyPicksTab.tsx
+- [x] Later Qualifiers section: shows picks that qualified after board was full, styled differently
+- [x] Later Qualifiers picks show same card format but with "LATER QUALIFIER" badge
+- [x] TypeScript: 0 errors
+- [ ] Checkpoint
