@@ -115,6 +115,21 @@ interface MoneyPick {
   lockReason?: string | null;           // Human-readable lock reason
   isLaterQualifier?: boolean;           // true when pick qualified after board was full
   laterQualifierReason?: string | null;  // human-readable reason (e.g. 'Board full at time of qualification')
+  // Phase BK: Alt Line Optimization
+  lineEvaluations?: Array<{
+    line: number;
+    bookOdds: number | null;
+    bookImpliedProb: number | null;
+    modelProb: number;
+    edge: number | null;
+    ev: number | null;
+    riskGrade: 'LOW' | 'MEDIUM' | 'HIGH' | 'LONGSHOT';
+    lineType: 'SAFE LINE' | 'VALUE LINE' | 'AGGRESSIVE LINE' | 'LONGSHOT LINE';
+    verdict: 'BEST SAFE LINE' | 'GOOD VALUE' | 'HIGHER RISK' | 'LONGSHOT' | 'OVERPRICED' | 'NO ODDS' | 'BEST LINE';
+    isRecommended: boolean;
+  }>;
+  bestLineVerdict?: string | null;
+  bestLineReason?: string | null;
   // Phase AW: Value Intelligence System
   valueAnalysis?: {
     trueProb: number;
@@ -400,6 +415,15 @@ function MoneyPickCard({
               >
                 {archetype.label}
               </div>
+              {/* Phase BK: Best line reason */}
+              {pick.bestLineReason && pick.bestLineVerdict && pick.bestLineVerdict !== 'NO ODDS' && (
+                <div
+                  className="px-2 py-0.5 rounded-md text-[9px] font-semibold"
+                  style={{ background: 'oklch(0.72 0.18 165 / 10%)', border: '1px solid oklch(0.72 0.18 165 / 25%)', color: 'oklch(0.72 0.18 165)' }}
+                >
+                  {pick.bestLineVerdict}
+                </div>
+              )}
             </div>
           )}
 
@@ -764,33 +788,101 @@ function MoneyPickCard({
           </div>
         </div>
 
-        {/* Other available lines */}
-        <div className="mb-3">
-          <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)] uppercase">All Lines</span>
-          <div className="flex gap-1.5 mt-1.5 flex-wrap">
-            {pick.alternateLines.filter((a: AlternateLine) => a.overProb >= 40).map((alt: AlternateLine) => {
-              const isRecommended = alt.line === pick.recommendedLine;
-              const altColor = alt.overProb >= 75 ? "oklch(0.72 0.18 165)" : alt.overProb >= 55 ? "oklch(0.82 0.17 85)" : "oklch(0.55 0.15 255)";
-              return (
-                <div
-                  key={alt.line}
-                  className="px-2 py-1 rounded-lg text-center"
-                  style={{
-                    background: isRecommended ? `${probColor}20` : "oklch(0.18 0.02 255)",
-                    border: isRecommended ? `1.5px solid ${probColor}60` : "1px solid oklch(1 0 0 / 6%)",
-                  }}
-                >
-                  <div className="text-[10px] font-bold" style={{ color: isRecommended ? probColor : "oklch(0.65 0.015 255)" }}>
-                    O {alt.line}
+        {/* Phase BK: Alt Line Optimization Table */}
+        {pick.lineEvaluations && pick.lineEvaluations.length > 0 ? (
+          <div className="mb-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)] uppercase tracking-wider">Alt Line Analysis</span>
+              {pick.bestLineVerdict && pick.bestLineVerdict !== 'NO ODDS' && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: 'oklch(0.72 0.18 165 / 15%)', color: 'oklch(0.72 0.18 165)', border: '1px solid oklch(0.72 0.18 165 / 40%)' }}>
+                  {pick.bestLineVerdict}
+                </span>
+              )}
+            </div>
+            {pick.bestLineReason && (
+              <p className="text-[10px] text-[oklch(0.50_0.015_255)] mb-2 leading-relaxed">{pick.bestLineReason}</p>
+            )}
+            {/* Table header */}
+            <div className="rounded-lg overflow-hidden" style={{ border: '1px solid oklch(1 0 0 / 8%)' }}>
+              <div className="grid text-[9px] font-bold uppercase tracking-wider px-2 py-1.5" style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1.5fr 1.5fr 2fr', background: 'oklch(0.16 0.02 255)', color: 'oklch(0.40 0.015 255)' }}>
+                <span>Line</span>
+                <span className="text-right">Odds</span>
+                <span className="text-right">Book %</span>
+                <span className="text-right">Model %</span>
+                <span className="text-right">Edge</span>
+                <span className="text-right">Verdict</span>
+              </div>
+              {pick.lineEvaluations.map((ev) => {
+                const verdictColor =
+                  ev.verdict === 'BEST LINE' ? 'oklch(0.72 0.18 165)' :
+                  ev.verdict === 'BEST SAFE LINE' ? 'oklch(0.72 0.18 165)' :
+                  ev.verdict === 'GOOD VALUE' ? 'oklch(0.82 0.17 85)' :
+                  ev.verdict === 'HIGHER RISK' ? 'oklch(0.68 0.22 25)' :
+                  ev.verdict === 'LONGSHOT' ? 'oklch(0.55 0.15 255)' :
+                  'oklch(0.40 0.015 255)';
+                const edgeColor = (ev.edge ?? 0) > 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)';
+                return (
+                  <div
+                    key={ev.line}
+                    className="grid px-2 py-1.5 text-[10px] border-t"
+                    style={{
+                      gridTemplateColumns: '2fr 1.5fr 1.5fr 1.5fr 1.5fr 2fr',
+                      borderColor: 'oklch(1 0 0 / 6%)',
+                      background: ev.isRecommended ? `${probColor}12` : 'transparent',
+                    }}
+                  >
+                    <span className="font-bold" style={{ color: ev.isRecommended ? probColor : 'oklch(0.75 0.015 255)' }}>
+                      O {ev.line} HRR{ev.isRecommended ? ' ★' : ''}
+                    </span>
+                    <span className="text-right font-mono" style={{ color: 'oklch(0.65 0.015 255)' }}>
+                      {ev.bookOdds !== null ? (ev.bookOdds > 0 ? `+${ev.bookOdds}` : `${ev.bookOdds}`) : '—'}
+                    </span>
+                    <span className="text-right" style={{ color: 'oklch(0.55 0.015 255)' }}>
+                      {ev.bookImpliedProb !== null ? `${ev.bookImpliedProb.toFixed(1)}%` : '—'}
+                    </span>
+                    <span className="text-right font-bold" style={{ color: ev.modelProb >= 75 ? 'oklch(0.72 0.18 165)' : ev.modelProb >= 55 ? 'oklch(0.82 0.17 85)' : 'oklch(0.65 0.015 255)' }}>
+                      {ev.modelProb}%
+                    </span>
+                    <span className="text-right font-bold" style={{ color: edgeColor }}>
+                      {ev.edge !== null ? (ev.edge > 0 ? `+${ev.edge}%` : `${ev.edge}%`) : '—'}
+                    </span>
+                    <span className="text-right font-bold text-[9px]" style={{ color: verdictColor }}>
+                      {ev.verdict === 'BEST LINE' ? '★ BEST' : ev.verdict.replace('_', ' ')}
+                    </span>
                   </div>
-                  <div className="text-[9px] font-bold" style={{ color: altColor }}>
-                    {alt.overProb}%
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Fallback: simple alt line chips when no lineEvaluations */
+          <div className="mb-3">
+            <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)] uppercase">All Lines</span>
+            <div className="flex gap-1.5 mt-1.5 flex-wrap">
+              {pick.alternateLines.filter((a: AlternateLine) => a.overProb >= 40).map((alt: AlternateLine) => {
+                const isRecommended = alt.line === pick.recommendedLine;
+                const altColor = alt.overProb >= 75 ? "oklch(0.72 0.18 165)" : alt.overProb >= 55 ? "oklch(0.82 0.17 85)" : "oklch(0.55 0.15 255)";
+                return (
+                  <div
+                    key={alt.line}
+                    className="px-2 py-1 rounded-lg text-center"
+                    style={{
+                      background: isRecommended ? `${probColor}20` : "oklch(0.18 0.02 255)",
+                      border: isRecommended ? `1.5px solid ${probColor}60` : "1px solid oklch(1 0 0 / 6%)",
+                    }}
+                  >
+                    <div className="text-[10px] font-bold" style={{ color: isRecommended ? probColor : "oklch(0.65 0.015 255)" }}>
+                      O {alt.line}
+                    </div>
+                    <div className="text-[9px] font-bold" style={{ color: altColor }}>
+                      {alt.overProb}%
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Grade badge row */}
         {pick.grade && (
@@ -1890,16 +1982,80 @@ export function MoneyPicksTab() {
                 );
               })
           ) : (
-            // ── Single window: flat list (no section headers needed) ────────────────────────────
-            filteredPicks.map((pick, i) => (
-              <MoneyPickCard
-                key={`${pick.playerName}-${i}`}
-                pick={pick}
-                rank={i + 1}
-                isSelected={selectedPicks.has(i)}
-                onToggleSelect={() => toggleSelect(i)}
-              />
-            ))
+            // ── Single window: Phase BL — split into Early Locked + Main Slate when applicable ──
+            (() => {
+              const earlyLockedPicks = filteredPicks.filter(p => p.isEarlyLocked);
+              const mainSlatePicks = filteredPicks.filter(p => !p.isEarlyLocked);
+              const showSplit = earlyLockedPicks.length > 0 && mainSlatePicks.length > 0;
+              if (showSplit) {
+                return (
+                  <>
+                    {/* Early Locked Picks section */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-1 pt-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold tracking-widest" style={{ color: 'oklch(0.72 0.18 165)' }}>🔒 EARLY LOCKED PICKS</span>
+                        </div>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'oklch(0.72 0.18 165 / 12%)', color: 'oklch(0.72 0.18 165)', border: '1px solid oklch(0.72 0.18 165 / 30%)' }}>
+                          {earlyLockedPicks.length} PLAY{earlyLockedPicks.length !== 1 ? 'S' : ''}
+                        </span>
+                      </div>
+                      <div className="h-px" style={{ background: 'oklch(0.72 0.18 165 / 20%)' }} />
+                      {earlyLockedPicks.map((pick, i) => (
+                        <MoneyPickCard
+                          key={`early-${pick.playerName}-${i}`}
+                          pick={pick}
+                          rank={filteredPicks.indexOf(pick) + 1}
+                          isSelected={selectedPicks.has(filteredPicks.indexOf(pick))}
+                          onToggleSelect={() => toggleSelect(filteredPicks.indexOf(pick))}
+                        />
+                      ))}
+                    </div>
+                    {/* Main Slate section */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-1 pt-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold tracking-widest" style={{ color: 'oklch(0.55 0.015 255)' }}>⚾ MAIN SLATE PICKS</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="flex items-center gap-1 text-[9px]" style={{ color: 'oklch(0.82 0.17 85)' }}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-[oklch(0.82_0.17_85)] animate-pulse inline-block" />
+                            MONITORING
+                          </span>
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'oklch(0.18 0.02 255)', color: 'oklch(0.50 0.015 255)' }}>
+                            {mainSlatePicks.length} PLAY{mainSlatePicks.length !== 1 ? 'S' : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="h-px" style={{ background: 'oklch(1 0 0 / 6%)' }} />
+                      {mainSlatePicks.map((pick, i) => (
+                        <MoneyPickCard
+                          key={`main-${pick.playerName}-${i}`}
+                          pick={pick}
+                          rank={filteredPicks.indexOf(pick) + 1}
+                          isSelected={selectedPicks.has(filteredPicks.indexOf(pick))}
+                          onToggleSelect={() => toggleSelect(filteredPicks.indexOf(pick))}
+                        />
+                      ))}
+                    </div>
+                  </>
+                );
+              }
+              // No early-locked picks: flat list as before
+              return (
+                <>
+                  {filteredPicks.map((pick, i) => (
+                    <MoneyPickCard
+                      key={`${pick.playerName}-${i}`}
+                      pick={pick}
+                      rank={i + 1}
+                      isSelected={selectedPicks.has(i)}
+                      onToggleSelect={() => toggleSelect(i)}
+                    />
+                  ))}
+                </>
+              );
+            })()
           )}
         </div>
       )}

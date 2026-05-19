@@ -16,13 +16,191 @@
 
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from './aiRankingService';
 import { fetchOddsForPicks, americanToImpliedProbability, removeVig } from './oddsApiService';
-import { analyzeValue } from './valueEngine';
+import { analyzeValue, calcEV, probToAmericanOdds } from './valueEngine';
 // Phase AP: getMockSavantData removed — barrel threat check now uses real statcastCache
 import { generateHRRProjections } from './hrrService';
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from './poissonModel';
 import { getAdaptedLineupData } from './lineupAdapter';
 import { getDataDate } from './mlbLineupService';
 import { getEnrichmentData, pollForWarmEnrichment } from './enrichmentCache';
+
+// ─── Phase BK: Alt Line Optimization ─────────────────────────────────────────
+
+/**
+ * Per-line evaluation result for the alt line table.
+ * Each available HRR line (O 0.5, O 1.5, O 2.5, etc.) gets its own evaluation.
+ */
+export interface LineEvaluation {
+  line: number;          // e.g. 1.5
+  bookOdds: number | null;      // American odds from sportsbook (null = not available)
+  bookImpliedProb: number | null; // Vig-free implied probability (0-100)
+  modelProb: number;    // Poisson model probability (0-100)
+  edge: number | null;  // modelProb - bookImpliedProb (percentage points; null if no book odds)
+  ev: number | null;    // Expected value % (null if no book odds)
+  riskGrade: 'LOW' | 'MEDIUM' | 'HIGH' | 'LONGSHOT'; // risk classification
+  lineType: 'SAFE LINE' | 'VALUE LINE' | 'AGGRESSIVE LINE' | 'LONGSHOT LINE';
+  verdict: 'BEST SAFE LINE' | 'GOOD VALUE' | 'HIGHER RISK' | 'LONGSHOT' | 'OVERPRICED' | 'NO ODDS' | 'BEST LINE';
+  isRecommended: boolean; // true for the single best-line pick
+}
+
+/**
+ * Select the best playable HRR line for a player.
+ *
+ * Priority:
+ *  1. Positive EV (edge > 0) — never recommend negative-EV even if safer
+ *  2. Highest EV among positive-EV lines
+ *  3. When EV is similar (<2pp), prefer lower risk (lower line = safer)
+ *
+ * Returns the recommended line + full per-line evaluation table.
+ */
+export function selectBestLine(
+  lambda: number,                          // Poisson lambda (expected HRR)
+  sbAlternateLines: Array<{ line: number; overOdds: number; underOdds?: number; impliedOverProb?: number }>,
+  featuredLine: number | null,
+  featuredOverOdds: number | null,
+): { recommendedLine: number; recommendedProb: number; bestLineVerdict: string; bestLineReason: string; lineEvaluations: LineEvaluation[] } {
+
+  // Build the candidate set from sportsbook lines (only use lines actually available)
+  const candidateLines: Array<{ line: number; overOdds: number }> = [];
+
+  // Add featured line if available
+  if (featuredLine !== null && featuredOverOdds !== null) {
+    candidateLines.push({ line: featuredLine, overOdds: featuredOverOdds });
+  }
+
+  // Add alternate lines (deduplicate)
+  for (const alt of sbAlternateLines) {
+    if (!candidateLines.some(c => c.line === alt.line)) {
+      candidateLines.push({ line: alt.line, overOdds: alt.overOdds });
+    }
+  }
+
+  // If no sportsbook lines available, fall back to model fair line
+  if (candidateLines.length === 0) {
+    const fairLine = findFairLine(lambda);
+    const modelProb = Math.round(poissonOverProbability(fairLine, lambda) * 100);
+    return {
+      recommendedLine: fairLine,
+      recommendedProb: modelProb,
+      bestLineVerdict: 'MODEL LINE',
+      bestLineReason: 'No sportsbook odds available — using model fair line.',
+      lineEvaluations: [{
+        line: fairLine,
+        bookOdds: null,
+        bookImpliedProb: null,
+        modelProb,
+        edge: null,
+        ev: null,
+        riskGrade: modelProb >= 75 ? 'LOW' : modelProb >= 55 ? 'MEDIUM' : modelProb >= 35 ? 'HIGH' : 'LONGSHOT',
+        lineType: modelProb >= 75 ? 'SAFE LINE' : modelProb >= 55 ? 'VALUE LINE' : modelProb >= 35 ? 'AGGRESSIVE LINE' : 'LONGSHOT LINE',
+        verdict: 'NO ODDS',
+        isRecommended: true,
+      }],
+    };
+  }
+
+  // Evaluate every candidate line
+  const evaluations: LineEvaluation[] = candidateLines
+    .sort((a, b) => a.line - b.line) // ascending: 0.5, 1.5, 2.5 ...
+    .map(({ line, overOdds }) => {
+      const modelProbFrac = poissonOverProbability(line, lambda);
+      const modelProb = Math.round(modelProbFrac * 100);
+
+      // Vig-free book implied probability
+      const rawImplied = americanToImpliedProbability(overOdds); // 0-1
+      const vigFreeImplied = Math.round((rawImplied / 1.045) * 1000) / 10; // 0-100
+
+      const edge = Math.round((modelProb - vigFreeImplied) * 10) / 10;
+      const ev = calcEV(modelProb, overOdds);
+
+      // Risk grade based on model probability
+      const riskGrade: LineEvaluation['riskGrade'] =
+        modelProb >= 75 ? 'LOW' :
+        modelProb >= 55 ? 'MEDIUM' :
+        modelProb >= 35 ? 'HIGH' : 'LONGSHOT';
+
+      // Line type classification
+      const lineType: LineEvaluation['lineType'] =
+        modelProb >= 75 ? 'SAFE LINE' :
+        modelProb >= 55 ? 'VALUE LINE' :
+        modelProb >= 35 ? 'AGGRESSIVE LINE' : 'LONGSHOT LINE';
+
+      // Preliminary verdict (will be updated after best-line selection)
+      const verdict: LineEvaluation['verdict'] =
+        edge <= 0 ? 'OVERPRICED' :
+        modelProb >= 75 ? 'BEST SAFE LINE' :
+        modelProb >= 55 ? 'GOOD VALUE' :
+        modelProb >= 35 ? 'HIGHER RISK' : 'LONGSHOT';
+
+      return {
+        line,
+        bookOdds: overOdds,
+        bookImpliedProb: vigFreeImplied,
+        modelProb,
+        edge,
+        ev,
+        riskGrade,
+        lineType,
+        verdict,
+        isRecommended: false,
+      };
+    });
+
+  // Select best line:
+  //   1. Must have positive EV (edge > 0)
+  //   2. Among positive-EV lines, pick highest EV
+  //   3. Tiebreak: prefer lower risk (lower line)
+  const positiveEvLines = evaluations.filter(e => (e.edge ?? 0) > 0);
+
+  let bestEval: LineEvaluation | null = null;
+
+  if (positiveEvLines.length > 0) {
+    // Sort by EV desc, then by modelProb desc (lower risk tiebreak)
+    positiveEvLines.sort((a, b) => {
+      const evDiff = (b.ev ?? 0) - (a.ev ?? 0);
+      if (Math.abs(evDiff) >= 2) return evDiff; // meaningful EV difference
+      return b.modelProb - a.modelProb; // tiebreak: higher probability = safer
+    });
+    bestEval = positiveEvLines[0];
+  } else {
+    // No positive-EV lines — fall back to highest model probability (safest play)
+    const sorted = [...evaluations].sort((a, b) => b.modelProb - a.modelProb);
+    bestEval = sorted[0] ?? null;
+  }
+
+  // Mark the recommended line and assign final verdicts
+  const finalEvaluations: LineEvaluation[] = evaluations.map(e => {
+    const isRecommended = bestEval !== null && e.line === bestEval.line;
+    const verdict: LineEvaluation['verdict'] =
+      isRecommended ? 'BEST LINE' :
+      (e.edge ?? 0) <= 0 ? 'OVERPRICED' :
+      e.modelProb >= 75 ? 'BEST SAFE LINE' :
+      e.modelProb >= 55 ? 'GOOD VALUE' :
+      e.modelProb >= 35 ? 'HIGHER RISK' : 'LONGSHOT';
+    return { ...e, isRecommended, verdict };
+  });
+
+  const recommendedLine = bestEval?.line ?? (featuredLine ?? findFairLine(lambda));
+  const recommendedProb = bestEval?.modelProb ?? Math.round(poissonOverProbability(recommendedLine, lambda) * 100);
+
+  // Build human-readable reason
+  let bestLineReason = 'Highest probability line with positive value.';
+  if (bestEval) {
+    if ((bestEval.edge ?? 0) <= 0) {
+      bestLineReason = 'No positive-value line available — showing safest option.';
+    } else if (bestEval.riskGrade === 'LOW') {
+      bestLineReason = `High-probability line (${bestEval.modelProb}% model) with +${bestEval.edge}% edge.`;
+    } else if (bestEval.riskGrade === 'MEDIUM') {
+      bestLineReason = `Best balance of probability (${bestEval.modelProb}%) and value (+${bestEval.edge}% edge).`;
+    } else {
+      bestLineReason = `Higher-risk line (${bestEval.modelProb}%) offers best EV (+${bestEval.ev?.toFixed(1)}%).`;
+    }
+  }
+
+  const bestLineVerdict = bestEval?.verdict ?? 'NO ODDS';
+
+  return { recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations: finalEvaluations };
+}
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
@@ -69,6 +247,10 @@ export interface EnrichedMoneyPick {
   // Qualifying line (75%+)
   recommendedLine: number;
   recommendedProb: number;
+  // Phase BK: Alt line optimization
+  lineEvaluations?: LineEvaluation[];
+  bestLineVerdict?: string;
+  bestLineReason?: string;
 }
 
 export interface EnrichmentStatus {
@@ -391,11 +573,19 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   const MAX_MONEY_PICKS = 12;  // raised from 8 — show more picks when good ones exist
   const MIN_MONEY_PICKS = 5;
 
+  // Phase BK: Use selectBestLine to pick the optimal line per player.
+  // At this point we only have model-derived alternateLines (no sportsbook odds yet).
+  // We do a preliminary best-line pass here; a second pass runs after the odds fetch.
   const withRecommendedLine = enrichedPicks.map((pick: any) => {
-    // Use the model's fair line directly — no probability threshold needed
-    const recommendedLine = pick.fairLine ?? pick.hrrLine ?? 1.5;
-    const recommendedProb = pick.overProbability ?? 55;
-    return { ...pick, recommendedLine, recommendedProb };
+    const lambda = pick.expectedTotal ?? 1.5;
+    // Model-only alternateLines (no book odds yet — will be enriched after odds fetch)
+    const modelAltLines = (pick.alternateLines ?? []).map((al: any) => ({
+      line: al.line,
+      overOdds: al.overOdds ?? null, // may be null at this stage
+    })).filter((al: any) => al.overOdds !== null);
+    const { recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations } =
+      selectBestLine(lambda, modelAltLines, null, null);
+    return { ...pick, recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations };
   });
 
   // Take top picks by score — between MIN and MAX, or all if fewer than MAX
@@ -443,6 +633,30 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     } catch (err) {
       console.warn('[HRRPicks] Odds API fetch failed, using model odds:', err);
     }
+  }
+
+  // Phase BK: Second-pass best-line selection now that sportsbook odds are available
+  for (const pick of moneyPicks as any[]) {
+    const lambda = pick.expectedTotal ?? 1.5;
+    const oddsKey = pick.playerName;
+    // Rebuild sportsbook alternateLines from the raw oddsData if available
+    // (pick.alternateLines at this point may still be model-only; we re-run with real odds)
+    const sbAltLines: Array<{ line: number; overOdds: number }> = [];
+    // The pick.alternateLines may have been enriched with overOdds by the odds loop above
+    for (const al of (pick.alternateLines ?? [])) {
+      if (al.overOdds != null) sbAltLines.push({ line: al.line, overOdds: al.overOdds });
+    }
+    const featuredLine = pick.hrrLine ?? null;
+    const featuredOverOdds = pick.bookOdds
+      ? parseInt(String(pick.bookOdds).replace(/[^0-9+-]/g, ''), 10)
+      : null;
+    const { recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations } =
+      selectBestLine(lambda, sbAltLines, featuredLine, isNaN(featuredOverOdds as number) ? null : featuredOverOdds);
+    pick.recommendedLine = recommendedLine;
+    pick.recommendedProb = recommendedProb;
+    pick.bestLineVerdict = bestLineVerdict;
+    pick.bestLineReason = bestLineReason;
+    pick.lineEvaluations = lineEvaluations;
   }
 
   // Phase AW: Enrich money picks with value analysis (EV, fair odds, value tier, mispricing)

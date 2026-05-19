@@ -1367,4 +1367,27 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Later Qualifiers section: shows picks that qualified after board was full, styled differently
 - [x] Later Qualifiers picks show same card format but with "LATER QUALIFIER" badge
 - [x] TypeScript: 0 errors
+- [x] Checkpoint
+
+## Phase BK: Alt Line Optimization
+- [x] Add `LineEvaluation` type: line, bookOdds, bookImpliedProb, modelProb, edge, ev, riskGrade, lineType, verdict
+- [x] Add `selectBestLine(alternateLines, modelLambda, featuredLine, featuredOverOdds)` function in hrrPicksService.ts
+- [x] Per-line logic: compute Poisson model probability, vig-free book implied prob, edge, EV, riskGrade, lineType
+- [x] Best-line selection rule: positive EV first, then edge, then lower risk when EV is similar; never recommend negative-EV line even if safer
+- [x] Integrate selectBestLine into hrrPicksService enrichment loop — replace fairLine-based recommendedLine with best-line result
+- [x] Attach `lineEvaluations: LineEvaluation[]` to each money pick for the alt line table
+- [x] Attach `bestLineVerdict`, `bestLineReason` to each money pick for the card display
+- [x] Update MoneyPicksTab MoneyPick interface: add lineEvaluations, bestLineVerdict, bestLineReason
+- [x] Update pick card: show Recommended Line, Book Odds, Book %, Model %, Edge, Risk, Reason
+- [x] Update expanded alt line table: Line | Odds | Book % | Model % | Edge | Verdict columns
+- [x] TypeScript: 0 errors
+- [ ] Checkpoint
+
+## Phase BL: Early Game Final Lock System
+- [x] Verify isGameReadyForEarlyLock already checks: confirmed lineup + 30-min stabilization + odds loaded + within 90 min of first pitch
+- [x] Ensure early-locked game picks are displayed with 🔒 EARLY GAME LOCKED badge (already exists in Phase AT)
+- [x] Add per-game independent lock: early-game picks display immediately without waiting for full slate
+- [x] Add "EARLY LOCKED PICKS" section header in MoneyPicksTab when earlyLockedCount > 0
+- [x] Ensure later-game picks continue to appear as they become ready (no blocking)
+- [x] TypeScript: 0 errors
 - [ ] Checkpoint
