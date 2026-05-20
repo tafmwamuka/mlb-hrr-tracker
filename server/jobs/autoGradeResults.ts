@@ -81,7 +81,10 @@ export async function gradeAndSaveResults(): Promise<{ saved: number; skipped: s
     if (playerStats) {
       // HRR combined = hits + runs + rbi
       actualValue = playerStats.hits + playerStats.runs + playerStats.rbi;
-      result = actualValue > pick.recommendedLine ? "hit" : "miss";
+      // Grading: O1.5/O2.5/O3.5 half-point lines use strict > (no push possible)
+      // O1/O2/O3 whole-number lines use >= (hitting exactly the line is a HIT)
+      const isHalfLine = (pick.recommendedLine * 2) % 2 !== 0;
+      result = (isHalfLine ? actualValue > pick.recommendedLine : actualValue >= pick.recommendedLine) ? "hit" : "miss";
     }
 
     return {

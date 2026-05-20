@@ -1421,4 +1421,4 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Fix getTodayResults: always call getEnrichedMoneyPicks() to get the live board, use DB only for grading actuals (not as the pick source)
 - [x] Ensure Results shows same picks as Money Picks (verified: both show 12 picks with live actuals)
 - [x] TypeScript: 0 errors
-- [ ] Checkpoint
+- [x] Checkpoint

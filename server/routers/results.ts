@@ -169,7 +169,10 @@ export const resultsRouter = router({
         if (playerStats && (status === "Final" || status === "In Progress")) {
           // HRR combined = hits + runs + rbi (live boxscore)
           actualValue = playerStats.hits + playerStats.runs + playerStats.rbi;
-          hit = actualValue > pick.line;
+          // Grading: O1.5/O2.5/O3.5 lines use strict > (half-point, no push possible)
+          // O1/O2/O3 whole-number lines use >= (hitting exactly the line is a HIT)
+          const isHalfLine = (pick.line * 2) % 2 !== 0;
+          hit = isHalfLine ? actualValue > pick.line : actualValue >= pick.line;
         } else {
           // Fallback: use DB-graded actuals if the autoGrade job already ran
           const graded = gradedMap.get(pick.playerName.toLowerCase());
