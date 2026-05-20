@@ -1,0 +1,8 @@
+{
+  "query": "SELECT player_name, player_team, line, probability, actual_value, result, stat_type, source, game_date FROM daily_results WHERE game_date = '2026-05-19' AND source = 'money' ORDER BY result, probability DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT player_name, player_team, line, probability, actual_value, result, stat_type, source, game_date FROM daily_results WHERE game_date = '2026-05-19' AND source = 'money' ORDER BY result, probability DESC;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'game_date' in 'where clause'"
+  ]
+}

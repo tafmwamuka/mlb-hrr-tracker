@@ -1,0 +1,109 @@
+{
+  "query": "SELECT playerName, playerTeam, line, probability, actualValue, result, statType, source, gameDate FROM daily_results WHERE gameDate = '2026-05-19' AND source = 'money' ORDER BY result, probability DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT playerName, playerTeam, line, probability, actualValue, result, statType, source, gameDate FROM daily_results WHERE gameDate = '2026-05-19' AND source = 'money' ORDER BY result, probability DESC;",
+  "rows": [
+    {
+      "playerName": "Juan Soto",
+      "playerTeam": "NYM",
+      "line": "2.5",
+      "probability": "48",
+      "actualValue": "5",
+      "result": "hit",
+      "statType": "hrr",
+      "source": "money",
+      "gameDate": "2026-05-19"
+    },
+    {
+      "playerName": "Michael Harris II",
+      "playerTeam": "ATL",
+      "line": "1.5",
+      "probability": "48",
+      "actualValue": "5",
+      "result": "hit",
+      "statType": "hrr",
+      "source": "money",
+      "gameDate": "2026-05-19"
+    },
+    {
+      "playerName": "Spencer Steer",
+      "playerTeam": "CIN",
+      "line": "2",
+      "probability": "43",
+      "actualValue": "2",
+      "result": "hit",
+      "statType": "hrr",
+      "source": "money",
+      "gameDate": "2026-05-19"
+    },
+    {
+      "playerName": "Elly De La Cruz",
+      "playerTeam": "CIN",
+      "line": "3",
+      "probability": "40",
+      "actualValue": "3",
+      "result": "hit",
+      "statType": "hrr",
+      "source": "money",
+      "gameDate": "2026-05-19"
+    },
+    {
+      "playerName": "James Wood",
+      "playerTeam": "WSH",
+      "line": "3",
+      "probability": "38",
+      "actualValue": "9",
+      "result": "hit",
+      "statType": "hrr",
+      "source": "money",
+      "gameDate": "2026-05-19"
+    },
+    {
+      "playerName": "JJ Bleday",
+      "playerTeam": "CIN",
+      "line": "2.5",
+      "probability": "51",
+      "actualValue": "2",
+      "result": "miss",
+      "statType": "hrr",
+      "source": "money",
+      "gameDate": "2026-05-19"
+    },
+    {
+      "playerName": "Bryce Harper",
+      "playerTeam": "PHI",
+      "line": "2",
+      "probability": "46",
+      "actualValue": "0",
+      "result": "miss",
+      "statType": "hrr",
+      "source": "money",
+      "gameDate": "2026-05-19"
+    },
+    {
+      "playerName": "Junior Caminero",
+      "playerTeam": "TB",
+      "line": "2",
+      "probability": "43",
+      "actualValue": "1",
+      "result": "miss",
+      "statType": "hrr",
+      "source": "money",
+      "gameDate": "2026-05-19"
+    },
+    {
+      "playerName": "Sal Stewart",
+      "playerTeam": "CIN",
+      "line": "3",
+      "probability": "38",
+      "actualValue": "1",
+      "result": "miss",
+      "statType": "hrr",
+      "source": "money",
+      "gameDate": "2026-05-19"
+    }
+  ],
+  "messages": [],
+  "stdout": "playerName\tplayerTeam\tline\tprobability\tactualValue\tresult\tstatType\tsource\tgameDate\nJuan Soto\tNYM\t2.5\t48\t5\thit\thrr\tmoney\t2026-05-19\nMichael Harris II\tATL\t1.5\t48\t5\thit\thrr\tmoney\t2026-05-19\nSpencer Steer\tCIN\t2\t43\t2\thit\thrr\tmoney\t2026-05-19\nElly De La Cruz\tCIN\t3\t40\t3\thit\thrr\tmoney\t2026-05-19\nJames Wood\tWSH\t3\t38\t9\thit\thrr\tmoney\t2026-05-19\nJJ Bleday\tCIN\t2.5\t51\t2\tmiss\thrr\tmoney\t2026-05-19\nBryce Harper\tPHI\t2\t46\t0\tmiss\thrr\tmoney\t2026-05-19\nJunior Caminero\tTB\t2\t43\t1\tmiss\thrr\tmoney\t2026-05-19\nSal Stewart\tCIN\t3\t38\t1\tmiss\thrr\tmoney\t2026-05-19\n",
+  "stderr": "",
+  "execution_time_ms": 261
+}

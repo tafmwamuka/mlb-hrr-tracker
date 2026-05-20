@@ -757,14 +757,67 @@ interface OfficialPullRecord {
   pulledAt: number;           // ms timestamp
   slateDate: string;          // YYYY-MM-DD ET date
   officialPicks: any[];       // the locked official board from this pull
+  _restoredFromDb?: boolean;  // true if board was reloaded from DB on startup
 }
 
 let officialPullStore: OfficialPullRecord | null = null;
 
-// Phase BA: When enrichment warms after startup, reset the official board so the next
-// request triggers a fresh build with real VS/Streak/Statcast data instead of the
-// cold-cache board that was built with neutral placeholders.
+// Phase BP: Reload the official board from DB on startup so the board survives server restarts.
+// This runs once at module load time. If today's DB has picks, we restore them as the frozen board.
+(async () => {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const rows = await db.select()
+      .from(dailyResults)
+      .where(and(eq(dailyResults.gameDate, todayET), eq(dailyResults.source, 'money')))
+      .limit(50);
+    if (rows.length > 0) {
+      // Reconstruct a minimal officialPullRecord from DB rows so the board is frozen immediately
+      const restoredPicks = rows.map(r => ({
+        playerId: r.playerId,
+        playerName: r.playerName,
+        team: r.playerTeam,
+        playerTeam: r.playerTeam,
+        recommendedLine: parseFloat(r.line),
+        hrrLine: parseFloat(r.line),
+        recommendedProb: r.probability ?? 0,
+        overProb: r.probability ?? 0,
+        bookOdds: r.odds ? parseInt(r.odds, 10) : null,
+        bookOddsProvider: r.oddsProvider ?? null,
+        overallScore: r.matrixScore ?? 0,
+        pickStatus: 'confirmed' as const,
+        isEarlyLocked: false,
+        gameLockTime: null,
+        gameLockReason: null,
+        tier: r.tier ?? null,
+        // Minimal fields needed for Results grading
+        _restoredFromDb: true,
+      }));
+      officialPullStore = {
+        phase: 'confirmed',
+        pulledAt: Date.now(),
+        slateDate: todayET,
+        officialPicks: restoredPicks,
+      };
+      console.log(`[aiPicks] Startup: restored ${restoredPicks.length} picks from DB for ${todayET}`);
+    }
+  } catch (err) {
+    console.error('[aiPicks] Startup DB restore failed:', err);
+  }
+})();
+
+// Phase BA: When enrichment warms after startup, reset the official board ONLY if it was
+// restored from DB (cold placeholder data). If it was restored from DB, keep it frozen.
 onEnrichmentWarm(() => {
+  if (officialPullStore?._restoredFromDb as any) {
+    // Board was restored from DB — keep it frozen, just bust the picks cache so
+    // the next request re-enriches display fields (odds, edge) without rebuilding picks
+    console.log('[aiPicks] Enrichment warm — keeping DB-restored board frozen, busting picks cache for re-enrichment');
+    bustPicksCache();
+    return;
+  }
   console.log('[aiPicks] Enrichment warm detected — resetting official board for fresh build with real data');
   officialPullStore = null;
   bustPicksCache();
@@ -1445,13 +1498,27 @@ export const aiPicksRouter = router({
                 closingLineValue: null,
                 matrixScore: p.overallScore ?? null,
               }));
-              // Delete existing pending rows for today (money source) then re-insert
-              await db.delete(dailyResults)
-                .where(and(eq(dailyResults.gameDate, todayETDate3), eq(dailyResults.source, "money"), eq(dailyResults.result, "pending")));
-              if (rows.length > 0) {
-                await db.insert(dailyResults).values(rows);
+              // Phase BP: Only replace DB rows if the new board has MORE picks than what's already stored.
+              // This prevents a later smaller pull from overwriting a larger earlier board.
+              // Also never delete rows that have already been graded (result != 'pending').
+              const existingRows = await db.select({ id: dailyResults.id, result: dailyResults.result })
+                .from(dailyResults)
+                .where(and(eq(dailyResults.gameDate, todayETDate3), eq(dailyResults.source, "money")));
+              const existingPendingCount = existingRows.filter(r => r.result === 'pending').length;
+              const existingGradedCount = existingRows.filter(r => r.result !== 'pending').length;
+              if (rows.length > existingPendingCount || existingPendingCount === 0) {
+                // New board is larger (or DB is empty) — safe to replace pending rows
+                if (existingPendingCount > 0) {
+                  await db.delete(dailyResults)
+                    .where(and(eq(dailyResults.gameDate, todayETDate3), eq(dailyResults.source, "money"), eq(dailyResults.result, "pending")));
+                }
+                if (rows.length > 0) {
+                  await db.insert(dailyResults).values(rows);
+                }
+                console.log(`[HRRPicks] Persisted ${rows.length} picks to DB for ${todayETDate3} (replaced ${existingPendingCount} pending, kept ${existingGradedCount} graded)`);
+              } else {
+                console.log(`[HRRPicks] Skipped DB overwrite: existing ${existingPendingCount} pending rows >= new ${rows.length} picks (${existingGradedCount} already graded)`);
               }
-              console.log(`[HRRPicks] Persisted ${rows.length} picks to DB for ${todayETDate3}`);
             } catch (err) {
               console.error("[HRRPicks] Failed to persist picks to DB:", err);
             }
@@ -1464,36 +1531,21 @@ export const aiPicksRouter = router({
         }
 
       } else {
-        // ── BETWEEN OFFICIAL PULLS: serve stable board with minor live updates ─────
-        // Keep the official board but:
-        //   - Remove picks where game has started (handled by cleanExpiredLocks)
-        //   - Remove picks with major downgrade (score drop ≥8 pts)
-        //   - Update displayed edge/odds without reshuffling
-        //   - Promote early-locked picks to 'confirmed' if they were 'preliminary'
+        // ── BETWEEN OFFICIAL PULLS: serve FROZEN board ─────────────────────────────
+        // Phase BP: The official board is FROZEN once saved. No picks are ever removed.
+        // The only changes allowed between pulls are:
+        //   - Update displayed odds/edge (cosmetic only, does not change pick list)
+        //   - Promote preliminary picks to confirmed if their game has been early-locked
+        // Picks are NEVER removed because:
+        //   - lineupData.matchups only contains PRE-GAME players; once a game starts,
+        //     those players disappear from matchups even though they're still playing.
+        //   - Score drops are unreliable mid-day as enrichment data refreshes.
         const officialBoard = officialPullStore?.officialPicks ?? qualifyingPicks3;
-        const currentScoreMap = new Map<string, number>();
-        for (const p of preGamePicks3 as any[]) {
-          currentScoreMap.set(p.playerName, p.overallScore ?? 0);
-        }
 
-        // Phase BA fix: only remove picks for CONFIRMED scratches (player not in any lineup at all).
-        // Previously, picks were removed if they didn't appear in the latest scoring run — this caused
-        // cycling when VS gate dropped players intermittently.
-        // Now: keep picks unless (a) player is truly absent from all lineups, OR (b) major downgrade.
-        const allLineupPlayerNames = new Set(lineupData.matchups.map((m: any) => m.playerName));
-        const stableBoard = officialBoard.filter((p: any) => {
-          // Only remove if player is completely absent from today's lineup data (confirmed scratch)
-          if (!allLineupPlayerNames.has(p.playerName)) return false;
-          const currentScore = currentScoreMap.get(p.playerName);
-          if (currentScore !== undefined && isMajorDowngrade(currentScore, p.overallScore ?? p.scoreAtLock ?? currentScore)) return false;
-          return true;
-        }).map((p: any) => {
-          // Update live odds/edge display without changing pick order
+        // Only update cosmetic fields (odds, edge, lock status) — never filter
+        const frozenBoard = officialBoard.map((p: any) => {
+          // Update live odds/edge display without changing pick order or removing picks
           const livePick = preGamePicks3.find((lp: any) => lp.playerName === p.playerName);
-          const currentScore = currentScoreMap.get(p.playerName) ?? p.overallScore;
-          const scoreDrop = (p.overallScore ?? 0) - currentScore;
-          let pickStatus = p.pickStatus;
-          if (scoreDrop >= 5 && scoreDrop < 8) pickStatus = 'confidence_reduced' as const;
 
           // Promote preliminary picks to confirmed if their game has been early-locked
           const gameId3 = games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)
@@ -1501,13 +1553,14 @@ export const aiPicksRouter = router({
             : null;
           const gameLock3 = gameId3 ? gameLockStore.get(gameId3) : null;
           const isEarlyLocked = gameLock3?.isLocked && gameLock3?.lockReason === 'early_auto_lock';
+          let pickStatus = p.pickStatus;
           if (pickStatus === 'preliminary' && isEarlyLocked) {
             pickStatus = 'confirmed' as const;
           }
 
           return {
             ...p,
-            // Update live data but keep original recommended line
+            // Update live odds/edge display only — keep original recommended line and pick order
             bookOdds: livePick?.bookOdds ?? p.bookOdds,
             bookOddsProvider: livePick?.bookOddsProvider ?? p.bookOddsProvider,
             bookImpliedProb: livePick?.bookImpliedProb ?? p.bookImpliedProb,
@@ -1521,8 +1574,8 @@ export const aiPicksRouter = router({
           };
         });
 
-        moneyPicks3 = stableBoard;
-        console.log(`[HRRPicks] Serving stable board (${officialPullStore?.phase} pull): ${moneyPicks3.length} picks`);
+        moneyPicks3 = frozenBoard;
+        console.log(`[HRRPicks] Serving FROZEN board (${officialPullStore?.phase} pull): ${moneyPicks3.length} picks`);
         // Phase BN fix: lazy DB sync — if the DB has no rows for today, re-persist the current board
         // This ensures Results tab always mirrors Money Picks even if the server restarted after the official pull
         void (async () => {

@@ -1422,3 +1422,13 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Ensure Results shows same picks as Money Picks (verified: both show 12 picks with live actuals)
 - [x] TypeScript: 0 errors
 - [x] Checkpoint
+
+## Phase BP: Lock Board Permanently + Results Always Match Money Picks
+
+- [ ] Diagnose why picks are dropped from board after official pull (stableBoard filter removing players)
+- [ ] Remove ALL pick-removal logic from the between-pulls stable board path — once official pull is saved, board is FROZEN
+- [ ] Results tab reads from DB snapshot (written at official pull) — never from live pipeline that can change
+- [ ] DB persistence: on official pull, always write ALL picks to DB; never delete+reinsert with fewer rows
+- [ ] On server restart, reload officialPullStore from DB so board survives restarts
+- [ ] TypeScript: 0 errors
+- [ ] Checkpoint

@@ -1,0 +1,82 @@
+{
+  "query": "SELECT playerName, playerTeam, line, actualValue, result, matrixScore FROM daily_results WHERE gameDate = '2026-05-19' AND source = 'money' ORDER BY matrixScore DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT playerName, playerTeam, line, actualValue, result, matrixScore FROM daily_results WHERE gameDate = '2026-05-19' AND source = 'money' ORDER BY matrixScore DESC;",
+  "rows": [
+    {
+      "playerName": "James Wood",
+      "playerTeam": "WSH",
+      "line": "3",
+      "actualValue": "9",
+      "result": "hit",
+      "matrixScore": "77"
+    },
+    {
+      "playerName": "Spencer Steer",
+      "playerTeam": "CIN",
+      "line": "2",
+      "actualValue": "2",
+      "result": "hit",
+      "matrixScore": "75"
+    },
+    {
+      "playerName": "Elly De La Cruz",
+      "playerTeam": "CIN",
+      "line": "3",
+      "actualValue": "3",
+      "result": "hit",
+      "matrixScore": "75"
+    },
+    {
+      "playerName": "Sal Stewart",
+      "playerTeam": "CIN",
+      "line": "3",
+      "actualValue": "1",
+      "result": "miss",
+      "matrixScore": "75"
+    },
+    {
+      "playerName": "Juan Soto",
+      "playerTeam": "NYM",
+      "line": "2.5",
+      "actualValue": "5",
+      "result": "hit",
+      "matrixScore": "74"
+    },
+    {
+      "playerName": "JJ Bleday",
+      "playerTeam": "CIN",
+      "line": "2.5",
+      "actualValue": "2",
+      "result": "miss",
+      "matrixScore": "66"
+    },
+    {
+      "playerName": "Bryce Harper",
+      "playerTeam": "PHI",
+      "line": "2",
+      "actualValue": "0",
+      "result": "miss",
+      "matrixScore": "66"
+    },
+    {
+      "playerName": "Junior Caminero",
+      "playerTeam": "TB",
+      "line": "2",
+      "actualValue": "1",
+      "result": "miss",
+      "matrixScore": "65"
+    },
+    {
+      "playerName": "Michael Harris II",
+      "playerTeam": "ATL",
+      "line": "1.5",
+      "actualValue": "5",
+      "result": "hit",
+      "matrixScore": "63"
+    }
+  ],
+  "messages": [],
+  "stdout": "playerName\tplayerTeam\tline\tactualValue\tresult\tmatrixScore\nJames Wood\tWSH\t3\t9\thit\t77\nSpencer Steer\tCIN\t2\t2\thit\t75\nElly De La Cruz\tCIN\t3\t3\thit\t75\nSal Stewart\tCIN\t3\t1\tmiss\t75\nJuan Soto\tNYM\t2.5\t5\thit\t74\nJJ Bleday\tCIN\t2.5\t2\tmiss\t66\nBryce Harper\tPHI\t2\t0\tmiss\t66\nJunior Caminero\tTB\t2\t1\tmiss\t65\nMichael Harris II\tATL\t1.5\t5\thit\t63\n",
+  "stderr": "",
+  "execution_time_ms": 273
+}
