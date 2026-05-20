@@ -17,7 +17,7 @@ import { getAdaptedLineupData, getGamesForUI } from "../services/lineupAdapter";
 import { getDataDate, type MLBGame } from "../services/mlbLineupService";
 import { getEnrichmentData, onEnrichmentWarm } from "../services/enrichmentCache";
 import { fetchGameTotals } from "../services/gameTotalsService";
-import { bustPicksCache, getEnrichedMoneyPicks } from "../services/hrrPicksService";
+import { bustPicksCache, clearHardLock, getEnrichedMoneyPicks, isBoardHardLocked, setHardLock } from "../services/hrrPicksService";
 
 // Mock player data with batting position
 const MOCK_PLAYERS = new Map([
@@ -1400,7 +1400,9 @@ export const aiPicksRouter = router({
       cleanExpiredLocks(nowMs3);
 
       // Decide whether to issue a new official pull or serve the existing board
-      const isNewOfficialPull = shouldTriggerOfficialPull(nowET3, todayETDate3);
+      // Phase BQ: Never trigger an official pull if the board is hard-locked.
+      // Force Refresh (clearPickLocks) clears the hard lock if the user wants to update.
+      const isNewOfficialPull = !isBoardHardLocked() && shouldTriggerOfficialPull(nowET3, todayETDate3);
 
       let moneyPicks3: any[];
 
@@ -1473,6 +1475,10 @@ export const aiPicksRouter = router({
             officialPicks: moneyPicks3,
           };
           console.log(`[HRRPicks] Official board saved: ${moneyPicks3.length} picks (phase=${currentSlatePhase}, earlyLocked=${earlyLockedGameIds.size} games)`);
+          // Phase BQ: Set hard lock after the official board is saved.
+          // This prevents any subsequent scheduled pull from overwriting the board.
+          // Force Refresh (clearPickLocks) can clear this lock if needed.
+          setHardLock(todayETDate3);
           // Phase BN: Persist the official board to DB so Results tab always mirrors Money Picks exactly
           void (async () => {
             try {
@@ -2024,9 +2030,11 @@ export const aiPicksRouter = router({
   }),
 
   /**
-   * Phase AL/AM: Manual refresh — clears time-locked picks so the next
-   * getHRRPicks call re-evaluates them from scratch.
+   * Phase AL/AM/BQ: Manual refresh — clears time-locked picks and the hard lock
+   * so the next getHRRPicks call re-evaluates all picks from scratch.
    * Confirmed locks (official lineup) are preserved and returned as skippedConfirmed.
+   * Phase BQ: Force Refresh also clears the hard lock so the board can be updated
+   * even after the pre-game lock has fired.
    */
   clearPickLocks: publicProcedure.mutation(() => {
     let clearedCount = 0;
@@ -2041,15 +2049,27 @@ export const aiPicksRouter = router({
         clearedCount++;
       }
     }
+    // Phase BQ: Also clear the hard lock so Force Refresh can override the pre-game lock.
+    // This also busts the picks cache so the next getHRRPicks builds a fresh board.
+    const wasHardLocked = isBoardHardLocked();
+    if (wasHardLocked) {
+      clearHardLock();
+    }
+    // Bust the picks cache so the next getHRRPicks triggers a full rebuild
+    bustPicksCache();
+    // Also reset the official pull store so the next pull is treated as a new official pull
+    officialPullStore = null;
     console.log(
       `[HRR] clearPickLocks: cleared ${clearedCount} time-locked pick(s), ` +
-      `preserved ${skippedConfirmed} confirmed-locked pick(s): [${skippedNames.join(', ')}]`
+      `preserved ${skippedConfirmed} confirmed-locked pick(s): [${skippedNames.join(', ')}]` +
+      (wasHardLocked ? ' [hard lock cleared]' : '')
     );
     return {
       success: true,
       clearedCount,
       skippedConfirmed,
       skippedNames,
+      wasHardLocked,
       clearedAt: new Date().toISOString(),
     };
   }),

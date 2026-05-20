@@ -312,7 +312,41 @@ export interface HRRPicksResult {
 const PICKS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes — extended to reduce cycling (Phase BA)
 let picksCache: { result: HRRPicksResult; ts: number; slateDate: string } | null = null;
 
+// Phase BQ: Hard-lock flag — once set, the board is permanently frozen for the day.
+// No new official pull can overwrite it. Resets at midnight ET.
+let boardHardLocked = false;
+let boardHardLockedDate = '';
+
+export function isBoardHardLocked(): boolean {
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const todayET = `${nowET.getFullYear()}-${String(nowET.getMonth() + 1).padStart(2, '0')}-${String(nowET.getDate()).padStart(2, '0')}`;
+  // Reset lock at midnight ET (new day) or if Force Refresh cleared it
+  if (boardHardLockedDate !== todayET) {
+    boardHardLocked = false;
+    boardHardLockedDate = '';
+  }
+  return boardHardLocked;
+}
+
+/** Clear the hard lock (called by Force Refresh) */
+export function clearHardLock(): void {
+  boardHardLocked = false;
+  boardHardLockedDate = '';
+  console.log('[HRRPicks] Hard lock cleared by Force Refresh');
+}
+
+export function setHardLock(slateDate: string): void {
+  boardHardLocked = true;
+  boardHardLockedDate = slateDate;
+  console.log(`[HRRPicks] HARD LOCK set for ${slateDate} — board is permanently frozen`);
+}
+
 export function invalidatePicksCache() {
+  // Phase BQ: Never bust the cache if the board is hard-locked
+  if (isBoardHardLocked()) {
+    console.log('[HRRPicks] Cache bust skipped — board is hard-locked');
+    return;
+  }
   picksCache = null;
   console.log('[HRRPicks] Cache invalidated');
 }

@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO daily_results (gameDate, playerId, playerName, playerTeam, statType, source, line, probability, actualValue, result, odds, oddsProvider, streakLabel, dayNightLabel, tier, edge, closingLineValue, matrixScore)\nVALUES ('2026-05-19', 607043, 'Brandon Nimmo', 'NYM', 'hrr', 'money', '2', 65, 9, 'hit', NULL, NULL, NULL, NULL, 'A', NULL, NULL, 70);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute INSERT INTO daily_results (gameDate, playerId, playerName, playerTeam, statType, source, line, probability, actualValue, result, odds, oddsProvider, streakLabel, dayNightLabel, tier, edge, closingLineValue, matrixScore)\nVALUES ('2026-05-19', 607043, 'Brandon Nimmo', 'NYM', 'hrr', 'money', '2', 65, 9, 'hit', NULL, NULL, NULL, NULL, 'A', NULL, NULL, 70);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 270
+}

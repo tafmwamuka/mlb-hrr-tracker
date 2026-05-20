@@ -1432,3 +1432,14 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [ ] On server restart, reload officialPullStore from DB so board survives restarts
 - [ ] TypeScript: 0 errors
 - [ ] Checkpoint
+
+## Phase BQ: Pre-Game Board Lock (Automatic)
+- [x] Add `isBoardHardLocked()`, `setHardLock()`, `clearHardLock()` exports to hrrPicksService
+- [x] `invalidatePicksCache` / `bustPicksCache` respects hard lock — no cache bust when locked
+- [x] `clearPickLocks` (Force Refresh) clears hard lock + busts cache + resets officialPullStore
+- [x] `isNewOfficialPull` check in getHRRPicks respects hard lock — no rebuild when locked
+- [x] `setHardLock` called automatically after official board is saved
+- [x] Add `scheduledPreGameLock` endpoint to systemRouter — checks first pitch time, locks if within 90 min
+- [x] Updated scheduled task cron to add 4:30 PM NDT (16:30 UTC) run calling preGameLock
+- [x] TypeScript: 0 errors
+- [ ] Checkpoint
