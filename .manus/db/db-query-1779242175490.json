@@ -1,0 +1,210 @@
+{
+  "query": "SELECT gameDate, playerName, playerTeam, line, probability, source, actualValue, result FROM daily_results WHERE source = 'money' ORDER BY gameDate DESC, probability DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT gameDate, playerName, playerTeam, line, probability, source, actualValue, result FROM daily_results WHERE source = 'money' ORDER BY gameDate DESC, probability DESC LIMIT 20;",
+  "rows": [
+    {
+      "gameDate": "2026-05-19",
+      "playerName": "Matt Olson",
+      "playerTeam": "ATL",
+      "line": "2.5",
+      "probability": "48",
+      "source": "money",
+      "actualValue": "5",
+      "result": "hit"
+    },
+    {
+      "gameDate": "2026-05-19",
+      "playerName": "Bryce Harper",
+      "playerTeam": "PHI",
+      "line": "2.5",
+      "probability": "46",
+      "source": "money",
+      "actualValue": "0",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-19",
+      "playerName": "Junior Caminero",
+      "playerTeam": "TB",
+      "line": "2",
+      "probability": "43",
+      "source": "money",
+      "actualValue": "1",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-19",
+      "playerName": "Spencer Steer",
+      "playerTeam": "CIN",
+      "line": "2",
+      "probability": "43",
+      "source": "money",
+      "actualValue": "2",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-19",
+      "playerName": "Elly De La Cruz",
+      "playerTeam": "CIN",
+      "line": "3",
+      "probability": "40",
+      "source": "money",
+      "actualValue": "3",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-19",
+      "playerName": "Sal Stewart",
+      "playerTeam": "CIN",
+      "line": "3",
+      "probability": "38",
+      "source": "money",
+      "actualValue": "1",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Ryan Vilade",
+      "playerTeam": "TB",
+      "line": "1.5",
+      "probability": "54",
+      "source": "money",
+      "actualValue": "7",
+      "result": "hit"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Bryce Harper",
+      "playerTeam": "PHI",
+      "line": "2.5",
+      "probability": "53",
+      "source": "money",
+      "actualValue": "1",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "TJ Rumfield",
+      "playerTeam": "COL",
+      "line": "2.5",
+      "probability": "53",
+      "source": "money",
+      "actualValue": "2",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Trea Turner",
+      "playerTeam": "PHI",
+      "line": "2.5",
+      "probability": "46",
+      "source": "money",
+      "actualValue": "2",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Juan Soto",
+      "playerTeam": "NYM",
+      "line": "2.5",
+      "probability": "46",
+      "source": "money",
+      "actualValue": "5",
+      "result": "hit"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Alex Bregman",
+      "playerTeam": "CHC",
+      "line": "2.5",
+      "probability": "46",
+      "source": "money",
+      "actualValue": "0",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Willi Castro",
+      "playerTeam": "COL",
+      "line": "2.5",
+      "probability": "43",
+      "source": "money",
+      "actualValue": "4",
+      "result": "hit"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Yandy Díaz",
+      "playerTeam": "TB",
+      "line": "2.5",
+      "probability": "43",
+      "source": "money",
+      "actualValue": "12",
+      "result": "hit"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Josh Jung",
+      "playerTeam": "TEX",
+      "line": "2.5",
+      "probability": "43",
+      "source": "money",
+      "actualValue": "2",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Carson Benge",
+      "playerTeam": "NYM",
+      "line": "1.5",
+      "probability": "35",
+      "source": "money",
+      "actualValue": "9",
+      "result": "hit"
+    },
+    {
+      "gameDate": "2026-05-18",
+      "playerName": "Hunter Goodman",
+      "playerTeam": "COL",
+      "line": "2.5",
+      "probability": "35",
+      "source": "money",
+      "actualValue": "1",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-17",
+      "playerName": "Brice Turang",
+      "playerTeam": "MIL",
+      "line": "2.5",
+      "probability": "58",
+      "source": "money",
+      "actualValue": "1",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-17",
+      "playerName": "Drake Baldwin",
+      "playerTeam": "ATL",
+      "line": "3.5",
+      "probability": "55",
+      "source": "money",
+      "actualValue": "2",
+      "result": "miss"
+    },
+    {
+      "gameDate": "2026-05-17",
+      "playerName": "Kyle Schwarber",
+      "playerTeam": "PHI",
+      "line": "2.5",
+      "probability": "55",
+      "source": "money",
+      "actualValue": "0",
+      "result": "miss"
+    }
+  ],
+  "messages": [],
+  "stdout": "gameDate\tplayerName\tplayerTeam\tline\tprobability\tsource\tactualValue\tresult\n2026-05-19\tMatt Olson\tATL\t2.5\t48\tmoney\t5\thit\n2026-05-19\tBryce Harper\tPHI\t2.5\t46\tmoney\t0\tmiss\n2026-05-19\tJunior Caminero\tTB\t2\t43\tmoney\t1\tmiss\n2026-05-19\tSpencer Steer\tCIN\t2\t43\tmoney\t2\tmiss\n2026-05-19\tElly De La Cruz\tCIN\t3\t40\tmoney\t3\tmiss\n2026-05-19\tSal Stewart\tCIN\t3\t38\tmoney\t1\tmiss\n2026-05-18\tRyan Vilade\tTB\t1.5\t54\tmoney\t7\thit\n2026-05-18\tBryce Harper\tPHI\t2.5\t53\tmoney\t1\tmiss\n2026-05-18\tTJ Rumfield\tCOL\t2.5\t53\tmoney\t2\tmiss\n2026-05-18\tTrea Turner\tPHI\t2.5\t46\tmoney\t2\tmiss\n2026-05-18\tJuan Soto\tNYM\t2.5\t46\tmoney\t5\thit\n2026-05-18\tAlex Bregman\tCHC\t2.5\t46\tmoney\t0\tmiss\n2026-05-18\tWilli Castro\tCOL\t2.5\t43\tmoney\t4\thit\n2026-05-18\tYandy Díaz\tTB\t2.5\t43\tmoney\t12\thit\n2026-05-18\tJosh Jung\tTEX\t2.5\t43\tmoney\t2\tmiss\n2026-05-18\tCarson Benge\tNYM\t1.5\t35\tmoney\t9\thit\n2026-05-18\tHunter Goodman\tCOL\t2.5\t35\tmoney\t1\tmiss\n2026-05-17\tBrice Turang\tMIL\t2.5\t58\tmoney\t1\tmiss\n2026-05-17\tDrake Baldwin\tATL\t3.5\t55\tmoney\t2\tmiss\n2026-05-17\tKyle Schwarber\tPHI\t2.5\t55\tmoney\t0\tmiss\n",
+  "stderr": "",
+  "execution_time_ms": 299
+}

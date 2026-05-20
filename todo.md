@@ -1415,3 +1415,10 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Keep pipeline fallback when DB has no rows yet (first pull of the day)
 - [x] TypeScript: 0 errors
 - [x] Checkpoint
+
+## Phase BO: Results Tab Always Mirrors Money Picks
+
+- [x] Fix getTodayResults: always call getEnrichedMoneyPicks() to get the live board, use DB only for grading actuals (not as the pick source)
+- [x] Ensure Results shows same picks as Money Picks (verified: both show 12 picks with live actuals)
+- [x] TypeScript: 0 errors
+- [ ] Checkpoint

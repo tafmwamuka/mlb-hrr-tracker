@@ -58,73 +58,58 @@ export const resultsRouter = router({
       const db = await getDb();
 
       // ═══════════════════════════════════════════════════════════════════
-      // Phase BN: Read from DB snapshot (persisted at pull time by aiPicks.ts)
-      // This guarantees Results always shows EXACTLY the same picks as Money Picks.
-      // If DB has no rows yet (first pull of the day), fall back to live pipeline.
+      // Phase BO: ALWAYS use the live Money Picks board as the source of truth.
+      // The DB is only used to look up graded actuals (actualValue, result)
+      // for picks that have already been graded by the autoGrade job.
+      // This ensures Results always shows the SAME picks as Money Picks.
       // ═══════════════════════════════════════════════════════════════════
-      let moneyPickResults: Array<{
-        playerId: number;
-        playerName: string;
-        team: string;
-        line: number;
-        probability: number;
-        pitcher?: string;
-        pitcherTeam?: string;
-        expectedTotal?: number;
-        reasoning?: string;
-        odds?: string | null;
-      }> = [];
 
-      if (db) {
+      // Step 1: Get the live Money Picks board (same cache as Money Picks tab)
+      const hrrResult = await getEnrichedMoneyPicks();
+      if (hrrResult.lineupsPending) {
+        return {
+          success: true,
+          results: [],
+          lineupsPending: true,
+          date: dateStr,
+          hitRate: 0,
+          totalPlays: 0,
+          hasActuals: false,
+          gamesInProgress: 0,
+          gamesCompleted: 0,
+          gamesScheduled: 0,
+        };
+      }
+
+      const moneyPickResults = hrrResult.moneyPicks.map(p => ({
+        playerId: p.playerId,
+        playerName: p.playerName,
+        team: p.team,
+        line: p.recommendedLine,
+        probability: p.recommendedProb,
+        pitcher: p.pitcher,
+        pitcherTeam: p.pitcherTeam,
+        expectedTotal: p.expectedTotal,
+        reasoning: p.reasoning,
+        odds: p.bookOdds != null ? String(p.bookOdds) : null,
+      }));
+
+      // Step 2: Load any already-graded actuals from DB (for picks already graded by autoGrade job)
+      const gradedMap = new Map<string, { actualValue: number | null; result: string }>();
+      if (db && moneyPickResults.length > 0) {
         const dbRows = await db
           .select()
           .from(dailyResults)
           .where(and(
             eq(dailyResults.gameDate, dateStr),
             eq(dailyResults.source, "money"),
-          ))
-          .orderBy(desc(dailyResults.probability));
-
-        if (dbRows.length > 0) {
-          moneyPickResults = dbRows.map(row => ({
-            playerId: row.playerId,
-            playerName: row.playerName,
-            team: row.playerTeam,
-            line: parseFloat(row.line) || 1.5,
-            probability: row.probability,
-            odds: row.odds,
-          }));
+          ));
+        for (const row of dbRows) {
+          gradedMap.set(row.playerName.toLowerCase(), {
+            actualValue: row.actualValue,
+            result: row.result,
+          });
         }
-      }
-
-      // Fallback: re-run pipeline if DB has no rows yet
-      if (moneyPickResults.length === 0) {
-        const hrrResult = await getEnrichedMoneyPicks();
-        if (hrrResult.lineupsPending) {
-          return {
-            success: true,
-            results: [],
-            lineupsPending: true,
-            date: dateStr,
-            hitRate: 0,
-            totalPlays: 0,
-            hasActuals: false,
-            gamesInProgress: 0,
-            gamesCompleted: 0,
-            gamesScheduled: 0,
-          };
-        }
-        moneyPickResults = hrrResult.moneyPicks.map(p => ({
-          playerId: p.playerId,
-          playerName: p.playerName,
-          team: p.team,
-          line: p.recommendedLine,
-          probability: p.recommendedProb,
-          pitcher: p.pitcher,
-          pitcherTeam: p.pitcherTeam,
-          expectedTotal: p.expectedTotal,
-          reasoning: p.reasoning,
-        }));
       }
 
       // ═══════════════════════════════════════════════════════════════════
@@ -182,9 +167,16 @@ export const resultsRouter = router({
         let hit: boolean | null = null;
 
         if (playerStats && (status === "Final" || status === "In Progress")) {
-          // HRR combined = hits + runs + rbi
+          // HRR combined = hits + runs + rbi (live boxscore)
           actualValue = playerStats.hits + playerStats.runs + playerStats.rbi;
           hit = actualValue > pick.line;
+        } else {
+          // Fallback: use DB-graded actuals if the autoGrade job already ran
+          const graded = gradedMap.get(pick.playerName.toLowerCase());
+          if (graded && graded.actualValue !== null) {
+            actualValue = graded.actualValue;
+            hit = graded.result === "hit";
+          }
         }
 
         results.push({
