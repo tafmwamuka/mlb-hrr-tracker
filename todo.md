@@ -1442,4 +1442,14 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Add `scheduledPreGameLock` endpoint to systemRouter — checks first pitch time, locks if within 90 min
 - [x] Updated scheduled task cron to add 4:30 PM NDT (16:30 UTC) run calling preGameLock
 - [x] TypeScript: 0 errors
+- [x] Checkpoint
+
+## Phase BR: Game-Time Driven Pick Stages
+- [x] Per-pick stage engine: Preliminary (no lineup) → Confirmed (lineup posted) → Locked (15 min after lineup OR first pitch, whichever first)
+- [x] LINEUP_STABILIZATION_MS reduced from 30 min to 15 min
+- [x] pickStatus uses per-game gameLockStore data, not global slatePhase
+- [x] Between-pulls frozen board also uses per-game stage logic
+- [x] Force Refresh clears gameLockStore (all per-game stages reset to Preliminary)
+- [x] Frontend: per-pick badge shows 📌 PRELIMINARY / ✓ CONFIRMED / 🔒 LOCKED based on pick.pickStatus
+- [x] TypeScript: 0 errors
 - [ ] Checkpoint

@@ -100,7 +100,7 @@ interface MoneyPick {
   leanTier?: boolean;    // True when score is 68-73 (informational only)
   gameTime?: string | null; // ISO game start time (UTC)
   // Phase AK/AM: Stability system fields
-  pickStatus?: 'confirmed' | 'preliminary' | 'confidence_reduced' | 'locked_confirmed' | 'final_official';
+  pickStatus?: 'confirmed' | 'preliminary' | 'confidence_reduced' | 'locked_confirmed' | 'final_official' | 'locked';
   lastUpdated?: string | null; // ISO timestamp of last score update
   scoreChanged?: boolean;       // true when confirmed-locked pick score dropped >15 pts
   scoreDrop?: number;           // how many pts the score dropped since lock
@@ -653,20 +653,14 @@ function MoneyPickCard({
             {pick.lineSource}
           </div>
 
-          {/* Phase AS: Pick Status chip — PRELIMINARY / CONFIRMED / FINAL OFFICIAL PLAY */}
-          {pick.pickStatus === 'final_official' ? (
+          {/* Phase BR: Per-pick stage badge — driven by each game's lineup post time and first pitch */}
+          {(pick.pickStatus === 'locked' || pick.pickStatus === 'locked_confirmed' || pick.pickStatus === 'final_official') ? (
             <div
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
               style={{ background: "oklch(0.82 0.17 85 / 18%)", color: "oklch(0.82 0.17 85)", border: "1px solid oklch(0.82 0.17 85 / 50%)" }}
-              title="Final Official Play — evening lock active"
-            >
-              🔥 FINAL OFFICIAL PLAY
-            </div>
-          ) : pick.pickStatus === 'locked_confirmed' ? (
-            <div
-              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
-              style={{ background: "oklch(0.72 0.18 165 / 18%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 50%)" }}
-              title="Locked on confirmed lineup — retained until game start"
+              title={pick.gameLockTime
+                ? `Locked at ${new Date(pick.gameLockTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/St_Johns' })} NDT — 15 min after lineup posted`
+                : 'Locked — 15 min after lineup posted or within 15 min of first pitch'}
             >
               🔒 LOCKED
             </div>
@@ -674,7 +668,7 @@ function MoneyPickCard({
             <div
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
               style={{ background: "oklch(0.72 0.18 165 / 12%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 30%)" }}
-              title="Midday confirmed board — official lineups locked in"
+              title="Lineup confirmed — locks in 15 min"
             >
               ✓ CONFIRMED
             </div>
@@ -684,26 +678,15 @@ function MoneyPickCard({
               style={{ background: "oklch(0.68 0.22 25 / 12%)", color: "oklch(0.78 0.18 25)", border: "1px solid oklch(0.68 0.22 25 / 30%)" }}
               title="Confidence slightly reduced — monitoring odds shift"
             >
-              ⚠️ MONITORING ODDS SHIFT
+              ⚠️ MONITORING
             </div>
-          ) : pick.pickStatus === 'preliminary' ? (
+          ) : (
             <div
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
               style={{ background: "oklch(0.72 0.10 220 / 10%)", color: "oklch(0.72 0.10 220)", border: "1px solid oklch(0.72 0.10 220 / 25%)" }}
-              title="Preliminary pick — projected lineups, morning pull"
+              title="Preliminary — lineup not yet posted for this game"
             >
               📌 PRELIMINARY
-            </div>
-          ) : null}
-
-          {/* Phase AT: Early auto-lock badge */}
-          {pick.isEarlyLocked && pick.pickStatus === 'confirmed' && (
-            <div
-              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
-              style={{ background: "oklch(0.72 0.18 165 / 15%)", color: "oklch(0.72 0.18 165)", border: "1px solid oklch(0.72 0.18 165 / 40%)" }}
-              title={pick.gameLockTime ? `Early locked at ${new Date(pick.gameLockTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/St_Johns' })} NDT` : 'Game locked early — confirmed lineup + 30min stability'}
-            >
-              🔒 EARLY LOCKED
             </div>
           )}
 

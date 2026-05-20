@@ -859,8 +859,8 @@ function isMajorDowngrade(currentScore: number, scoreAtLock: number): boolean {
 //   5. Matrix score stable (no major downgrade in last 30 min)
 //   6. Game within 90 minutes of first pitch (early-lock trigger)
 
-const LINEUP_STABILIZATION_MS = 30 * 60 * 1000; // 30 min after lineup confirmed
-const EARLY_LOCK_WINDOW_MS = 90 * 60 * 1000;    // lock when within 90 min of first pitch
+const LINEUP_STABILIZATION_MS = 15 * 60 * 1000; // 15 min after lineup confirmed → pick locks
+const EARLY_LOCK_WINDOW_MS = 90 * 60 * 1000;    // also lock when within 90 min of first pitch (whichever comes first)
 
 interface GameLockRecord {
   gameId: string;           // e.g. "TOR@DET"
@@ -1438,18 +1438,46 @@ export const aiPicksRouter = router({
           });
         }
 
-        // Assign pick status — early-locked games get 'confirmed' even in preliminary phase
+         // Phase BR: Per-game stage engine — each pick's stage is driven by its own game's
+        // lineup post time and first pitch, not the global slate phase.
+        // Stages: preliminary → confirmed (lineup posted) → locked (15 min after lineup OR first pitch)
+        const nowMsForStatus = Date.now();
         moneyPicks3 = qualifyingPicks3.map((p: any) => {
-          const gameId3 = games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)
-            ? `${games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)!.awayTeam}@${games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)!.homeTeam}`
+          const matchedGame3 = games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team);
+          const gameId3 = matchedGame3
+            ? `${matchedGame3.awayTeam}@${matchedGame3.homeTeam}`
             : null;
-          const isEarlyLocked = gameId3 ? earlyLockedGameIds.has(gameId3) : false;
           const gameLock3 = gameId3 ? gameLockStore.get(gameId3) : null;
+          const isEarlyLocked = gameId3 ? earlyLockedGameIds.has(gameId3) : false;
 
-          let pickStatus: 'preliminary' | 'confirmed' | 'final_official';
-          if (currentSlatePhase === 'final') {
-            pickStatus = 'final_official';
-          } else if (currentSlatePhase === 'confirmed' || isEarlyLocked) {
+          // Per-game stage logic:
+          // 1. LOCKED: game is in gameLockStore and isLocked, OR within 90 min of first pitch with lineup confirmed
+          // 2. CONFIRMED: lineup has been posted for this game (lineupConfirmedAt is set)
+          // 3. PRELIMINARY: no lineup yet
+          let pickStatus: 'preliminary' | 'confirmed' | 'locked';
+          if (gameLock3?.isLocked || isEarlyLocked) {
+            pickStatus = 'locked';
+          } else if (gameLock3?.lineupConfirmedAt !== null && gameLock3?.lineupConfirmedAt !== undefined) {
+            // Lineup is confirmed — check if 15 min stabilization has elapsed
+            const msSinceLineup = nowMsForStatus - gameLock3.lineupConfirmedAt;
+            const minsToFirstPitch = gameLock3.firstPitchMs
+              ? Math.round((gameLock3.firstPitchMs - nowMsForStatus) / 60000)
+              : 999;
+            if (msSinceLineup >= LINEUP_STABILIZATION_MS || minsToFirstPitch <= 15) {
+              // 15 min elapsed since lineup OR within 15 min of first pitch → lock
+              pickStatus = 'locked';
+              // Trigger the lock in gameLockStore if not already locked
+              if (gameId3 && gameLock3 && !gameLock3.isLocked) {
+                lockGame(gameId3, qualifyingPicks3.filter((q: any) => {
+                  const qGame = games3ForLock.find((g: any) => g.homeTeam === q.team || g.awayTeam === q.team);
+                  return qGame && `${qGame.awayTeam}@${qGame.homeTeam}` === gameId3;
+                }), 'early_auto_lock');
+              }
+            } else {
+              pickStatus = 'confirmed';
+            }
+          } else if (p.lineupSource === 'confirmed' || currentSlatePhase !== 'preliminary') {
+            // Fallback: if lineup source is confirmed but no gameLock record yet, treat as confirmed
             pickStatus = 'confirmed';
           } else {
             pickStatus = 'preliminary';
@@ -1553,15 +1581,35 @@ export const aiPicksRouter = router({
           // Update live odds/edge display without changing pick order or removing picks
           const livePick = preGamePicks3.find((lp: any) => lp.playerName === p.playerName);
 
-          // Promote preliminary picks to confirmed if their game has been early-locked
-          const gameId3 = games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)
-            ? `${games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)!.awayTeam}@${games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team)!.homeTeam}`
+          // Phase BR: Per-game stage logic on frozen board — update pickStatus based on game time
+          const matchedGameFrozen = games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team);
+          const gameId3 = matchedGameFrozen
+            ? `${matchedGameFrozen.awayTeam}@${matchedGameFrozen.homeTeam}`
             : null;
           const gameLock3 = gameId3 ? gameLockStore.get(gameId3) : null;
-          const isEarlyLocked = gameLock3?.isLocked && gameLock3?.lockReason === 'early_auto_lock';
-          let pickStatus = p.pickStatus;
-          if (pickStatus === 'preliminary' && isEarlyLocked) {
-            pickStatus = 'confirmed' as const;
+          const isEarlyLocked = gameId3 ? earlyLockedGameIds.has(gameId3) : false;
+          const nowMsFrozen = Date.now();
+          let pickStatus: 'preliminary' | 'confirmed' | 'locked';
+          if (gameLock3?.isLocked || isEarlyLocked) {
+            pickStatus = 'locked';
+          } else if (gameLock3?.lineupConfirmedAt !== null && gameLock3?.lineupConfirmedAt !== undefined) {
+            const msSinceLineup = nowMsFrozen - gameLock3.lineupConfirmedAt;
+            const minsToFirstPitch = gameLock3.firstPitchMs
+              ? Math.round((gameLock3.firstPitchMs - nowMsFrozen) / 60000)
+              : 999;
+            if (msSinceLineup >= LINEUP_STABILIZATION_MS || minsToFirstPitch <= 15) {
+              pickStatus = 'locked';
+              if (gameId3 && gameLock3 && !gameLock3.isLocked) {
+                lockGame(gameId3, officialBoard.filter((q: any) => {
+                  const qGame = games3ForLock.find((g: any) => g.homeTeam === q.team || g.awayTeam === q.team);
+                  return qGame && `${qGame.awayTeam}@${qGame.homeTeam}` === gameId3;
+                }), 'early_auto_lock');
+              }
+            } else {
+              pickStatus = 'confirmed';
+            }
+          } else {
+            pickStatus = p.pickStatus ?? 'preliminary';
           }
 
           return {
@@ -2055,13 +2103,18 @@ export const aiPicksRouter = router({
     if (wasHardLocked) {
       clearHardLock();
     }
+    // Phase BR: Clear all per-game stage locks so Force Refresh resets every pick to Preliminary
+    // They will re-advance through Confirmed → Locked as lineup data comes back in
+    const clearedGameLocks = gameLockStore.size;
+    gameLockStore.clear();
     // Bust the picks cache so the next getHRRPicks triggers a full rebuild
     bustPicksCache();
     // Also reset the official pull store so the next pull is treated as a new official pull
     officialPullStore = null;
     console.log(
       `[HRR] clearPickLocks: cleared ${clearedCount} time-locked pick(s), ` +
-      `preserved ${skippedConfirmed} confirmed-locked pick(s): [${skippedNames.join(', ')}]` +
+      `preserved ${skippedConfirmed} confirmed-locked pick(s): [${skippedNames.join(', ')}], ` +
+      `cleared ${clearedGameLocks} game stage lock(s)` +
       (wasHardLocked ? ' [hard lock cleared]' : '')
     );
     return {
@@ -2070,6 +2123,7 @@ export const aiPicksRouter = router({
       skippedConfirmed,
       skippedNames,
       wasHardLocked,
+      clearedGameLocks,
       clearedAt: new Date().toISOString(),
     };
   }),
