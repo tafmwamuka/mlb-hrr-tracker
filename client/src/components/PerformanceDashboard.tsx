@@ -273,9 +273,9 @@ export function PerformanceDashboard() {
   const overallRate = s?.overallHitRate ?? 0;
   const totalPredictions = s?.totalPredictions ?? 0;
   const totalHits = s?.totalHits ?? 0;
-  const hitsRate = (s?.byStatType as any)?.hits ?? 0;
-  const runsRate = (s?.byStatType as any)?.runs ?? 0;
-  const rbiRate = (s?.byStatType as any)?.rbi ?? 0;
+  const sTierData = (s?.byTier as any)?.s ?? { hitRate: 0, total: 0, hits: 0 };
+  const aTierData = (s?.byTier as any)?.a ?? { hitRate: 0, total: 0, hits: 0 };
+  const leanData = (s?.byTier as any)?.lean ?? { hitRate: 0, total: 0, hits: 0 };
   const rateColor = overallRate >= 65 ? "oklch(0.72 0.18 165)" : overallRate >= 50 ? "oklch(0.82 0.17 85)" : "oklch(0.68 0.22 25)";
 
   return (
@@ -303,7 +303,7 @@ export function PerformanceDashboard() {
         >
           <div className="flex items-center gap-2">
             <Target size={14} style={{ color: rateColor }} />
-            <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Last 7 Days Hit Rate</span>
+            <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">All-Time Hit Rate</span>
           </div>
           <div className="text-3xl font-bold font-stat" style={{ color: rateColor }}>
             {totalPredictions > 0 ? `${overallRate}%` : "—"}
@@ -333,32 +333,38 @@ export function PerformanceDashboard() {
       </div>
 
       {/* Stat-type breakdown */}
-      {totalPredictions > 0 && (
-        <div
+      <div
           className="rounded-2xl p-4"
           style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}
         >
           <div className="flex items-center gap-2 mb-3">
             <Zap size={13} style={{ color: "oklch(0.82 0.17 85)" }} />
-            <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Hit Rate by Stat Type</span>
+            <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Hit Rate by Tier</span>
           </div>
           <div className="space-y-3">
             {[
-              { label: "Hits (H)", rate: hitsRate, color: "oklch(0.82 0.17 85)" },
-              { label: "Runs (R)", rate: runsRate, color: "oklch(0.68 0.22 25)" },
-              { label: "RBI", rate: rbiRate, color: "oklch(0.72 0.18 165)" },
-            ].map(({ label, rate, color }) => (
-              <div key={label}>
+              { label: "S Tier (83+)", tier: "S", rate: sTierData.hitRate, total: sTierData.total, hits: sTierData.hits, color: "oklch(0.82 0.17 85)" },
+              { label: "A Tier (74–82)", tier: "A", rate: aTierData.hitRate, total: aTierData.total, hits: aTierData.hits, color: "oklch(0.72 0.18 165)" },
+              { label: "Lean (68–73)", tier: "L", rate: leanData.hitRate, total: leanData.total, hits: leanData.hits, color: "oklch(0.72 0.10 220)" },
+            ].map(({ label, tier, rate, total, hits, color }) => (
+              <div key={tier}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-semibold text-[oklch(0.55_0.015_255)]">{label}</span>
-                  <span className="text-[10px] font-bold" style={{ color }}>{rate > 0 ? `${rate}%` : "—"}</span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                      style={{ background: `${color}20`, color, border: `1px solid ${color}40` }}
+                    >{tier}</span>
+                    <span className="text-[10px] font-semibold text-[oklch(0.55_0.015_255)]">{label}</span>
+                  </div>
+                  <span className="text-[10px] font-bold" style={{ color }}>
+                    {total > 0 ? `${rate}% (${hits}/${total})` : "—"}
+                  </span>
                 </div>
-                {rate > 0 && <StatBar value={rate} color={color} />}
+                {total > 0 && <StatBar value={rate} color={color} />}
               </div>
             ))}
           </div>
         </div>
-      )}
 
       {/* Tier system */}
       <div

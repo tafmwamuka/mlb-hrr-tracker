@@ -457,7 +457,7 @@ export const resultsRouter = router({
     try {
       const db = await getDb();
       if (!db) {
-        return { success: false, stats: { overallHitRate: 0, totalPredictions: 0, totalHits: 0, byStatType: { hits: 0, runs: 0, rbi: 0 }, last7Days: 0, last30Days: 0 } };
+        return { success: false, stats: { overallHitRate: 0, totalPredictions: 0, totalHits: 0, byStatType: { hits: 0, runs: 0, rbi: 0 }, byTier: { s: { hitRate: 0, total: 0, hits: 0 }, a: { hitRate: 0, total: 0, hits: 0 }, lean: { hitRate: 0, total: 0, hits: 0 } }, last7Days: 0, last30Days: 0 } };
       }
 
       // Read from dailyResults — money picks only
@@ -468,6 +468,11 @@ export const resultsRouter = router({
           eq(dailyResults.source, "money"),
           ne(dailyResults.result, "pending")
         ));
+
+      // All-time totals
+      const totalPredictions = allRows.length;
+      const totalHits = allRows.filter(r => r.result === "hit").length;
+      const overallHitRate = totalPredictions > 0 ? Math.round((totalHits / totalPredictions) * 100) : 0;
 
       // 7-day and 30-day hit rates
       const now = new Date();
@@ -481,11 +486,13 @@ export const resultsRouter = router({
       const last7Days = last7Rows.length > 0 ? Math.round((last7Rows.filter(r => r.result === "hit").length / last7Rows.length) * 100) : 0;
       const last30Days = last30Rows.length > 0 ? Math.round((last30Rows.filter(r => r.result === "hit").length / last30Rows.length) * 100) : 0;
 
-      // "All-Time Hit Rate" card = last 7 days (most relevant recent performance window)
-      // totalPredictions and totalHits also scoped to last 7 days for consistency
-      const totalPredictions = last7Rows.length;
-      const totalHits = last7Rows.filter(r => r.result === "hit").length;
-      const overallHitRate = last7Days;
+      // Tier breakdown (S = matrixScore >= 83, A = 74-82, Lean = 68-73)
+      const sTierRows = allRows.filter(r => (r.matrixScore ?? 0) >= 83);
+      const aTierRows = allRows.filter(r => (r.matrixScore ?? 0) >= 74 && (r.matrixScore ?? 0) < 83);
+      const leanRows = allRows.filter(r => (r.matrixScore ?? 0) >= 68 && (r.matrixScore ?? 0) < 74);
+      const sTierHitRate = sTierRows.length > 0 ? Math.round((sTierRows.filter(r => r.result === "hit").length / sTierRows.length) * 100) : 0;
+      const aTierHitRate = aTierRows.length > 0 ? Math.round((aTierRows.filter(r => r.result === "hit").length / aTierRows.length) * 100) : 0;
+      const leanHitRate = leanRows.length > 0 ? Math.round((leanRows.filter(r => r.result === "hit").length / leanRows.length) * 100) : 0;
 
       // By stat type
       const hrrRows = allRows.filter(r => r.statType === "hrr");
@@ -505,13 +512,18 @@ export const resultsRouter = router({
             runs: runsRows.length > 0 ? Math.round((runsRows.filter(r => r.result === "hit").length / runsRows.length) * 100) : 0,
             rbi: rbiRows.length > 0 ? Math.round((rbiRows.filter(r => r.result === "hit").length / rbiRows.length) * 100) : 0,
           },
+          byTier: {
+            s: { hitRate: sTierHitRate, total: sTierRows.length, hits: sTierRows.filter(r => r.result === "hit").length },
+            a: { hitRate: aTierHitRate, total: aTierRows.length, hits: aTierRows.filter(r => r.result === "hit").length },
+            lean: { hitRate: leanHitRate, total: leanRows.length, hits: leanRows.filter(r => r.result === "hit").length },
+          },
           last7Days,
           last30Days,
         },
       };
     } catch (error) {
       console.error("Error fetching hit rate stats:", error);
-      return { success: false, stats: { overallHitRate: 0, totalPredictions: 0, totalHits: 0, byStatType: { hits: 0, runs: 0, rbi: 0 }, last7Days: 0, last30Days: 0 } };
+      return { success: false, stats: { overallHitRate: 0, totalPredictions: 0, totalHits: 0, byStatType: { hits: 0, runs: 0, rbi: 0 }, byTier: { s: { hitRate: 0, total: 0, hits: 0 }, a: { hitRate: 0, total: 0, hits: 0 }, lean: { hitRate: 0, total: 0, hits: 0 } }, last7Days: 0, last30Days: 0 } };
     }
   }),
 });
