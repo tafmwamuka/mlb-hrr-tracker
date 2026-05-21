@@ -469,10 +469,6 @@ export const resultsRouter = router({
           ne(dailyResults.result, "pending")
         ));
 
-      const totalPredictions = allRows.length;
-      const totalHits = allRows.filter(r => r.result === "hit").length;
-      const overallHitRate = totalPredictions > 0 ? Math.round((totalHits / totalPredictions) * 100) : 0;
-
       // 7-day and 30-day hit rates
       const now = new Date();
       const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(now.getDate() - 7);
@@ -484,6 +480,12 @@ export const resultsRouter = router({
       const last30Rows = allRows.filter(r => r.gameDate >= thirtyDayStr);
       const last7Days = last7Rows.length > 0 ? Math.round((last7Rows.filter(r => r.result === "hit").length / last7Rows.length) * 100) : 0;
       const last30Days = last30Rows.length > 0 ? Math.round((last30Rows.filter(r => r.result === "hit").length / last30Rows.length) * 100) : 0;
+
+      // "All-Time Hit Rate" card = last 7 days (most relevant recent performance window)
+      // totalPredictions and totalHits also scoped to last 7 days for consistency
+      const totalPredictions = last7Rows.length;
+      const totalHits = last7Rows.filter(r => r.result === "hit").length;
+      const overallHitRate = last7Days;
 
       // By stat type
       const hrrRows = allRows.filter(r => r.statType === "hrr");

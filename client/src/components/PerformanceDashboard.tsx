@@ -303,7 +303,7 @@ export function PerformanceDashboard() {
         >
           <div className="flex items-center gap-2">
             <Target size={14} style={{ color: rateColor }} />
-            <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">All-Time Hit Rate</span>
+            <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Last 7 Days Hit Rate</span>
           </div>
           <div className="text-3xl font-bold font-stat" style={{ color: rateColor }}>
             {totalPredictions > 0 ? `${overallRate}%` : "—"}

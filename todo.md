@@ -1462,4 +1462,4 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Results reads from pick_snapshots first, falls back to live board if no snapshots exist
 - [x] ResultCard shows locked odds vs current odds and board phase label
 - [x] TypeScript: 0 errors
-- [ ] Checkpoint
+- [x] Checkpoint

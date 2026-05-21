@@ -1,0 +1,118 @@
+{
+  "query": "SELECT id, playerName, line, actualValue, result, source, createdAt FROM daily_results WHERE gameDate = '2026-05-20' ORDER BY createdAt ASC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT id, playerName, line, actualValue, result, source, createdAt FROM daily_results WHERE gameDate = '2026-05-20' ORDER BY createdAt ASC;",
+  "rows": [
+    {
+      "id": "4140033",
+      "playerName": "James Wood",
+      "line": "3",
+      "actualValue": "0",
+      "result": "miss",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140034",
+      "playerName": "Nathaniel Lowe",
+      "line": "2",
+      "actualValue": "6",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140035",
+      "playerName": "Elly De La Cruz",
+      "line": "2.5",
+      "actualValue": "0",
+      "result": "miss",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140036",
+      "playerName": "Sal Stewart",
+      "line": "2.5",
+      "actualValue": "9",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140037",
+      "playerName": "Josh Jung",
+      "line": "2.5",
+      "actualValue": "5",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140038",
+      "playerName": "Brandon Nimmo",
+      "line": "2",
+      "actualValue": "1",
+      "result": "miss",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140039",
+      "playerName": "Blake Dunn",
+      "line": "1.5",
+      "actualValue": "4",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140040",
+      "playerName": "Ezequiel Duran",
+      "line": "2.5",
+      "actualValue": "4",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140041",
+      "playerName": "Junior Caminero",
+      "line": "2",
+      "actualValue": "2",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140042",
+      "playerName": "JJ Bleday",
+      "line": "3",
+      "actualValue": "4",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140043",
+      "playerName": "Jake McCarthy",
+      "line": "2",
+      "actualValue": "4",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    },
+    {
+      "id": "4140044",
+      "playerName": "Troy Johnston",
+      "line": "2.5",
+      "actualValue": "3",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-21 03:29:48"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tplayerName\tline\tactualValue\tresult\tsource\tcreatedAt\n4140033\tJames Wood\t3\t0\tmiss\tmoney\t2026-05-21 03:29:48\n4140034\tNathaniel Lowe\t2\t6\thit\tmoney\t2026-05-21 03:29:48\n4140035\tElly De La Cruz\t2.5\t0\tmiss\tmoney\t2026-05-21 03:29:48\n4140036\tSal Stewart\t2.5\t9\thit\tmoney\t2026-05-21 03:29:48\n4140037\tJosh Jung\t2.5\t5\thit\tmoney\t2026-05-21 03:29:48\n4140038\tBrandon Nimmo\t2\t1\tmiss\tmoney\t2026-05-21 03:29:48\n4140039\tBlake Dunn\t1.5\t4\thit\tmoney\t2026-05-21 03:29:48\n4140040\tEzequiel Duran\t2.5\t4\thit\tmoney\t2026-05-21 03:29:48\n4140041\tJunior Caminero\t2\t2\thit\tmoney\t2026-05-21 03:29:48\n4140042\tJJ Bleday\t3\t4\thit\tmoney\t2026-05-21 03:29:48\n4140043\tJake McCarthy\t2\t4\thit\tmoney\t2026-05-21 03:29:48\n4140044\tTroy Johnston\t2.5\t3\thit\tmoney\t2026-05-21 03:29:48\n",
+  "stderr": "",
+  "execution_time_ms": 1390
+}

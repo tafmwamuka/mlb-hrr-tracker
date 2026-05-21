@@ -1,0 +1,208 @@
+{
+  "query": "SELECT id, playerName, line, actualValue, result, source, createdAt FROM daily_results WHERE gameDate = '2026-05-19' ORDER BY createdAt ASC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT id, playerName, line, actualValue, result, source, createdAt FROM daily_results WHERE gameDate = '2026-05-19' ORDER BY createdAt ASC;",
+  "rows": [
+    {
+      "id": "3150001",
+      "playerName": "Juan Soto",
+      "line": "2.5",
+      "actualValue": "5",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 03:03:47"
+    },
+    {
+      "id": "3150002",
+      "playerName": "Spencer Steer",
+      "line": "2",
+      "actualValue": "2",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 03:03:47"
+    },
+    {
+      "id": "3150003",
+      "playerName": "Elly De La Cruz",
+      "line": "3",
+      "actualValue": "3",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 03:03:47"
+    },
+    {
+      "id": "3150004",
+      "playerName": "James Wood",
+      "line": "3",
+      "actualValue": "9",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 03:03:47"
+    },
+    {
+      "id": "3150005",
+      "playerName": "Sal Stewart",
+      "line": "3",
+      "actualValue": "1",
+      "result": "miss",
+      "source": "money",
+      "createdAt": "2026-05-20 03:03:47"
+    },
+    {
+      "id": "3150006",
+      "playerName": "JJ Bleday",
+      "line": "2.5",
+      "actualValue": "2",
+      "result": "miss",
+      "source": "money",
+      "createdAt": "2026-05-20 03:03:47"
+    },
+    {
+      "id": "3150007",
+      "playerName": "Michael Harris II",
+      "line": "1.5",
+      "actualValue": "5",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 03:03:47"
+    },
+    {
+      "id": "3150008",
+      "playerName": "Bryce Harper",
+      "line": "2",
+      "actualValue": "0",
+      "result": "miss",
+      "source": "money",
+      "createdAt": "2026-05-20 03:03:47"
+    },
+    {
+      "id": "3150009",
+      "playerName": "Junior Caminero",
+      "line": "2",
+      "actualValue": "1",
+      "result": "miss",
+      "source": "money",
+      "createdAt": "2026-05-20 03:03:47"
+    },
+    {
+      "id": "3210001",
+      "playerName": "Justin Foscue",
+      "line": "1.5",
+      "actualValue": "3",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 06:51:43"
+    },
+    {
+      "id": "3210002",
+      "playerName": "Jake Burger",
+      "line": "1.5",
+      "actualValue": "3",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 06:51:43"
+    },
+    {
+      "id": "3210003",
+      "playerName": "Byron Buxton",
+      "line": "3",
+      "actualValue": "3",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 06:51:43"
+    },
+    {
+      "id": "3210004",
+      "playerName": "Ezequiel Duran",
+      "line": "1.5",
+      "actualValue": "7",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 06:51:43"
+    },
+    {
+      "id": "3210005",
+      "playerName": "Matt McLain",
+      "line": "1.5",
+      "actualValue": "1",
+      "result": "miss",
+      "source": "money",
+      "createdAt": "2026-05-20 06:51:43"
+    },
+    {
+      "id": "3210006",
+      "playerName": "Ronald Acuña Jr.",
+      "line": "2",
+      "actualValue": "4",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 06:51:43"
+    },
+    {
+      "id": "3210007",
+      "playerName": "Zach Neto",
+      "line": "1.5",
+      "actualValue": "2",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 06:51:43"
+    },
+    {
+      "id": "3210008",
+      "playerName": "Shea Langeliers",
+      "line": "1.5",
+      "actualValue": "1",
+      "result": "miss",
+      "source": "money",
+      "createdAt": "2026-05-20 06:51:43"
+    },
+    {
+      "id": "3210009",
+      "playerName": "Yandy Díaz",
+      "line": "2",
+      "actualValue": "5",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 06:54:34"
+    },
+    {
+      "id": "3240001",
+      "playerName": "Brandon Nimmo",
+      "line": "2",
+      "actualValue": "9",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 06:58:48"
+    },
+    {
+      "id": "3270001",
+      "playerName": "Trea Turner",
+      "line": "3",
+      "actualValue": "3",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 07:03:57"
+    },
+    {
+      "id": "3270002",
+      "playerName": "Carson Benge",
+      "line": "2",
+      "actualValue": "5",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 07:03:57"
+    },
+    {
+      "id": "3270003",
+      "playerName": "Bo Bichette",
+      "line": "2",
+      "actualValue": "8",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 07:03:57"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tplayerName\tline\tactualValue\tresult\tsource\tcreatedAt\n3150001\tJuan Soto\t2.5\t5\thit\tmoney\t2026-05-20 03:03:47\n3150002\tSpencer Steer\t2\t2\thit\tmoney\t2026-05-20 03:03:47\n3150003\tElly De La Cruz\t3\t3\thit\tmoney\t2026-05-20 03:03:47\n3150004\tJames Wood\t3\t9\thit\tmoney\t2026-05-20 03:03:47\n3150005\tSal Stewart\t3\t1\tmiss\tmoney\t2026-05-20 03:03:47\n3150006\tJJ Bleday\t2.5\t2\tmiss\tmoney\t2026-05-20 03:03:47\n3150007\tMichael Harris II\t1.5\t5\thit\tmoney\t2026-05-20 03:03:47\n3150008\tBryce Harper\t2\t0\tmiss\tmoney\t2026-05-20 03:03:47\n3150009\tJunior Caminero\t2\t1\tmiss\tmoney\t2026-05-20 03:03:47\n3210001\tJustin Foscue\t1.5\t3\thit\tmoney\t2026-05-20 06:51:43\n3210002\tJake Burger\t1.5\t3\thit\tmoney\t2026-05-20 06:51:43\n3210003\tByron Buxton\t3\t3\thit\tmoney\t2026-05-20 06:51:43\n3210004\tEzequiel Duran\t1.5\t7\thit\tmoney\t2026-05-20 06:51:43\n3210005\tMatt McLain\t1.5\t1\tmiss\tmoney\t2026-05-20 06:51:43\n3210006\tRonald Acuña Jr.\t2\t4\thit\tmoney\t2026-05-20 06:51:43\n3210007\tZach Neto\t1.5\t2\thit\tmoney\t2026-05-20 06:51:43\n3210008\tShea Langeliers\t1.5\t1\tmiss\tmoney\t2026-05-20 06:51:43\n3210009\tYandy Díaz\t2\t5\thit\tmoney\t2026-05-20 06:54:34\n3240001\tBrandon Nimmo\t2\t9\thit\tmoney\t2026-05-20 06:58:48\n3270001\tTrea Turner\t3\t3\thit\tmoney\t2026-05-20 07:03:57\n3270002\tCarson Benge\t2\t5\thit\tmoney\t2026-05-20 07:03:57\n3270003\tBo Bichette\t2\t8\thit\tmoney\t2026-05-20 07:03:57\n",
+  "stderr": "",
+  "execution_time_ms": 266
+}

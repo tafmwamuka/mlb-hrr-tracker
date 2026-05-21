@@ -1,0 +1,9 @@
+{
+  "query": "SELECT COUNT(*) as total, pickStatus, boardPhase FROM pick_snapshots WHERE gameDate = '2026-05-21' GROUP BY pickStatus, boardPhase;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT COUNT(*) as total, pickStatus, boardPhase FROM pick_snapshots WHERE gameDate = '2026-05-21' GROUP BY pickStatus, boardPhase;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 262
+}

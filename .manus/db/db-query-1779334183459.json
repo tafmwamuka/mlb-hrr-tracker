@@ -1,0 +1,28 @@
+{
+  "query": "SELECT id, playerName, line, actualValue, result, source, createdAt FROM daily_results WHERE gameDate = '2026-05-19' ORDER BY createdAt ASC LIMIT 20 OFFSET 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT id, playerName, line, actualValue, result, source, createdAt FROM daily_results WHERE gameDate = '2026-05-19' ORDER BY createdAt ASC LIMIT 20 OFFSET 20;",
+  "rows": [
+    {
+      "id": "3270001",
+      "playerName": "Trea Turner",
+      "line": "3",
+      "actualValue": "3",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 07:03:57"
+    },
+    {
+      "id": "3270002",
+      "playerName": "Carson Benge",
+      "line": "2",
+      "actualValue": "5",
+      "result": "hit",
+      "source": "money",
+      "createdAt": "2026-05-20 07:03:57"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tplayerName\tline\tactualValue\tresult\tsource\tcreatedAt\n3270001\tTrea Turner\t3\t3\thit\tmoney\t2026-05-20 07:03:57\n3270002\tCarson Benge\t2\t5\thit\tmoney\t2026-05-20 07:03:57\n",
+  "stderr": "",
+  "execution_time_ms": 259
+}
