@@ -1,0 +1,234 @@
+{
+  "query": "SELECT playerName, playerTeam, line, actualValue, result, tier FROM daily_results WHERE gameDate = '2026-05-20' AND source = 'money' ORDER BY result DESC, actualValue DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT playerName, playerTeam, line, actualValue, result, tier FROM daily_results WHERE gameDate = '2026-05-20' AND source = 'money' ORDER BY result DESC, actualValue DESC;",
+  "rows": [
+    {
+      "playerName": "Carson Benge",
+      "playerTeam": "NYM",
+      "line": "2",
+      "actualValue": "1",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Brandon Nimmo",
+      "playerTeam": "TEX",
+      "line": "2",
+      "actualValue": "1",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Jeremy Peña",
+      "playerTeam": "HOU",
+      "line": "1.5",
+      "actualValue": "1",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Taylor Ward",
+      "playerTeam": "BAL",
+      "line": "2",
+      "actualValue": "1",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Ryan Vilade",
+      "playerTeam": "TB",
+      "line": "1.5",
+      "actualValue": "1",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Kody Clemens",
+      "playerTeam": "MIN",
+      "line": "1.5",
+      "actualValue": "1",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Elly De La Cruz",
+      "playerTeam": "CIN",
+      "line": "2.5",
+      "actualValue": "0",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Matt McLain",
+      "playerTeam": "CIN",
+      "line": "1.5",
+      "actualValue": "0",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Adley Rutschman",
+      "playerTeam": "BAL",
+      "line": "2",
+      "actualValue": "0",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Isaac Paredes",
+      "playerTeam": "HOU",
+      "line": "1.5",
+      "actualValue": "0",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "James Wood",
+      "playerTeam": "WSH",
+      "line": "3",
+      "actualValue": "0",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Yordan Alvarez",
+      "playerTeam": "HOU",
+      "line": "2",
+      "actualValue": "0",
+      "result": "miss",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Sal Stewart",
+      "playerTeam": "CIN",
+      "line": "2.5",
+      "actualValue": "9",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Juan Soto",
+      "playerTeam": "NYM",
+      "line": "2.5",
+      "actualValue": "7",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Nathaniel Lowe",
+      "playerTeam": "CIN",
+      "line": "2",
+      "actualValue": "6",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Josh Jung",
+      "playerTeam": "TEX",
+      "line": "2.5",
+      "actualValue": "5",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Ezequiel Duran",
+      "playerTeam": "TEX",
+      "line": "2.5",
+      "actualValue": "4",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "JJ Bleday",
+      "playerTeam": "CIN",
+      "line": "3",
+      "actualValue": "4",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Jake Burger",
+      "playerTeam": "TEX",
+      "line": "2",
+      "actualValue": "4",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Jake McCarthy",
+      "playerTeam": "COL",
+      "line": "2",
+      "actualValue": "4",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Blake Dunn",
+      "playerTeam": "CIN",
+      "line": "1.5",
+      "actualValue": "4",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Justin Foscue",
+      "playerTeam": "TEX",
+      "line": "2",
+      "actualValue": "4",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Spencer Steer",
+      "playerTeam": "CIN",
+      "line": "2",
+      "actualValue": "3",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Troy Johnston",
+      "playerTeam": "COL",
+      "line": "2",
+      "actualValue": "3",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "TJ Rumfield",
+      "playerTeam": "COL",
+      "line": "2.5",
+      "actualValue": "3",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Sam Antonacci",
+      "playerTeam": "CWS",
+      "line": "1.5",
+      "actualValue": "3",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Junior Caminero",
+      "playerTeam": "TB",
+      "line": "2",
+      "actualValue": "2",
+      "result": "hit",
+      "tier": "NULL"
+    },
+    {
+      "playerName": "Curtis Mead",
+      "playerTeam": "WSH",
+      "line": "2",
+      "actualValue": "2",
+      "result": "hit",
+      "tier": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "playerName\tplayerTeam\tline\tactualValue\tresult\ttier\nCarson Benge\tNYM\t2\t1\tmiss\tNULL\nBrandon Nimmo\tTEX\t2\t1\tmiss\tNULL\nJeremy Peña\tHOU\t1.5\t1\tmiss\tNULL\nTaylor Ward\tBAL\t2\t1\tmiss\tNULL\nRyan Vilade\tTB\t1.5\t1\tmiss\tNULL\nKody Clemens\tMIN\t1.5\t1\tmiss\tNULL\nElly De La Cruz\tCIN\t2.5\t0\tmiss\tNULL\nMatt McLain\tCIN\t1.5\t0\tmiss\tNULL\nAdley Rutschman\tBAL\t2\t0\tmiss\tNULL\nIsaac Paredes\tHOU\t1.5\t0\tmiss\tNULL\nJames Wood\tWSH\t3\t0\tmiss\tNULL\nYordan Alvarez\tHOU\t2\t0\tmiss\tNULL\nSal Stewart\tCIN\t2.5\t9\thit\tNULL\nJuan Soto\tNYM\t2.5\t7\thit\tNULL\nNathaniel Lowe\tCIN\t2\t6\thit\tNULL\nJosh Jung\tTEX\t2.5\t5\thit\tNULL\nEzequiel Duran\tTEX\t2.5\t4\thit\tNULL\nJJ Bleday\tCIN\t3\t4\thit\tNULL\nJake Burger\tTEX\t2\t4\thit\tNULL\nJake McCarthy\tCOL\t2\t4\thit\tNULL\nBlake Dunn\tCIN\t1.5\t4\thit\tNULL\nJustin Foscue\tTEX\t2\t4\thit\tNULL\nSpencer Steer\tCIN\t2\t3\thit\tNULL\nTroy Johnston\tCOL\t2\t3\thit\tNULL\nTJ Rumfield\tCOL\t2.5\t3\thit\tNULL\nSam Antonacci\tCWS\t1.5\t3\thit\tNULL\nJunior Caminero\tTB\t2\t2\thit\tNULL\nCurtis Mead\tWSH\t2\t2\thit\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 262
+}
