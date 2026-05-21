@@ -234,3 +234,43 @@ export const dailyResults = mysqlTable("daily_results", {
 export type DailyResult = typeof dailyResults.$inferSelect;
 export type InsertDailyResult = typeof dailyResults.$inferInsert;
 
+/**
+ * Pick Snapshots table — frozen versioned record of every pick that reaches CONFIRMED or EVENING CONFIRMED status.
+ * This is the single source of truth for Results history.
+ * Once a pick is written here it is NEVER overwritten — only actualValue/result are updated when games go Final.
+ */
+export const pickSnapshots = mysqlTable("pick_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  // Identity
+  pickId: varchar("pickId", { length: 64 }).notNull().unique(), // stable ID: `{gameDate}_{playerId}_{market}`
+  gameDate: varchar("gameDate", { length: 16 }).notNull(), // YYYY-MM-DD
+  playerId: int("playerId").notNull(),
+  playerName: varchar("playerName", { length: 128 }).notNull(),
+  playerTeam: varchar("playerTeam", { length: 64 }).notNull(),
+  gameId: varchar("gameId", { length: 64 }).notNull(),
+  market: varchar("market", { length: 32 }).notNull().default("hrr"), // hrr, hits, runs, rbi
+  // Pick details frozen at confirmation time
+  recommendedLine: text("recommendedLine").notNull(), // e.g. "O2.5"
+  confirmedOdds: int("confirmedOdds"), // American odds at confirmation e.g. -145
+  currentOdds: int("currentOdds"),    // Latest odds (updated but pick stays)
+  edge: int("edge"),                  // Model edge % at confirmation
+  matrixScore: int("matrixScore"),    // Matrix score at confirmation
+  probability: int("probability"),    // Model probability 0-100
+  tier: varchar("tier", { length: 8 }), // Elite, Strong, A, Lean
+  boardPhase: varchar("boardPhase", { length: 32 }).notNull(), // PRELIMINARY, MIDDAY_CONFIRMED, EVENING_CONFIRMED, EARLY_LOCKED, LATER_QUALIFIER
+  pickStatus: mysqlEnum("pickStatus", ["preliminary", "confirmed", "evening_confirmed", "early_locked", "later_qualifier", "voided"]).notNull(),
+  confirmedAt: timestamp("confirmedAt"), // when pick was locked
+  voidedAt: timestamp("voidedAt"),       // if voided
+  voidReason: varchar("voidReason", { length: 256 }), // e.g. "player scratched"
+  // Results (filled in when game goes Final)
+  actualValue: int("actualValue"),
+  result: mysqlEnum("result", ["pending", "hit", "miss"]).default("pending").notNull(),
+  gradedAt: timestamp("gradedAt"),
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PickSnapshot = typeof pickSnapshots.$inferSelect;
+export type InsertPickSnapshot = typeof pickSnapshots.$inferInsert;
+

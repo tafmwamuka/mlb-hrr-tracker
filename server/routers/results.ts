@@ -14,8 +14,8 @@
  */
 
 import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
-import { propPredictions, dailyResults } from "../../drizzle/schema";
+import { getDb, getPickSnapshotsByDate, gradePickSnapshot } from "../db";
+import { propPredictions, dailyResults, pickSnapshots } from "../../drizzle/schema";
 import { eq, and, gte, lt, desc, sql, isNotNull, or, ne } from "drizzle-orm";
 import { getAdaptedLineupData } from "../services/lineupAdapter";
 // aiRankingService no longer used in results.ts (All Plays removed)
@@ -58,41 +58,83 @@ export const resultsRouter = router({
       const db = await getDb();
 
       // ═══════════════════════════════════════════════════════════════════
-      // Phase BO: ALWAYS use the live Money Picks board as the source of truth.
-      // The DB is only used to look up graded actuals (actualValue, result)
-      // for picks that have already been graded by the autoGrade job.
-      // This ensures Results always shows the SAME picks as Money Picks.
+      // Phase BS: Use pick_snapshots as the primary source of truth.
+      // pick_snapshots uses INSERT IGNORE so confirmed picks are never overwritten.
+      // Falls back to live Money Picks board if no snapshots exist yet (early morning).
       // ═══════════════════════════════════════════════════════════════════
 
-      // Step 1: Get the live Money Picks board (same cache as Money Picks tab)
-      const hrrResult = await getEnrichedMoneyPicks();
-      if (hrrResult.lineupsPending) {
-        return {
-          success: true,
-          results: [],
-          lineupsPending: true,
-          date: dateStr,
-          hitRate: 0,
-          totalPlays: 0,
-          hasActuals: false,
-          gamesInProgress: 0,
-          gamesCompleted: 0,
-          gamesScheduled: 0,
-        };
-      }
+      // Step 1: Try to get locked pick snapshots from DB
+      const snapshots = db ? await getPickSnapshotsByDate(dateStr) : [];
 
-      const moneyPickResults = hrrResult.moneyPicks.map(p => ({
-        playerId: p.playerId,
-        playerName: p.playerName,
-        team: p.team,
-        line: p.recommendedLine,
-        probability: p.recommendedProb,
-        pitcher: p.pitcher,
-        pitcherTeam: p.pitcherTeam,
-        expectedTotal: p.expectedTotal,
-        reasoning: p.reasoning,
-        odds: p.bookOdds != null ? String(p.bookOdds) : null,
-      }));
+      let moneyPickResults: Array<{
+        playerId: number;
+        playerName: string;
+        team: string;
+        line: number;
+        probability: number;
+        pitcher?: string;
+        pitcherTeam?: string;
+        expectedTotal?: number;
+        reasoning?: string;
+        odds: string | null;
+        confirmedOdds?: number | null;
+        currentOdds?: number | null;
+        edge?: number | null;
+        matrixScore?: number | null;
+        tier?: string | null;
+        boardPhase?: string | null;
+        pickStatus?: string | null;
+      }>;
+
+      if (snapshots.length > 0) {
+        // Phase BS: Use locked snapshots as the authoritative pick list
+        moneyPickResults = snapshots.map(s => ({
+          playerId: s.playerId,
+          playerName: s.playerName,
+          team: s.playerTeam,
+          line: parseFloat(s.recommendedLine.replace(/^O/i, '')),
+          probability: s.probability ?? 0,
+          odds: s.confirmedOdds != null ? String(s.confirmedOdds) : null,
+          confirmedOdds: s.confirmedOdds,
+          currentOdds: s.currentOdds,
+          edge: s.edge,
+          matrixScore: s.matrixScore,
+          tier: s.tier,
+          boardPhase: s.boardPhase,
+          pickStatus: s.pickStatus,
+        }));
+      } else {
+        // Fallback: no snapshots yet — use live board (early morning before first official pull)
+        const hrrResult = await getEnrichedMoneyPicks();
+        if (hrrResult.lineupsPending) {
+          return {
+            success: true,
+            results: [],
+            lineupsPending: true,
+            date: dateStr,
+            hitRate: 0,
+            totalPlays: 0,
+            hasActuals: false,
+            gamesInProgress: 0,
+            gamesCompleted: 0,
+            gamesScheduled: 0,
+          };
+        }
+        moneyPickResults = hrrResult.moneyPicks.map(p => ({
+          playerId: p.playerId,
+          playerName: p.playerName,
+          team: p.team,
+          line: p.recommendedLine,
+          probability: p.recommendedProb,
+          pitcher: p.pitcher,
+          pitcherTeam: p.pitcherTeam,
+          expectedTotal: p.expectedTotal,
+          reasoning: p.reasoning,
+          odds: p.bookOdds != null ? String(p.bookOdds) : null,
+          confirmedOdds: typeof p.bookOdds === 'number' ? p.bookOdds : null,
+          currentOdds: typeof p.bookOdds === 'number' ? p.bookOdds : null,
+        }));
+      }
 
       // Step 2: Load any already-graded actuals from DB (for picks already graded by autoGrade job)
       const gradedMap = new Map<string, { actualValue: number | null; result: string }>();

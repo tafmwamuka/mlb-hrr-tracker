@@ -193,7 +193,7 @@ function ResultCard({ play, idx }: { play: any; idx: number }) {
           </div>
         </div>
 
-        {/* Bottom: confidence bar */}
+        {/* Bottom: confidence bar + odds tracking */}
         <div className="mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-[oklch(1_0_0/6%)]">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[9px] sm:text-[10px] text-[oklch(0.45_0.015_255)] uppercase font-semibold tracking-wider">Model Confidence</span>
@@ -208,6 +208,34 @@ function ResultCard({ play, idx }: { play: any; idx: number }) {
               transition={{ delay: idx * 0.03 + 0.3, duration: 0.8, ease: "easeOut" }}
             />
           </div>
+          {/* Locked odds vs current odds — shown when snapshot data available */}
+          {play.confirmedOdds != null && (
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-[9px] text-[oklch(0.38_0.015_255)] uppercase font-semibold tracking-wider">Locked Odds</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold" style={{ color: "oklch(0.65 0.12 85)" }}>
+                  {play.confirmedOdds > 0 ? '+' : ''}{play.confirmedOdds}
+                </span>
+                {play.currentOdds != null && play.currentOdds !== play.confirmedOdds && (
+                  <span
+                    className="text-[9px] font-semibold"
+                    style={{ color: play.currentOdds > play.confirmedOdds ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)' }}
+                  >
+                    → {play.currentOdds > 0 ? '+' : ''}{play.currentOdds}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          {/* Board phase label */}
+          {play.boardPhase && (
+            <div className="flex items-center justify-between mt-0.5">
+              <span className="text-[9px] text-[oklch(0.35_0.015_255)] uppercase font-semibold tracking-wider">Board</span>
+              <span className="text-[9px] text-[oklch(0.42_0.015_255)]">
+                {play.boardPhase === 'EVENING_CONFIRMED' ? 'Evening' : play.boardPhase === 'MIDDAY_CONFIRMED' ? 'Midday' : play.boardPhase === 'confirmed' ? 'Confirmed' : play.boardPhase === 'preliminary' ? 'Preliminary' : play.boardPhase}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>

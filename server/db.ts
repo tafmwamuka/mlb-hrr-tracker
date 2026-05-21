@@ -92,3 +92,88 @@ export async function getUserByOpenId(openId: string) {
 // TODO: add feature queries here as your schema grows.
 
 
+
+// ─── Pick Snapshots ───────────────────────────────────────────────────────────
+import { and, sql } from "drizzle-orm";
+import { InsertPickSnapshot, pickSnapshots } from "../drizzle/schema";
+
+/**
+ * Insert or ignore a pick snapshot. Uses INSERT IGNORE so confirmed picks are
+ * never overwritten by a later board rebuild. Only actualValue/result/currentOdds
+ * can be updated after the initial insert.
+ */
+export async function insertPickSnapshotIfNew(snapshot: InsertPickSnapshot): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    // INSERT IGNORE — if pickId already exists, do nothing (preserves original locked record)
+    await db.insert(pickSnapshots).ignore().values(snapshot);
+  } catch (err) {
+    console.error("[DB] insertPickSnapshotIfNew failed:", err);
+  }
+}
+
+/**
+ * Update currentOdds on an existing snapshot (non-destructive — does not touch confirmed details).
+ */
+export async function updatePickSnapshotOdds(pickId: string, currentOdds: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.update(pickSnapshots)
+      .set({ currentOdds })
+      .where(eq(pickSnapshots.pickId, pickId));
+  } catch (err) {
+    console.error("[DB] updatePickSnapshotOdds failed:", err);
+  }
+}
+
+/**
+ * Grade a pick snapshot when the game goes Final.
+ */
+export async function gradePickSnapshot(pickId: string, actualValue: number, result: "hit" | "miss"): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.update(pickSnapshots)
+      .set({ actualValue, result, gradedAt: new Date() })
+      .where(and(eq(pickSnapshots.pickId, pickId), eq(pickSnapshots.result, "pending")));
+  } catch (err) {
+    console.error("[DB] gradePickSnapshot failed:", err);
+  }
+}
+
+/**
+ * Get all pick snapshots for a given date (YYYY-MM-DD).
+ * Returns only non-voided picks, ordered by confirmedAt ascending.
+ */
+export async function getPickSnapshotsByDate(gameDate: string) {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    return await db.select().from(pickSnapshots)
+      .where(and(
+        eq(pickSnapshots.gameDate, gameDate),
+        sql`${pickSnapshots.pickStatus} != 'voided'`
+      ))
+      .orderBy(pickSnapshots.confirmedAt);
+  } catch (err) {
+    console.error("[DB] getPickSnapshotsByDate failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Void a pick snapshot (player scratched, game postponed, etc.)
+ */
+export async function voidPickSnapshot(pickId: string, voidReason: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.update(pickSnapshots)
+      .set({ pickStatus: "voided", voidedAt: new Date(), voidReason })
+      .where(eq(pickSnapshots.pickId, pickId));
+  } catch (err) {
+    console.error("[DB] voidPickSnapshot failed:", err);
+  }
+}

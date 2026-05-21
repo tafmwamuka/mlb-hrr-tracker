@@ -4,8 +4,8 @@
  */
 
 import { router, publicProcedure } from "../_core/trpc";
-import { getDb } from "../db";
-import { dailyResults } from "../../drizzle/schema";
+import { getDb, insertPickSnapshotIfNew, updatePickSnapshotOdds } from "../db";
+import { dailyResults, pickSnapshots } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from "../services/aiRankingService";
 import type { AIPick } from "../services/aiRankingService";
@@ -1507,6 +1507,64 @@ export const aiPicksRouter = router({
           // This prevents any subsequent scheduled pull from overwriting the board.
           // Force Refresh (clearPickLocks) can clear this lock if needed.
           setHardLock(todayETDate3);
+          // Phase BS: Persist versioned pick snapshots — INSERT IGNORE so confirmed picks are never overwritten
+          void (async () => {
+            try {
+              const nowTs = new Date();
+              const boardPhase = currentSlatePhase === 'final'
+                ? 'EVENING_CONFIRMED'
+                : currentSlatePhase === 'confirmed'
+                ? 'MIDDAY_CONFIRMED'
+                : 'PRELIMINARY';
+              for (const p of moneyPicks3 as any[]) {
+                const pickId = `${todayETDate3}_${p.playerId}_hrr`;
+                const isEarlyLocked = earlyLockedGameIds.has(
+                  (() => {
+                    const g = games3ForLock.find((g: any) => g.homeTeam === p.team || g.awayTeam === p.team);
+                    return g ? `${g.awayTeam}@${g.homeTeam}` : '';
+                  })()
+                );
+                const snapshotStatus = isEarlyLocked
+                  ? 'early_locked'
+                  : boardPhase === 'EVENING_CONFIRMED'
+                  ? 'evening_confirmed'
+                  : boardPhase === 'MIDDAY_CONFIRMED'
+                  ? 'confirmed'
+                  : 'preliminary';
+                await insertPickSnapshotIfNew({
+                  pickId,
+                  gameDate: todayETDate3,
+                  playerId: p.playerId,
+                  playerName: p.playerName,
+                  playerTeam: p.team ?? p.playerTeam ?? '',
+                  gameId: String(p.gamePk ?? p.gameId ?? ''),
+                  market: 'hrr',
+                  recommendedLine: String(p.recommendedLine ?? p.hrrLine ?? 'O1.5'),
+                  confirmedOdds: p.bookOdds ?? null,
+                  currentOdds: p.bookOdds ?? null,
+                  edge: p.edge != null ? Math.round(p.edge) : null,
+                  matrixScore: p.overallScore != null ? Math.round(p.overallScore) : null,
+                  probability: p.recommendedProb != null ? Math.round(p.recommendedProb) : null,
+                  tier: p.overallScore >= 83 ? 'Elite' : p.overallScore >= 74 ? 'Strong' : p.overallScore >= 68 ? 'A' : 'Lean',
+                  boardPhase,
+                  pickStatus: snapshotStatus as any,
+                  confirmedAt: nowTs,
+                  voidedAt: null,
+                  voidReason: null,
+                  actualValue: null,
+                  result: 'pending',
+                  gradedAt: null,
+                });
+                // Also update currentOdds if pick already exists (non-destructive)
+                if (p.bookOdds != null) {
+                  await updatePickSnapshotOdds(pickId, p.bookOdds);
+                }
+              }
+              console.log(`[HRRPicks] Phase BS: ${moneyPicks3.length} pick snapshots saved/updated for ${todayETDate3}`);
+            } catch (err) {
+              console.error('[HRRPicks] Phase BS: Failed to save pick snapshots:', err);
+            }
+          })();
           // Phase BN: Persist the official board to DB so Results tab always mirrors Money Picks exactly
           void (async () => {
             try {

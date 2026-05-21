@@ -1452,4 +1452,14 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Force Refresh clears gameLockStore (all per-game stages reset to Preliminary)
 - [x] Frontend: per-pick badge shows 📌 PRELIMINARY / ✓ CONFIRMED / 🔒 LOCKED based on pick.pickStatus
 - [x] TypeScript: 0 errors
+- [x] Checkpoint
+
+## Phase BS: Pick Versioning + Board Stability
+- [x] Add pick_snapshots table to drizzle/schema.ts
+- [x] Run pnpm db:push to migrate
+- [x] Add getPickSnapshotsByDate and gradePickSnapshot helpers to server/db.ts
+- [x] Official pull block: INSERT IGNORE into pick_snapshots for each confirmed pick
+- [x] Results reads from pick_snapshots first, falls back to live board if no snapshots exist
+- [x] ResultCard shows locked odds vs current odds and board phase label
+- [x] TypeScript: 0 errors
 - [ ] Checkpoint
