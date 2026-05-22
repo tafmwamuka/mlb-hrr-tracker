@@ -208,7 +208,11 @@ export const resultsRouter = router({
         let actualValue: number | null = null;
         let hit: boolean | null = null;
 
-        if (playerStats && (status === "Final" || status === "In Progress")) {
+        if (status === "Postponed") {
+          // Postponed game: no grading, no actual value — will show PPD badge
+          actualValue = null;
+          hit = null;
+        } else if (playerStats && (status === "Final" || status === "In Progress")) {
           // HRR combined = hits + runs + rbi (live boxscore)
           actualValue = playerStats.hits + playerStats.runs + playerStats.rbi;
           // Grading: O1.5/O2.5/O3.5 lines use strict > (half-point, no push possible)
@@ -218,7 +222,7 @@ export const resultsRouter = router({
         } else {
           // Fallback: use DB-graded actuals if the autoGrade job already ran
           const graded = gradedMap.get(pick.playerName.toLowerCase());
-          if (graded && graded.actualValue !== null) {
+          if (graded && graded.actualValue !== null && graded.result !== 'ppd') {
             actualValue = graded.actualValue;
             hit = graded.result === "hit";
           }
@@ -254,10 +258,23 @@ export const resultsRouter = router({
         return b.probability - a.probability;
       });
 
-      // Calculate hit rate (only for final games)
+      // Calculate hit rate (only for final games, exclude postponed)
       const finalResults = results.filter(r => r.gameStatus === "Final" && r.actualValue !== null);
       const hitCount = finalResults.filter(r => r.hit === true).length;
       const hitRate = finalResults.length > 0 ? Math.round((hitCount / finalResults.length) * 100) : 0;
+
+      // Grade postponed picks in DB as 'ppd' so they don't count as misses in stats
+      if (db) {
+        const postponedPicks = results.filter(r => r.gameStatus === "Postponed");
+        for (const ppd of postponedPicks) {
+          try {
+            // Update pick_snapshots if exists
+            await db.execute(
+              sql`UPDATE pick_snapshots SET result = 'ppd', gradedAt = NOW() WHERE gameDate = ${dateStr} AND playerName = ${ppd.playerName} AND result = 'pending'`
+            ).catch(() => {}); // ignore errors
+          } catch {}
+        }
+      }
 
       // Game counts
       const gamesInProgress = gameStatuses.filter(g => g.status === "In Progress").length;
@@ -460,16 +477,17 @@ export const resultsRouter = router({
         return { success: false, stats: { overallHitRate: 0, totalPredictions: 0, totalHits: 0, byStatType: { hits: 0, runs: 0, rbi: 0 }, byTier: { s: { hitRate: 0, total: 0, hits: 0 }, a: { hitRate: 0, total: 0, hits: 0 }, lean: { hitRate: 0, total: 0, hits: 0 } }, last7Days: 0, last30Days: 0 } };
       }
 
-      // Read from dailyResults — money picks only
+      // Read from dailyResults — money picks only, exclude pending AND ppd
       const allRows = await db
         .select()
         .from(dailyResults)
         .where(and(
           eq(dailyResults.source, "money"),
-          ne(dailyResults.result, "pending")
+          ne(dailyResults.result, "pending"),
+          ne(dailyResults.result, "ppd")
         ));
 
-      // All-time totals
+      // All-time totals (ppd already excluded by query)
       const totalPredictions = allRows.length;
       const totalHits = allRows.filter(r => r.result === "hit").length;
       const overallHitRate = totalPredictions > 0 ? Math.round((totalHits / totalPredictions) * 100) : 0;

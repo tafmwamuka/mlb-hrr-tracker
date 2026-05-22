@@ -312,7 +312,12 @@ export async function fetchTodaysGames(): Promise<MLBGame[]> {
         gamePk: g.gamePk,
         gameDate: g.gameDate,
         gameTime: g.gameDate ? new Date(g.gameDate).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/St_Johns" }) : "TBD",
-        status: g.status?.abstractGameState || "Scheduled",
+        status: (() => {
+          const abs = g.status?.abstractGameState || 'Scheduled';
+          const det = g.status?.detailedState || '';
+          if (abs === 'Postponed' || det.includes('Postponed') || det.includes('Cancelled') || det.includes('Suspended')) return 'Postponed';
+          return abs;
+        })(),
         dayNight: g.dayNight || "night",
         venue: g.venue?.name || "Unknown",
         venueId: g.venue?.id || 0,

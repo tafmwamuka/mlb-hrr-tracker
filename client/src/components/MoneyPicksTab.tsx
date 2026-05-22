@@ -653,6 +653,17 @@ function MoneyPickCard({
             {pick.lineSource}
           </div>
 
+          {/* PPD badge: shown when game is postponed */}
+          {(pick as any).gameStatus === 'Postponed' && (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
+              style={{ background: "oklch(0.65 0.15 300 / 15%)", color: "oklch(0.65 0.15 300)", border: "1px solid oklch(0.65 0.15 300 / 35%)" }}
+              title="Game postponed — this pick is voided and will not count in hit rate"
+            >
+              ⚠ PPD
+            </div>
+          )}
+
           {/* Phase BR: Per-pick stage badge — driven by each game's lineup post time and first pitch */}
           {(pick.pickStatus === 'locked' || pick.pickStatus === 'locked_confirmed' || pick.pickStatus === 'final_official') ? (
             <div

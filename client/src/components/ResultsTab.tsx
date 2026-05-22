@@ -55,6 +55,13 @@ function GameStatusBadge({ status, inning, inningHalf }: { status: string; innin
       </motion.span>
     );
   }
+  if (status === "Postponed") {
+    return (
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[oklch(0.65_0.15_300/15%)] text-[oklch(0.65_0.15_300)]">
+        ⚠ PPD
+      </span>
+    );
+  }
   return (
     <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[oklch(0.30_0.02_255/50%)] text-[oklch(0.50_0.015_255)]">
       PENDING
@@ -68,6 +75,7 @@ function ResultCard({ play, idx }: { play: any; idx: number }) {
   const isFinal = play.gameStatus === "Final";
   const isLive = play.gameStatus === "In Progress";
   const isPending = play.gameStatus === "Scheduled";
+  const isPostponed = play.gameStatus === "Postponed";
   const isHit = play.hit === true;
   const isMoney = play.source === "money";
 
@@ -81,14 +89,18 @@ function ResultCard({ play, idx }: { play: any; idx: number }) {
       <div
         className="relative p-3 sm:p-4 border backdrop-blur-sm"
         style={{
-          background: isPending
+          background: isPostponed
+            ? "linear-gradient(135deg, oklch(0.14 0.015 300 / 80%), oklch(0.12 0.012 300 / 70%))"
+            : isPending
             ? "linear-gradient(135deg, oklch(0.14 0.022 255 / 90%), oklch(0.12 0.020 255 / 80%))"
             : isLive
             ? "linear-gradient(135deg, oklch(0.14 0.028 85 / 90%), oklch(0.12 0.022 85 / 80%))"
             : isHit
             ? "linear-gradient(135deg, oklch(0.14 0.030 165 / 90%), oklch(0.12 0.025 165 / 80%))"
             : "linear-gradient(135deg, oklch(0.14 0.025 25 / 90%), oklch(0.12 0.020 25 / 80%))",
-          borderColor: isPending
+          borderColor: isPostponed
+            ? "oklch(0.65 0.15 300 / 25%)"
+            : isPending
             ? "oklch(1 0 0 / 10%)"
             : isLive
             ? "oklch(0.82 0.17 85 / 25%)"
@@ -138,7 +150,14 @@ function ResultCard({ play, idx }: { play: any; idx: number }) {
 
           {/* Result badge */}
           <div className="flex flex-col items-end gap-1 shrink-0">
-            {isPending ? (
+            {isPostponed ? (
+              <div
+                className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl"
+                style={{ background: "oklch(0.65 0.15 300 / 12%)", border: "1px solid oklch(0.65 0.15 300 / 25%)" }}
+              >
+                <span className="text-[10px] sm:text-[11px] font-bold text-[oklch(0.65_0.15_300)]">PPD</span>
+              </div>
+            ) : isPending ? (
               <motion.div
                 className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl"
                 style={{ background: "oklch(0.50 0.10 85 / 12%)", border: "1px solid oklch(0.50 0.10 85 / 20%)" }}
@@ -381,6 +400,7 @@ export function ResultsTab() {
   const finalResults = allResults.filter((r: any) => r.gameStatus === "Final");
   const liveResults = allResults.filter((r: any) => r.gameStatus === "In Progress");
   const pendingResults = allResults.filter((r: any) => r.gameStatus === "Scheduled");
+  const postponedResults = allResults.filter((r: any) => r.gameStatus === "Postponed");
 
   const hits = finalResults.filter((r: any) => r.hit === true);
   const misses = finalResults.filter((r: any) => r.hit === false);
@@ -628,6 +648,12 @@ export function ResultsTab() {
                       <span className="text-[9px] sm:text-[10px] text-[oklch(0.55_0.015_255)] font-medium">{pendingResults.length} Pending</span>
                     </div>
                   )}
+                  {postponedResults.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full" style={{ background: "oklch(0.65 0.15 300)" }} />
+                      <span className="text-[9px] sm:text-[10px] text-[oklch(0.55_0.015_255)] font-medium">{postponedResults.length} PPD</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -638,7 +664,7 @@ export function ResultsTab() {
             <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mt-3">
               {[
                 { value: `${moneyHitRate}%`, label: "Hit Rate", sublabel: `${moneyHits.length} hits / ${moneyFinal.length} settled`, icon: Flame, color: "oklch(0.75 0.18 55)" },
-                { value: `${resultsData?.totalPlays || 0}`, label: "Money Picks", sublabel: `${hits.length} ✓  ${misses.length} ✗  ${pendingResults.length} pending`, icon: Target, color: "oklch(0.72 0.18 165)" },
+                { value: `${resultsData?.totalPlays || 0}`, label: "Money Picks", sublabel: `${hits.length} ✓  ${misses.length} ✗  ${pendingResults.length + liveResults.length} pending${postponedResults.length > 0 ? `  ${postponedResults.length} PPD` : ''}`, icon: Target, color: "oklch(0.72 0.18 165)" },
               ].map((stat, i) => (
                 <motion.div
                   key={stat.label}
@@ -716,6 +742,27 @@ export function ResultsTab() {
             </div>
             {pendingResults.map((play: any, idx: number) => (
               <ResultCard key={`pending-${play.playerId}-${play.stat}-${idx}`} play={play} idx={idx} />
+            ))}
+          </>
+        )}
+
+        {/* Postponed games section */}
+        {postponedResults.length > 0 && (
+          <>
+            <div className="flex items-center justify-between mb-1 mt-4">
+              <h3 className="text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2" style={{ color: "oklch(0.65 0.15 300)" }}>
+                <span style={{ fontSize: 13 }}>⚠️</span>
+                Postponed
+              </h3>
+              <span className="text-[9px] sm:text-[10px] text-[oklch(0.45_0.015_255)] font-medium px-2 py-0.5 rounded-lg" style={{ background: "oklch(0.18 0.02 255)" }}>
+                {postponedResults.length} voided
+              </span>
+            </div>
+            <p className="text-[9px] sm:text-[10px] text-[oklch(0.45_0.015_255)] mb-2">
+              These picks are voided and excluded from hit rate calculations.
+            </p>
+            {postponedResults.map((play: any, idx: number) => (
+              <ResultCard key={`ppd-${play.playerId}-${play.stat}-${idx}`} play={play} idx={idx} />
             ))}
           </>
         )}

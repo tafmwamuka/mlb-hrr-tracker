@@ -1,0 +1,2 @@
+ALTER TABLE `daily_results` MODIFY COLUMN `result` enum('pending','hit','miss','ppd') NOT NULL DEFAULT 'pending';--> statement-breakpoint
+ALTER TABLE `pick_snapshots` MODIFY COLUMN `result` enum('pending','hit','miss','ppd') NOT NULL DEFAULT 'pending';

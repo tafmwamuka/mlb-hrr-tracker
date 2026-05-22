@@ -1852,10 +1852,21 @@ export const aiPicksRouter = router({
         }
       }
 
+      // Annotate each money pick with the current game status (for PPD detection on frontend)
+      const postponedTeams3 = new Set(
+        games3
+          .filter(g => g.status === 'Postponed')
+          .flatMap(g => [g.homeTeam.abbreviation, g.awayTeam.abbreviation])
+      );
+      const annotatedMoneyPicks3 = (moneyPicks3 as any[]).map(p => ({
+        ...p,
+        gameStatus: postponedTeams3.has(p.team) ? 'Postponed' : (p.gameStatus ?? 'Scheduled'),
+      }));
+
       return {
         success: true,
         picks: enrichedPicks,
-        moneyPicks: moneyPicks3,
+        moneyPicks: annotatedMoneyPicks3,
         lineupSource: lineupData.lineupSource,
         dataDate,
         timestamp: new Date(),

@@ -1,0 +1,9 @@
+{
+  "query": "DELETE FROM daily_results WHERE gameDate = '2026-05-20' AND source = 'money' AND playerName IN ('Taylor Ward', 'Chandler Simpson', 'Jeremy Peña', 'Trevor Larnach', 'Luke Keaschall', 'Mickey Moniak', 'Kody Clemens');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute DELETE FROM daily_results WHERE gameDate = '2026-05-20' AND source = 'money' AND playerName IN ('Taylor Ward', 'Chandler Simpson', 'Jeremy Peña', 'Trevor Larnach', 'Luke Keaschall', 'Mickey Moniak', 'Kody Clemens');",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1014
+}

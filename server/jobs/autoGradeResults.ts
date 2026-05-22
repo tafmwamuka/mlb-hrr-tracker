@@ -15,7 +15,7 @@ import { fetchGameStatuses, getLivePlayerStats } from "../services/liveResultsSe
 import { getAdaptedLineupData } from "../services/lineupAdapter";
 import { getDb } from "../db";
 import { dailyResults } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 const JOB_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const NDT_TZ = "America/St_Johns";
@@ -57,68 +57,111 @@ export async function gradeAndSaveResults(): Promise<{ saved: number; skipped: s
     gameStatusMap.set(gs.gamePk, gs);
   }
 
-  // Only process picks whose games are Final
+  // Separate picks by game status: Final (grade), Postponed (mark ppd), others (skip)
   const finalPicks = hrrResult.moneyPicks.filter(pick => {
     const gamePk = playerGameMap.get(pick.playerId) || 0;
     const gs = gameStatusMap.get(gamePk);
     return gs?.status === "Final";
   });
 
-  if (finalPicks.length === 0) {
-    return { saved: 0, skipped: "no final games yet" };
-  }
-
-  // Get live stats for final picks
-  const playerIds = finalPicks.map(p => p.playerId);
-  const liveStats = await getLivePlayerStats(playerIds, dateStr);
-
-  // Build graded rows
-  const rows = finalPicks.map(pick => {
-    const playerStats = liveStats.get(pick.playerId);
-    let actualValue: number | null = null;
-    let result: "hit" | "miss" | "pending" = "pending";
-
-    if (playerStats) {
-      // HRR combined = hits + runs + rbi
-      actualValue = playerStats.hits + playerStats.runs + playerStats.rbi;
-      // Grading: O1.5/O2.5/O3.5 half-point lines use strict > (no push possible)
-      // O1/O2/O3 whole-number lines use >= (hitting exactly the line is a HIT)
-      const isHalfLine = (pick.recommendedLine * 2) % 2 !== 0;
-      result = (isHalfLine ? actualValue > pick.recommendedLine : actualValue >= pick.recommendedLine) ? "hit" : "miss";
-    }
-
-    return {
-      gameDate: dateStr,
-      playerId: pick.playerId,
-      playerName: pick.playerName,
-      playerTeam: pick.team,
-      statType: "hrr" as const,
-      source: "money" as const,
-      line: String(pick.recommendedLine),
-      probability: pick.recommendedProb,
-      actualValue,
-      result,
-      odds: pick.bookOdds != null ? String(pick.bookOdds) : null,
-      oddsProvider: pick.bookOddsProvider != null ? String(pick.bookOddsProvider) : null,
-      streakLabel: null,
-      dayNightLabel: null,
-      tier: pick.overallScore >= 83 ? "S" : pick.overallScore >= 74 ? "A" : pick.overallScore >= 68 ? "Lean" : null,
-      edge: null,
-      closingLineValue: null,
-      matrixScore: pick.overallScore ?? null,
-    };
+  const postponedPicks = hrrResult.moneyPicks.filter(pick => {
+    const gamePk = playerGameMap.get(pick.playerId) || 0;
+    const gs = gameStatusMap.get(gamePk);
+    return gs?.status === "Postponed";
   });
 
-  // Upsert: delete existing entries for this date (money source only) then re-insert
-  await db.delete(dailyResults)
-    .where(eq(dailyResults.gameDate, dateStr));
+  // Build rows for final (graded) picks
+  const finalRows: any[] = [];
+  if (finalPicks.length > 0) {
+    const playerIds = finalPicks.map(p => p.playerId);
+    const liveStats = await getLivePlayerStats(playerIds, dateStr);
 
-  if (rows.length > 0) {
-    await db.insert(dailyResults).values(rows);
+    for (const pick of finalPicks) {
+      const playerStats = liveStats.get(pick.playerId);
+      let actualValue: number | null = null;
+      let result: "hit" | "miss" | "pending" = "pending";
+
+      if (playerStats) {
+        // HRR combined = hits + runs + rbi
+        actualValue = playerStats.hits + playerStats.runs + playerStats.rbi;
+        // Grading: O1.5/O2.5/O3.5 half-point lines use strict > (no push possible)
+        // O1/O2/O3 whole-number lines use >= (hitting exactly the line is a HIT)
+        const isHalfLine = (pick.recommendedLine * 2) % 2 !== 0;
+        result = (isHalfLine ? actualValue > pick.recommendedLine : actualValue >= pick.recommendedLine) ? "hit" : "miss";
+      }
+
+      finalRows.push({
+        gameDate: dateStr,
+        playerId: pick.playerId,
+        playerName: pick.playerName,
+        playerTeam: pick.team,
+        statType: "hrr" as const,
+        source: "money" as const,
+        line: String(pick.recommendedLine),
+        probability: pick.recommendedProb,
+        actualValue,
+        result,
+        odds: pick.bookOdds != null ? String(pick.bookOdds) : null,
+        oddsProvider: pick.bookOddsProvider != null ? String(pick.bookOddsProvider) : null,
+        streakLabel: null,
+        dayNightLabel: null,
+        tier: pick.overallScore >= 83 ? "S" : pick.overallScore >= 74 ? "A" : pick.overallScore >= 68 ? "Lean" : null,
+        edge: null,
+        closingLineValue: null,
+        matrixScore: pick.overallScore ?? null,
+      });
+    }
   }
 
-  console.log(`[AutoGrade] Saved ${rows.length} graded results for ${dateStr} (${rows.filter(r => r.result === "hit").length} hits, ${rows.filter(r => r.result === "miss").length} misses)`);
-  return { saved: rows.length, skipped: "" };
+  // Build rows for postponed picks (result = 'ppd', no actualValue)
+  const postponedRows: any[] = postponedPicks.map(pick => ({
+    gameDate: dateStr,
+    playerId: pick.playerId,
+    playerName: pick.playerName,
+    playerTeam: pick.team,
+    statType: "hrr" as const,
+    source: "money" as const,
+    line: String(pick.recommendedLine),
+    probability: pick.recommendedProb,
+    actualValue: null,
+    result: "ppd" as const,
+    odds: pick.bookOdds != null ? String(pick.bookOdds) : null,
+    oddsProvider: pick.bookOddsProvider != null ? String(pick.bookOddsProvider) : null,
+    streakLabel: null,
+    dayNightLabel: null,
+    tier: pick.overallScore >= 83 ? "S" : pick.overallScore >= 74 ? "A" : pick.overallScore >= 68 ? "Lean" : null,
+    edge: null,
+    closingLineValue: null,
+    matrixScore: pick.overallScore ?? null,
+  }));
+
+  const allRows = [...finalRows, ...postponedRows];
+
+  if (allRows.length === 0) {
+    return { saved: 0, skipped: "no final or postponed games yet" };
+  }
+
+  // Upsert: delete existing non-ppd entries for this date then re-insert
+  // Keep any manually-entered historical rows by only deleting 'pending' results
+  await db.delete(dailyResults)
+    .where(and(eq(dailyResults.gameDate, dateStr), eq(dailyResults.result, "pending")));
+
+  // Also update any existing 'miss' rows for postponed players to 'ppd'
+  for (const ppd of postponedRows) {
+    await db.delete(dailyResults)
+      .where(and(
+        eq(dailyResults.gameDate, dateStr),
+        eq(dailyResults.playerName, ppd.playerName),
+        eq(dailyResults.source, "money")
+      ));
+  }
+
+  if (allRows.length > 0) {
+    await db.insert(dailyResults).values(allRows);
+  }
+
+  console.log(`[AutoGrade] Saved ${allRows.length} results for ${dateStr}: ${finalRows.filter(r => r.result === "hit").length} hits, ${finalRows.filter(r => r.result === "miss").length} misses, ${postponedRows.length} PPD`);
+  return { saved: allRows.length, skipped: "" };
 }
 
 /** Start the background auto-grade job */

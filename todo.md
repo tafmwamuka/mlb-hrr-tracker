@@ -1463,3 +1463,14 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] ResultCard shows locked odds vs current odds and board phase label
 - [x] TypeScript: 0 errors
 - [x] Checkpoint
+
+## Phase BT: Postponed Game Detection
+- [x] Fix mapGameStatus in liveResultsService.ts to return 'Postponed' instead of 'Scheduled'
+- [x] Add 'ppd' to daily_results.result enum in schema.ts
+- [x] Add 'ppd' to pick_snapshots.result enum in schema.ts
+- [x] Run pnpm db:push to migrate schema
+- [x] Update results.ts: postponed picks get hit=null, gameStatus='Postponed', excluded from hit rate
+- [x] Update autoGradeResults.ts: postponed games saved with result='ppd' not graded as miss
+- [x] Update getHitRateStats: exclude 'ppd' rows from all calculations
+- [x] Update ResultsTab.tsx: show PPD badge for postponed picks
+- [x] Update MoneyPicksTab.tsx: show PPD badge for postponed picks

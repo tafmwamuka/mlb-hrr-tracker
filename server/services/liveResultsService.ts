@@ -67,7 +67,7 @@ export async function fetchGameStatuses(dateStr: string): Promise<GameStatus[]> 
 
     const statuses: GameStatus[] = games.map((game: any) => ({
       gamePk: game.gamePk,
-      status: mapGameStatus(game.status?.abstractGameState || "Scheduled"),
+      status: mapGameStatus(game.status?.abstractGameState || "Scheduled", game.status?.detailedState),
       abstractGameState: game.status?.abstractGameState || "Scheduled",
       detailedState: game.status?.detailedState || "Scheduled",
       inning: game.linescore?.currentInning,
@@ -87,12 +87,20 @@ export async function fetchGameStatuses(dateStr: string): Promise<GameStatus[]> 
   }
 }
 
-function mapGameStatus(abstractState: string): GameStatus["status"] {
+function mapGameStatus(abstractState: string, detailedState?: string): GameStatus["status"] {
   switch (abstractState) {
     case "Final": return "Final";
     case "Live": return "In Progress";
     case "Preview": return "Scheduled";
-    default: return "Scheduled";
+    case "Postponed": return "Postponed";
+    case "Cancelled": return "Postponed"; // treat cancelled same as postponed
+    case "Suspended": return "Postponed"; // treat suspended same as postponed
+    default:
+      // Also check detailedState for cases where abstractGameState is not yet set
+      if (detailedState && (detailedState.includes('Postponed') || detailedState.includes('Cancelled') || detailedState.includes('Suspended'))) {
+        return "Postponed";
+      }
+      return "Scheduled";
   }
 }
 

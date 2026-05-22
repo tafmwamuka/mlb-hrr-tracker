@@ -1,0 +1,15 @@
+{
+  "query": "SELECT COUNT(*) as total, SUM(CASE WHEN result='hit' THEN 1 ELSE 0 END) as hits, SUM(CASE WHEN result='miss' THEN 1 ELSE 0 END) as misses FROM daily_results WHERE gameDate = '2026-05-20' AND source = 'money';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT COUNT(*) as total, SUM(CASE WHEN result='hit' THEN 1 ELSE 0 END) as hits, SUM(CASE WHEN result='miss' THEN 1 ELSE 0 END) as misses FROM daily_results WHERE gameDate = '2026-05-20' AND source = 'money';",
+  "rows": [
+    {
+      "total": "18",
+      "hits": "14",
+      "misses": "4"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\thits\tmisses\n18\t14\t4\n",
+  "stderr": "",
+  "execution_time_ms": 366
+}

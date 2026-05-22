@@ -217,7 +217,7 @@ export const dailyResults = mysqlTable("daily_results", {
   line: text("line").notNull(), // e.g. "OVER 0.5"
   probability: int("probability").notNull(), // 0-100
   actualValue: int("actualValue"), // null until game is Final
-  result: mysqlEnum("result", ["pending", "hit", "miss"]).default("pending").notNull(),
+  result: mysqlEnum("result", ["pending", "hit", "miss", "ppd"]).default("pending").notNull(),
   odds: varchar("odds", { length: 16 }), // American odds e.g. "-164" or "+120"
   oddsProvider: varchar("oddsProvider", { length: 64 }),
   streakLabel: varchar("streakLabel", { length: 64 }),
@@ -264,7 +264,7 @@ export const pickSnapshots = mysqlTable("pick_snapshots", {
   voidReason: varchar("voidReason", { length: 256 }), // e.g. "player scratched"
   // Results (filled in when game goes Final)
   actualValue: int("actualValue"),
-  result: mysqlEnum("result", ["pending", "hit", "miss"]).default("pending").notNull(),
+  result: mysqlEnum("result", ["pending", "hit", "miss", "ppd"]).default("pending").notNull(),
   gradedAt: timestamp("gradedAt"),
   // Metadata
   createdAt: timestamp("createdAt").defaultNow().notNull(),
