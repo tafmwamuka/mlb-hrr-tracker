@@ -11,6 +11,7 @@ import { serveStatic, setupVite } from "./vite";
 import scheduledBackfillRouter from "../routes/scheduledBackfill";
 import { warmEnrichmentCacheOnStartup } from "../services/enrichmentCache";
 import { startAutoGradeJob } from "../jobs/autoGradeResults";
+import { startPostponedGameCleanupJob } from "../jobs/postponedGameCleanup";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -76,6 +77,10 @@ async function startServer() {
     // Start server-side auto-grade results job
     // Grades money picks against live boxscores and saves to DB every 30 min (7 PM–2 AM NDT)
     startAutoGradeJob();
+
+    // Start postponed game cleanup job
+    // Detects postponed/cancelled/suspended games every 5 min and purges their picks/results from DB
+    startPostponedGameCleanupJob();
   });
 }
 

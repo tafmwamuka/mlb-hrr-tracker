@@ -1483,3 +1483,8 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] history.ts getSevenDayStats: exclude ppd rows
 - [x] ResultsTab.tsx: remove postponed section, PPD badge, PPD legend, PPD sublabel
 - [x] MoneyPicksTab.tsx: keep PPD badge (game is still on board until board refreshes)
+
+## Phase BW: Automatic Postponed Game Cleanup Job
+- [x] Write server/jobs/postponedGameCleanup.ts — runs every 5 min, detects PPD games, deletes daily_results + pick_snapshots rows
+- [x] Register startPostponedGameCleanupJob() in server/_core/index.ts
+- [x] TypeScript check passes

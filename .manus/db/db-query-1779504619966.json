@@ -1,0 +1,18 @@
+{
+  "query": "SELECT result, COUNT(*) as count FROM daily_results WHERE gameDate = '2026-05-22' GROUP BY result;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT result, COUNT(*) as count FROM daily_results WHERE gameDate = '2026-05-22' GROUP BY result;",
+  "rows": [
+    {
+      "result": "hit",
+      "count": "22"
+    },
+    {
+      "result": "miss",
+      "count": "35"
+    }
+  ],
+  "messages": [],
+  "stdout": "result\tcount\nhit\t22\nmiss\t35\n",
+  "stderr": "",
+  "execution_time_ms": 262
+}

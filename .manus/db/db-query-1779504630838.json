@@ -1,0 +1,19 @@
+{
+  "query": "SELECT COUNT(*) as remaining FROM daily_results WHERE gameDate = '2026-05-22'; SELECT COUNT(*) as remaining FROM pick_snapshots WHERE gameDate = '2026-05-22';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Wo3nqYmBAbojNN.root --database 2uhrbvmfhdghycRn5Bc5P3 --execute SELECT COUNT(*) as remaining FROM daily_results WHERE gameDate = '2026-05-22'; SELECT COUNT(*) as remaining FROM pick_snapshots WHERE gameDate = '2026-05-22';",
+  "rows": [
+    {
+      "remaining": "0"
+    },
+    {
+      "remaining": "remaining"
+    },
+    {
+      "remaining": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "remaining\n0\nremaining\n0\n",
+  "stderr": "",
+  "execution_time_ms": 269
+}
