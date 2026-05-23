@@ -250,31 +250,36 @@ export const resultsRouter = router({
         });
       }
 
-      // Sort: Final games first, then In Progress, then Scheduled; within each group sort by probability
+      // Grade postponed picks in DB as 'ppd' and remove them from the results list
+      if (db) {
+        const postponedPicks = results.filter(r => r.gameStatus === "Postponed");
+        for (const ppd of postponedPicks) {
+          try {
+            await db.execute(
+              sql`UPDATE pick_snapshots SET result = 'ppd', gradedAt = NOW() WHERE gameDate = ${dateStr} AND playerName = ${ppd.playerName} AND result = 'pending'`
+            ).catch(() => {});
+            await db.execute(
+              sql`UPDATE daily_results SET result = 'ppd' WHERE gameDate = ${dateStr} AND playerName = ${ppd.playerName} AND source = 'money' AND result IN ('pending','miss')`
+            ).catch(() => {});
+          } catch {}
+        }
+      }
+
+      // Remove postponed picks from results — they should not appear in the Results tab at all
+      const visibleResults = results.filter(r => r.gameStatus !== "Postponed");
+
+      // Sort: Final games first, then In Progress, then Scheduled
       const statusOrder = { "Final": 0, "In Progress": 1, "Scheduled": 2, "Postponed": 3 };
-      results.sort((a, b) => {
+      visibleResults.sort((a, b) => {
         const statusDiff = statusOrder[a.gameStatus] - statusOrder[b.gameStatus];
         if (statusDiff !== 0) return statusDiff;
         return b.probability - a.probability;
       });
 
-      // Calculate hit rate (only for final games, exclude postponed)
-      const finalResults = results.filter(r => r.gameStatus === "Final" && r.actualValue !== null);
+      // Calculate hit rate (only for final games)
+      const finalResults = visibleResults.filter(r => r.gameStatus === "Final" && r.actualValue !== null);
       const hitCount = finalResults.filter(r => r.hit === true).length;
       const hitRate = finalResults.length > 0 ? Math.round((hitCount / finalResults.length) * 100) : 0;
-
-      // Grade postponed picks in DB as 'ppd' so they don't count as misses in stats
-      if (db) {
-        const postponedPicks = results.filter(r => r.gameStatus === "Postponed");
-        for (const ppd of postponedPicks) {
-          try {
-            // Update pick_snapshots if exists
-            await db.execute(
-              sql`UPDATE pick_snapshots SET result = 'ppd', gradedAt = NOW() WHERE gameDate = ${dateStr} AND playerName = ${ppd.playerName} AND result = 'pending'`
-            ).catch(() => {}); // ignore errors
-          } catch {}
-        }
-      }
 
       // Game counts
       const gamesInProgress = gameStatuses.filter(g => g.status === "In Progress").length;
@@ -283,13 +288,13 @@ export const resultsRouter = router({
 
       return {
         success: true,
-        results,
+        results: visibleResults,
         date: dateStr,
         hitRate,
         moneyHitRate: hitRate,
         allPlaysHitRate: 0,
-        totalPlays: results.length,
-        moneyPlays: moneyPickResults.length,
+        totalPlays: visibleResults.length,
+        moneyPlays: visibleResults.length,
         allPlaysCount: 0,
         hasActuals: finalResults.length > 0,
         gamesInProgress,
@@ -348,7 +353,10 @@ export const resultsRouter = router({
         return { success: true, results: [], hitRate: 0, totalPlays: 0, date: yesterdayStr, hasActuals: false };
       }
 
-      const results = rows.map(row => ({
+      // Exclude postponed (ppd) rows — they should not appear in results at all
+      const visibleRows = rows.filter(row => row.result !== 'ppd');
+
+      const results = visibleRows.map(row => ({
         id: row.id,
         playerId: row.playerId,
         playerName: row.playerName,

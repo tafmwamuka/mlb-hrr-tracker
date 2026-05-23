@@ -396,11 +396,11 @@ export function ResultsTab() {
     );
   }
 
-  // Separate by status
+  // Separate by status (postponed games are removed server-side and never appear here)
   const finalResults = allResults.filter((r: any) => r.gameStatus === "Final");
   const liveResults = allResults.filter((r: any) => r.gameStatus === "In Progress");
   const pendingResults = allResults.filter((r: any) => r.gameStatus === "Scheduled");
-  const postponedResults = allResults.filter((r: any) => r.gameStatus === "Postponed");
+  const postponedResults: any[] = []; // always empty — backend filters these out
 
   const hits = finalResults.filter((r: any) => r.hit === true);
   const misses = finalResults.filter((r: any) => r.hit === false);
@@ -648,12 +648,7 @@ export function ResultsTab() {
                       <span className="text-[9px] sm:text-[10px] text-[oklch(0.55_0.015_255)] font-medium">{pendingResults.length} Pending</span>
                     </div>
                   )}
-                  {postponedResults.length > 0 && (
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full" style={{ background: "oklch(0.65 0.15 300)" }} />
-                      <span className="text-[9px] sm:text-[10px] text-[oklch(0.55_0.015_255)] font-medium">{postponedResults.length} PPD</span>
-                    </div>
-                  )}
+                  {/* PPD legend removed — postponed games are excluded from results */}
                 </div>
               </div>
             )}
@@ -664,7 +659,7 @@ export function ResultsTab() {
             <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mt-3">
               {[
                 { value: `${moneyHitRate}%`, label: "Hit Rate", sublabel: `${moneyHits.length} hits / ${moneyFinal.length} settled`, icon: Flame, color: "oklch(0.75 0.18 55)" },
-                { value: `${resultsData?.totalPlays || 0}`, label: "Money Picks", sublabel: `${hits.length} ✓  ${misses.length} ✗  ${pendingResults.length + liveResults.length} pending${postponedResults.length > 0 ? `  ${postponedResults.length} PPD` : ''}`, icon: Target, color: "oklch(0.72 0.18 165)" },
+                { value: `${resultsData?.totalPlays || 0}`, label: "Money Picks", sublabel: `${hits.length} ✓  ${misses.length} ✗  ${pendingResults.length + liveResults.length} pending`, icon: Target, color: "oklch(0.72 0.18 165)" },
               ].map((stat, i) => (
                 <motion.div
                   key={stat.label}
@@ -745,27 +740,7 @@ export function ResultsTab() {
             ))}
           </>
         )}
-
-        {/* Postponed games section */}
-        {postponedResults.length > 0 && (
-          <>
-            <div className="flex items-center justify-between mb-1 mt-4">
-              <h3 className="text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2" style={{ color: "oklch(0.65 0.15 300)" }}>
-                <span style={{ fontSize: 13 }}>⚠️</span>
-                Postponed
-              </h3>
-              <span className="text-[9px] sm:text-[10px] text-[oklch(0.45_0.015_255)] font-medium px-2 py-0.5 rounded-lg" style={{ background: "oklch(0.18 0.02 255)" }}>
-                {postponedResults.length} voided
-              </span>
-            </div>
-            <p className="text-[9px] sm:text-[10px] text-[oklch(0.45_0.015_255)] mb-2">
-              These picks are voided and excluded from hit rate calculations.
-            </p>
-            {postponedResults.map((play: any, idx: number) => (
-              <ResultCard key={`ppd-${play.playerId}-${play.stat}-${idx}`} play={play} idx={idx} />
-            ))}
-          </>
-        )}
+        {/* Postponed games are filtered out server-side and never shown here */}
       </div>
 
       {/* Footer */}

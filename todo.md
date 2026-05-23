@@ -1474,3 +1474,12 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Update getHitRateStats: exclude 'ppd' rows from all calculations
 - [x] Update ResultsTab.tsx: show PPD badge for postponed picks
 - [x] Update MoneyPicksTab.tsx: show PPD badge for postponed picks
+
+## Phase BU: Remove Postponed Games from Results
+- [x] results.ts getTodayResults: filter out postponed picks before returning
+- [x] results.ts getYesterdayResults: filter out ppd rows
+- [x] history.ts getPerformanceSummary: exclude ppd rows from totals
+- [x] history.ts getResultsByDate: exclude ppd rows
+- [x] history.ts getSevenDayStats: exclude ppd rows
+- [x] ResultsTab.tsx: remove postponed section, PPD badge, PPD legend, PPD sublabel
+- [x] MoneyPicksTab.tsx: keep PPD badge (game is still on board until board refreshes)

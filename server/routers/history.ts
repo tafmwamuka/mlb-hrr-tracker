@@ -113,14 +113,15 @@ export const historyRouter = router({
         ? subtractDays(30)
         : "2020-01-01";
 
-      // Only fetch money picks
+      // Only fetch money picks (exclude pending and ppd/postponed)
       const rows = await db.select()
         .from(dailyResults)
         .where(
           and(
             gte(dailyResults.gameDate, startDate),
             eq(dailyResults.source, "money"),
-            sql`${dailyResults.result} != 'pending'`
+            sql`${dailyResults.result} != 'pending'`,
+            sql`${dailyResults.result} != 'ppd'`
           )
         )
         .orderBy(desc(dailyResults.gameDate));
@@ -174,10 +175,12 @@ export const historyRouter = router({
           and(
             eq(dailyResults.gameDate, input.date),
             eq(dailyResults.source, "money"),
+            sql`${dailyResults.result} != 'ppd'`  // exclude postponed
           )
         )
         .orderBy(desc(dailyResults.probability));
 
+      const settled = rows.filter(r => r.result !== 'pending');
       return {
         date: input.date,
         plays: rows,
@@ -185,8 +188,8 @@ export const historyRouter = router({
         misses: rows.filter(r => r.result === "miss").length,
         pending: rows.filter(r => r.result === "pending").length,
         total: rows.length,
-        hitRate: rows.filter(r => r.result !== "pending").length > 0
-          ? Math.round((rows.filter(r => r.result === "hit").length / rows.filter(r => r.result !== "pending").length) * 100)
+        hitRate: settled.length > 0
+          ? Math.round((rows.filter(r => r.result === "hit").length / settled.length) * 100)
           : 0,
       };
     }),
@@ -207,13 +210,14 @@ export const historyRouter = router({
     const sevenDaysAgo = subtractDays(7);
     const fourteenDaysAgo = subtractDays(14);
 
-    // Both queries scoped to money picks only
+    // Both queries scoped to money picks only (exclude pending and ppd/postponed)
     const [recentRows, prevRows] = await Promise.all([
       db.select().from(dailyResults)
         .where(and(
           gte(dailyResults.gameDate, sevenDaysAgo),
           eq(dailyResults.source, "money"),
-          sql`${dailyResults.result} != 'pending'`
+          sql`${dailyResults.result} != 'pending'`,
+          sql`${dailyResults.result} != 'ppd'`
         ))
         .orderBy(desc(dailyResults.gameDate)),
       db.select().from(dailyResults)
@@ -221,7 +225,8 @@ export const historyRouter = router({
           gte(dailyResults.gameDate, fourteenDaysAgo),
           lte(dailyResults.gameDate, sevenDaysAgo),
           eq(dailyResults.source, "money"),
-          sql`${dailyResults.result} != 'pending'`
+          sql`${dailyResults.result} != 'pending'`,
+          sql`${dailyResults.result} != 'ppd'`
         ))
         .orderBy(desc(dailyResults.gameDate)),
     ]);
