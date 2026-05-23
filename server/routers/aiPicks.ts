@@ -1852,16 +1852,19 @@ export const aiPicksRouter = router({
         }
       }
 
-      // Annotate each money pick with the current game status (for PPD detection on frontend)
+      // Remove picks whose game is postponed/cancelled/suspended from the board entirely
       const postponedTeams3 = new Set(
         games3
-          .filter(g => g.status === 'Postponed')
+          .filter(g => g.status === 'Postponed' || g.status === 'Cancelled' || g.status === 'Suspended')
           .flatMap(g => [g.homeTeam.abbreviation, g.awayTeam.abbreviation])
       );
-      const annotatedMoneyPicks3 = (moneyPicks3 as any[]).map(p => ({
-        ...p,
-        gameStatus: postponedTeams3.has(p.team) ? 'Postponed' : (p.gameStatus ?? 'Scheduled'),
-      }));
+      const postponedPicksRemoved = (moneyPicks3 as any[]).filter(p => postponedTeams3.has(p.team));
+      if (postponedPicksRemoved.length > 0) {
+        console.log(`[PPD] Removing ${postponedPicksRemoved.length} picks from postponed/cancelled games: ${postponedPicksRemoved.map((p: any) => p.playerName).join(', ')}`);
+      }
+      const annotatedMoneyPicks3 = (moneyPicks3 as any[])
+        .filter(p => !postponedTeams3.has(p.team))
+        .map(p => ({ ...p, gameStatus: p.gameStatus ?? 'Scheduled' }));
 
       return {
         success: true,

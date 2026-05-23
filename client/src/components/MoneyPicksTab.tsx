@@ -653,8 +653,8 @@ function MoneyPickCard({
             {pick.lineSource}
           </div>
 
-          {/* PPD badge: shown when game is postponed */}
-          {(pick as any).gameStatus === 'Postponed' && (
+          {/* PPD badge removed — postponed picks are filtered out server-side before reaching the board */}
+          {false && (
             <div
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold tracking-wide"
               style={{ background: "oklch(0.65 0.15 300 / 15%)", color: "oklch(0.65 0.15 300)", border: "1px solid oklch(0.65 0.15 300 / 35%)" }}
