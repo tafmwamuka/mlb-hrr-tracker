@@ -1494,3 +1494,10 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Build DiamondSmartLab.tsx frontend component with 5 sections
 - [x] Rename Parlays tab to Diamond Smart Lab in Home.tsx
 - [x] TypeScript check passes
+
+## Phase BY: Money Pick Alternatives
+- [x] Add PickAlternative type and pickAlternatives field to EnrichedMoneyPick in hrrPicksService.ts
+- [x] Build alternatives engine in hrrPicksService.ts after value analysis pass
+- [x] Build MoneyPickAlternatives.tsx collapsible component with tier cards
+- [x] Wire MoneyPickAlternatives under each official pick card in MoneyPicksTab
+- [x] TypeScript check passes

@@ -16,7 +16,7 @@
 
 import { rankAIPicks, getMockHRTargets, getMockParkFactors } from './aiRankingService';
 import { fetchOddsForPicks, americanToImpliedProbability, removeVig } from './oddsApiService';
-import { analyzeValue, calcEV, probToAmericanOdds } from './valueEngine';
+import { analyzeValue, calcEV, probToAmericanOdds, getValueTier } from './valueEngine';
 // Phase AP: getMockSavantData removed — barrel threat check now uses real statcastCache
 import { generateHRRProjections } from './hrrService';
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from './poissonModel';
@@ -277,6 +277,34 @@ export interface EnrichedMoneyPick {
   lineEvaluations?: LineEvaluation[];
   bestLineVerdict?: string;
   bestLineReason?: string;
+  // Phase BY: Money Pick Alternatives (display-only, never affects record)
+  pickAlternatives?: PickAlternative[];
+}
+
+// ─── Money Pick Alternatives ────────────────────────────────────────────────
+// Generated per-pick after sportsbook odds are available.
+// These are DISPLAY-ONLY and never affect official record, hit rate, or ROI.
+
+export type AlternativeTier = 'SAFER' | 'BETTER_VALUE' | 'CEILING' | 'NONE';
+
+export interface PickAlternative {
+  tier: AlternativeTier;
+  /** Human-readable label for the market, e.g. "O0.5 HRR" or "O1.5 HRR" */
+  marketLabel: string;
+  /** American odds from sportsbook */
+  bookOdds: number;
+  /** Model true probability (0-100) */
+  trueProb: number;
+  /** Sportsbook implied probability (0-100, vig-included) */
+  impliedProb: number;
+  /** Edge = trueProb - vigFreeImplied */
+  edge: number;
+  /** Fair American odds from model */
+  fairOdds: number;
+  /** Expected value % */
+  ev: number;
+  /** Why this alternative qualifies */
+  reason: string;
 }
 
 export interface EnrichmentStatus {
@@ -773,6 +801,74 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       }));
       pick.valueAnalysis = analyzeValue(trueProb, numericOdds, altLines);
     }
+  }
+
+  // Phase BY: Generate Money Pick Alternatives for each official pick
+  // These are DISPLAY-ONLY and never affect official record, hit rate, or ROI.
+  for (const pick of moneyPicks as any[]) {
+    const officialLine = pick.recommendedLine ?? pick.hrrLine ?? 0.5;
+    const lambda = pick.expectedTotal ?? 1.5;
+    const overallScore = pick.overallScore ?? 60;
+
+    // Candidate alternate HRR lines from sportsbook (exclude the official line)
+    const candidates: Array<{ line: number; overOdds: number; modelProb: number }> = [];
+    for (const al of (pick.alternateLines ?? [])) {
+      if (al.line === officialLine) continue; // skip the official pick's own line
+      if (al.overOdds == null) continue;       // skip lines without sportsbook odds
+      const modelProb = Math.round(poissonOverProbability(al.line, lambda) * 100);
+      candidates.push({ line: al.line, overOdds: al.overOdds, modelProb });
+    }
+
+    const alternatives: PickAlternative[] = [];
+
+    // For each candidate, compute value metrics and classify into a tier
+    for (const cand of candidates) {
+      const { overOdds, modelProb } = cand;
+      const impliedProb = Math.round(americanToImpliedProbability(overOdds) * 1000) / 10;
+      const vigFreeImplied = Math.round((impliedProb / 1.045) * 10) / 10;
+      const edge = Math.round((modelProb - vigFreeImplied) * 10) / 10;
+      const fairOdds = probToAmericanOdds(modelProb);
+      const ev = calcEV(modelProb, overOdds);
+      const tier = getValueTier(overOdds, edge, modelProb);
+      if (tier === 'PASS') continue; // skip negative-EV or non-qualifying lines
+
+      const altTier: AlternativeTier =
+        tier === 'SAFE_VALUE' ? 'SAFER' :
+        tier === 'BALANCED_VALUE' ? 'BETTER_VALUE' :
+        tier === 'CEILING_PLAY' ? 'CEILING' : 'NONE';
+
+      const oddsStr = overOdds > 0 ? `+${overOdds}` : `${overOdds}`;
+      const reason =
+        altTier === 'SAFER'
+          ? `Higher-probability path at ${oddsStr} with ${modelProb}% model hit rate — prioritizes consistency over payout.`
+          : altTier === 'BETTER_VALUE'
+          ? `Strong EV play at ${oddsStr} — model edge of +${edge}% with ${modelProb}% hit probability.`
+          : `Aggressive ladder at ${oddsStr} — ${modelProb}% hit probability with +${edge}% edge over the book.`;
+
+      alternatives.push({
+        tier: altTier,
+        marketLabel: `O${cand.line} HRR`,
+        bookOdds: overOdds,
+        trueProb: modelProb,
+        impliedProb,
+        edge,
+        fairOdds,
+        ev,
+        reason,
+      });
+    }
+
+    // Keep at most one per tier (best edge within each tier)
+    const best: Record<string, PickAlternative> = {};
+    for (const alt of alternatives) {
+      const existing = best[alt.tier];
+      if (!existing || alt.edge > existing.edge) {
+        best[alt.tier] = alt;
+      }
+    }
+
+    const finalAlts = Object.values(best);
+    pick.pickAlternatives = finalAlts.length > 0 ? finalAlts : [{ tier: 'NONE' as AlternativeTier, marketLabel: '', bookOdds: 0, trueProb: 0, impliedProb: 0, edge: 0, fairOdds: 0, ev: 0, reason: '' }];
   }
 
   // Compute topCandidates: top 3 picks from enrichedPicks that did NOT make moneyPicks (near-misses)

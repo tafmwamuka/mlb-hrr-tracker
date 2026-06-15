@@ -12,6 +12,7 @@ import {
   TrendingDown, CalendarDays, BarChart2, ChevronRight
 } from "lucide-react";
 import { SaferPlayTip } from "@/components/SaferPlayTip";
+import { MoneyPickAlternatives } from "@/components/MoneyPickAlternatives";
 import { StructuredPickSections } from "@/components/StructuredPickSections";
 import { PerformanceGraph } from "@/components/PerformanceGraph";
 import { BestEdgeCard } from "@/components/BestEdgeCard";
@@ -133,6 +134,18 @@ interface MoneyPick {
   }>;
   bestLineVerdict?: string | null;
   bestLineReason?: string | null;
+  // Phase BY: Money Pick Alternatives (display-only)
+  pickAlternatives?: Array<{
+    tier: 'SAFER' | 'BETTER_VALUE' | 'CEILING' | 'NONE';
+    marketLabel: string;
+    bookOdds: number;
+    trueProb: number;
+    impliedProb: number;
+    edge: number;
+    fairOdds: number;
+    ev: number;
+    reason: string;
+  }>;
   // Phase AW: Value Intelligence System
   valueAnalysis?: {
     trueProb: number;
@@ -1189,6 +1202,14 @@ function MoneyPickCard({
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Phase BY: Money Pick Alternatives — always visible below the card */}
+        {pick.pickAlternatives && pick.pickAlternatives.length > 0 && (
+          <MoneyPickAlternatives
+            alternatives={pick.pickAlternatives}
+            playerName={pick.playerName}
+          />
+        )}
       </div>
     </motion.div>
   );
