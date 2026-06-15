@@ -13,6 +13,7 @@ import { aiPicksRouter } from "./routers/aiPicks";
 import { resultsRouter } from "./routers/results";
 import { scheduledRouter } from "./routers/scheduled";
 import { historyRouter } from "./routers/history";
+import { smartLabRouter } from "./routers/smartLab";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -38,6 +39,7 @@ export const appRouter = router({
   favorites: favoritesRouter,
   scheduled: scheduledRouter,
   history: historyRouter,
+  smartLab: smartLabRouter,
 });
 
 export type AppRouter = typeof appRouter;

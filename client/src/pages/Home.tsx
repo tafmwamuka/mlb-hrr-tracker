@@ -20,12 +20,12 @@ import {
   type PlayerStat,
 } from "@/hooks/useMLBStats";
 import { PlayerModal } from "@/components/PlayerModal";
-import { ParlaysTab } from "@/components/ParlaysTab";
+import { DiamondSmartLab } from "@/components/DiamondSmartLab";
 import { MoneyPicksTab } from "@/components/MoneyPicksTab";
 import { ResultsTab } from "@/components/ResultsTab";
 import { GameCards } from "@/components/GameCards";
 import { PerformanceDashboard } from "@/components/PerformanceDashboard";
-import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, Ticket, BarChart3 } from "lucide-react";
+import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, FlaskConical, BarChart3 } from "lucide-react";
 
 type TabType = "topPlays" | "parlays" | "results" | "stats";
 
@@ -68,9 +68,9 @@ const TAB_CONFIG = {
     color: "oklch(0.82 0.17 85)",
   },
   parlays: {
-    label: "Parlays",
-    icon: Ticket,
-    color: "oklch(0.72 0.18 165)",
+    label: "Smart Lab",
+    icon: FlaskConical,
+    color: "oklch(0.82 0.17 85)",
   },
   results: {
     label: "Results",
@@ -694,7 +694,7 @@ export default function Home() {
           className="flex-1 overflow-y-auto flex flex-col absolute inset-0 transition-opacity duration-200"
           style={{ opacity: activeTab === "parlays" ? 1 : 0, pointerEvents: activeTab === "parlays" ? "auto" : "none", zIndex: activeTab === "parlays" ? 1 : 0 }}
         >
-          <ParlaysTab />
+          <DiamondSmartLab />
         </div>
 
         {/* Stats tab — always mounted */}

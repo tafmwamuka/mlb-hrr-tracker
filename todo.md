@@ -1488,3 +1488,9 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Write server/jobs/postponedGameCleanup.ts — runs every 5 min, detects PPD games, deletes daily_results + pick_snapshots rows
 - [x] Register startPostponedGameCleanupJob() in server/_core/index.ts
 - [x] TypeScript check passes
+
+## Phase BX: Diamond Smart Lab
+- [x] Add smartLab tRPC router with getSlateData and analyzeSlate procedures
+- [x] Build DiamondSmartLab.tsx frontend component with 5 sections
+- [x] Rename Parlays tab to Diamond Smart Lab in Home.tsx
+- [x] TypeScript check passes
