@@ -274,3 +274,80 @@ export const pickSnapshots = mysqlTable("pick_snapshots", {
 export type PickSnapshot = typeof pickSnapshots.$inferSelect;
 export type InsertPickSnapshot = typeof pickSnapshots.$inferInsert;
 
+/**
+ * Team Discipline Profiles table — stores computed discipline grades and prop tendency profiles
+ * for every MLB team. Refreshed daily from the MLB Stats API.
+ */
+export const teamDisciplineProfiles = mysqlTable("team_discipline_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  teamAbbr: varchar("teamAbbr", { length: 8 }).notNull().unique(), // e.g. "NYY"
+  teamName: varchar("teamName", { length: 64 }).notNull(),
+  season: int("season").notNull(),
+  // Discipline metrics (stored as integers * 1000 for precision, e.g. 0.123 → 123)
+  walkRatePct: int("walkRatePct"),        // BB% * 1000
+  strikeoutRatePct: int("strikeoutRatePct"), // K% * 1000
+  chaseRatePct: int("chaseRatePct"),      // O-Swing% * 1000
+  contactRatePct: int("contactRatePct"),  // Contact% * 1000
+  zoneContactPct: int("zoneContactPct"),  // Z-Contact% * 1000
+  swingStrikePct: int("swingStrikePct"),  // SwStr% * 1000
+  firstPitchSwingPct: int("firstPitchSwingPct"), // F-Strike% * 1000
+  pitchesPerPA: int("pitchesPerPA"),      // P/PA * 100
+  walkRateVsRHP: int("walkRateVsRHP"),    // BB% vs RHP * 1000
+  walkRateVsLHP: int("walkRateVsLHP"),    // BB% vs LHP * 1000
+  kRateVsRHP: int("kRateVsRHP"),          // K% vs RHP * 1000
+  kRateVsLHP: int("kRateVsLHP"),          // K% vs LHP * 1000
+  // Computed grades
+  disciplineGrade: mysqlEnum("disciplineGrade", ["A+", "A", "B", "C", "D"]).notNull().default("B"),
+  disciplineScore: int("disciplineScore").notNull().default(50), // 0-100
+  // Prop tendency scores (0-100)
+  walkTendencyScore: int("walkTendencyScore").default(50),
+  strikeoutTendencyScore: int("strikeoutTendencyScore").default(50),
+  pitchCountTendencyScore: int("pitchCountTendencyScore").default(50),
+  patientScore: int("patientScore").default(50),       // high = patient (walks, long ABs)
+  aggressiveScore: int("aggressiveScore").default(50), // high = aggressive (chase, first pitch)
+  // Market tendency (derived from historical results)
+  marketOverPerformScore: int("marketOverPerformScore").default(50), // how often team outperforms market
+  marketUnderPerformScore: int("marketUnderPerformScore").default(50),
+  // Auto-boost adjustments (stored as integer basis points, e.g. 300 = +3%)
+  walkBoostBps: int("walkBoostBps").default(0),       // ±500 max (±5%)
+  strikeoutBoostBps: int("strikeoutBoostBps").default(0),
+  // Metadata
+  lastFetchedAt: timestamp("lastFetchedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TeamDisciplineProfile = typeof teamDisciplineProfiles.$inferSelect;
+export type InsertTeamDisciplineProfile = typeof teamDisciplineProfiles.$inferInsert;
+
+/**
+ * Pitcher Recommendation History table — stores every official pitcher edge recommendation
+ * and its outcome. Used by the learning engine to derive historical adjustments.
+ */
+export const pitcherRecommendationHistory = mysqlTable("pitcher_recommendation_history", {
+  id: int("id").autoincrement().primaryKey(),
+  gameDate: varchar("gameDate", { length: 16 }).notNull(), // YYYY-MM-DD
+  pitcherName: varchar("pitcherName", { length: 128 }).notNull(),
+  pitcherId: int("pitcherId"),
+  pitcherTeam: varchar("pitcherTeam", { length: 8 }).notNull(),
+  opponentTeam: varchar("opponentTeam", { length: 8 }).notNull(),
+  propType: mysqlEnum("propType", ["strikeouts", "walks", "outs", "innings", "hits_allowed", "earned_runs"]).notNull(),
+  pitcherHand: mysqlEnum("pitcherHand", ["L", "R", "S"]).default("R"),
+  umpire: varchar("umpire", { length: 128 }),
+  weather: varchar("weather", { length: 256 }), // JSON string
+  park: varchar("park", { length: 64 }),
+  bookOdds: int("bookOdds"),       // American odds e.g. -115
+  projection: int("projection"),   // model projected value * 10 e.g. 65 = 6.5 K
+  line: int("line"),               // sportsbook line * 10 e.g. 65 = 6.5
+  result: mysqlEnum("result", ["pending", "hit", "miss", "ppd"]).default("pending").notNull(),
+  actualValue: int("actualValue"), // actual stat value * 10
+  disciplineEdge: int("disciplineEdge").default(0), // 1 if DISCIPLINE EDGE was flagged
+  tms: int("tms"),                 // Team Matchup Score at time of recommendation (0-100)
+  disciplineGrade: varchar("disciplineGrade", { length: 4 }), // opponent's discipline grade
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PitcherRecommendationHistory = typeof pitcherRecommendationHistory.$inferSelect;
+export type InsertPitcherRecommendationHistory = typeof pitcherRecommendationHistory.$inferInsert;
+

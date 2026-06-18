@@ -1501,3 +1501,18 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Build MoneyPickAlternatives.tsx collapsible component with tier cards
 - [x] Wire MoneyPickAlternatives under each official pick card in MoneyPicksTab
 - [x] TypeScript check passes
+
+## Phase BZ: Pitcher vs Team Discipline Database
+- [x] Add team_discipline_profiles table to schema.ts
+- [x] Add pitcher_recommendation_history table to schema.ts
+- [x] Run pnpm db:push to migrate schema
+- [x] Build TeamDisciplineService: fetch MLB team plate discipline stats, compute A+/A/B/C/D grades, prop tendency profiles
+- [x] Build TMS (Team Matchup Score 0-100) computation combining discipline, handedness, recent form, umpire, weather, park
+- [x] Build DisciplineEdgeDetector: fire DISCIPLINE EDGE when 2+ signals align
+- [x] Build AutoBoostEngine: apply ±0-5% probability adjustments (capped at 5%) to pitcher props
+- [x] Build pitcherLearningEngine: store every pitcher recommendation result and derive historical adjustments
+- [x] Build discipline tRPC router with all procedures
+- [x] Register disciplineRouter in routers.ts
+- [x] Build PitchersTab.tsx UI: Today's Matchups, Team Grades, Leaderboards, Edge History
+- [x] Add Pitchers tab to Home.tsx navigation
+- [x] TypeScript check passes (0 errors)

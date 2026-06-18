@@ -71,6 +71,13 @@
       "when": 1779488893113,
       "tag": "0009_certain_thunderball",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1781805552135,
+      "tag": "0010_melted_marten_broadcloak",
+      "breakpoints": true
     }
   ]
 }

@@ -25,9 +25,10 @@ import { MoneyPicksTab } from "@/components/MoneyPicksTab";
 import { ResultsTab } from "@/components/ResultsTab";
 import { GameCards } from "@/components/GameCards";
 import { PerformanceDashboard } from "@/components/PerformanceDashboard";
-import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, FlaskConical, BarChart3 } from "lucide-react";
+import PitchersTab from "@/components/PitchersTab";
+import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, FlaskConical, BarChart3, Dna } from "lucide-react";
 
-type TabType = "topPlays" | "parlays" | "results" | "stats";
+type TabType = "topPlays" | "parlays" | "pitchers" | "results" | "stats";
 
 // ─── Stat category config ─────────────────────────────────────────────────────
 const STAT_CONFIG = {
@@ -76,6 +77,11 @@ const TAB_CONFIG = {
     label: "Results",
     icon: Trophy,
     color: "oklch(0.72 0.18 165)",
+  },
+  pitchers: {
+    label: "Pitchers",
+    icon: Dna,
+    color: "oklch(0.78 0.15 300)",
   },
   stats: {
     label: "Stats",
@@ -703,6 +709,14 @@ export default function Home() {
           style={{ opacity: activeTab === "stats" ? 1 : 0, pointerEvents: activeTab === "stats" ? "auto" : "none", zIndex: activeTab === "stats" ? 1 : 0 }}
         >
           <PerformanceDashboard />
+        </div>
+
+        {/* Pitchers tab — always mounted */}
+        <div
+          className="flex-1 overflow-y-auto absolute inset-0 transition-opacity duration-200"
+          style={{ opacity: activeTab === "pitchers" ? 1 : 0, pointerEvents: activeTab === "pitchers" ? "auto" : "none", zIndex: activeTab === "pitchers" ? 1 : 0 }}
+        >
+          <PitchersTab />
         </div>
 
         {/* Results tab — always mounted */}
