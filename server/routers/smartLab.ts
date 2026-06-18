@@ -15,6 +15,8 @@ import { router, publicProcedure } from "../_core/trpc";
 import { getEnrichedMoneyPicks } from "../services/hrrPicksService";
 import { invokeLLM } from "../_core/llm";
 import { runPitcherEdgeEngine } from "../services/pitcherEdgeEngine";
+import { fetchTodaysGames } from "../services/mlbLineupService";
+import { computeTeamMatchupScore, getTeamDiscipline } from "../services/teamDisciplineService";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -263,6 +265,7 @@ Return ONLY valid JSON. No markdown, no code fences.`;
       const topCandidates = (result.topCandidates ?? []).map(pickToStructured);
       const allPicks = officialPicks.length > 0 ? officialPicks : topCandidates;
 
+      // Try to get pitcher edge picks from the full engine first
       const pitcherEdgeForChat = await runPitcherEdgeEngine().catch(() => ({ picks: [] as any[] }));
       const pitcherChatSummary = (pitcherEdgeForChat.picks ?? []).slice(0, 6).map((p: any) => ({
         pitcher: p.pitcherName,
@@ -273,9 +276,41 @@ Return ONLY valid JSON. No markdown, no code fences.`;
         edge: Math.round(p.edge * 10) / 10,
         tier: p.tier,
       }));
+
+      // Always build a pitcher matchup context from today's starting pitchers (fallback)
+      let pitcherMatchupContext = '';
+      try {
+        const games = await fetchTodaysGames();
+        const matchups: string[] = [];
+        for (const game of games.slice(0, 12)) {
+          const hp = game.homeTeam.probablePitcher;
+          const ap = game.awayTeam.probablePitcher;
+          if (!hp && !ap) continue;
+
+          const [homeTms, awayTms, homeDisc, awayDisc] = await Promise.all([
+            hp ? computeTeamMatchupScore({ opponentTeam: game.awayTeam.abbreviation, pitcherHand: 'R', propType: 'strikeouts' }).catch(() => null) : Promise.resolve(null),
+            ap ? computeTeamMatchupScore({ opponentTeam: game.homeTeam.abbreviation, pitcherHand: 'R', propType: 'strikeouts' }).catch(() => null) : Promise.resolve(null),
+            getTeamDiscipline(game.awayTeam.abbreviation).catch(() => null),
+            getTeamDiscipline(game.homeTeam.abbreviation).catch(() => null),
+          ]);
+
+          if (hp) {
+            matchups.push(`${hp.fullName} (${game.homeTeam.abbreviation}) vs ${game.awayTeam.abbreviation} | TMS: ${homeTms?.tms ?? 'N/A'} | Opp Discipline Grade: ${homeDisc?.disciplineGrade ?? 'N/A'}`);
+          }
+          if (ap) {
+            matchups.push(`${ap.fullName} (${game.awayTeam.abbreviation}) vs ${game.homeTeam.abbreviation} | TMS: ${awayTms?.tms ?? 'N/A'} | Opp Discipline Grade: ${awayDisc?.disciplineGrade ?? 'N/A'}`);
+          }
+        }
+        if (matchups.length > 0) {
+          pitcherMatchupContext = '\n\nTODAY\'S STARTING PITCHERS (with Team Matchup Score and Opponent Discipline Grade):\n' + matchups.join('\n');
+        }
+      } catch {
+        // silently skip if matchup data unavailable
+      }
+
       const pitcherChatContext = pitcherChatSummary.length > 0
-        ? '\n\nPITCHER EDGE PICKS:\n' + JSON.stringify(pitcherChatSummary, null, 2)
-        : '';
+        ? '\n\nPITCHER EDGE PICKS:\n' + JSON.stringify(pitcherChatSummary, null, 2) + pitcherMatchupContext
+        : pitcherMatchupContext;
 
       const slateContext = allPicks.length > 0
         ? `Today's Diamond Edge slate (${result.dataDate}):\n${JSON.stringify(allPicks, null, 2)}${pitcherChatContext}`
