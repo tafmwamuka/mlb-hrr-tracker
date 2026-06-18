@@ -13,6 +13,7 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PitcherEdgePicks } from "@/components/PitcherEdgePicks";
 import {
   FlaskConical,
   TrendingUp,
@@ -295,6 +296,9 @@ export default function PitchersTab() {
           Proprietary team plate discipline grades, Team Matchup Scores (TMS), and pitcher edge intelligence.
         </p>
       </div>
+
+      {/* ── Pitcher Edge Picks (hero board) ─────────────────────────────── */}
+      <PitcherEdgePicks />
 
       <Tabs defaultValue="matchups" className="flex-1 flex flex-col">
         <TabsList className="mx-4 mb-3 grid grid-cols-4 bg-white/6 rounded-xl h-8 shrink-0">

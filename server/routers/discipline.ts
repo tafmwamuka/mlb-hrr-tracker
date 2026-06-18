@@ -17,6 +17,7 @@ import {
 } from "../services/teamDisciplineService";
 import { detectDisciplineEdge } from "../services/disciplineEdgeDetector";
 import { getDisciplineEdgeHistory, getPitcherHistory } from "../services/pitcherLearningEngine";
+import { runPitcherEdgeEngine } from "../services/pitcherEdgeEngine";
 
 // ── Serializable discipline data (for tRPC transport) ─────────────────────────
 function serializeDisciplineData(d: TeamDisciplineData) {
@@ -215,6 +216,50 @@ export const disciplineRouter = router({
     } catch (e) {
       console.warn("[Discipline] getTodayPitcherMatchups failed:", e);
       return [];
+    }
+  }),
+
+  /**
+   * Get today's Pitcher Edge picks — Official Money Picks, Elite Safety,
+   * Best Value, Dual Edge, and Stack Alert tiers.
+   */
+  getPitcherEdgePicks: publicProcedure.query(async () => {
+    try {
+      const result = await runPitcherEdgeEngine();
+      return {
+        picks: result.picks.map(p => ({
+          pitcherName: p.pitcherName,
+          pitcherTeam: p.pitcherTeam,
+          opponentTeam: p.opponentTeam,
+          pitcherHand: p.pitcherHand,
+          gameTime: p.gameTime,
+          propType: p.propType,
+          line: p.line,
+          bookOdds: p.bookOdds,
+          fairOdds: p.fairOdds,
+          modelProbability: Math.round(p.modelProbability * 1000) / 10,  // as %
+          impliedProbability: Math.round(p.impliedProbability * 1000) / 10,
+          edge: Math.round(p.edge * 1000) / 10,
+          pitcherEdgeScore: p.pitcherEdgeScore,
+          tms: p.tms,
+          tier: p.tier,
+          hasDisciplineEdge: p.hasDisciplineEdge,
+          isDualEdge: p.isDualEdge,
+          qualifyingReasons: p.qualifyingReasons,
+          riskFlags: p.riskFlags,
+          disciplineGrade: p.disciplineGrade,
+          opponentKRate: p.opponentKRate !== null ? Math.round(p.opponentKRate * 1000) / 10 : null,
+          opponentBBRate: p.opponentBBRate !== null ? Math.round(p.opponentBBRate * 1000) / 10 : null,
+          historicalHitRate: p.historicalHitRate !== null ? Math.round(p.historicalHitRate) : null,
+          sampleSize: p.sampleSize,
+        })),
+        dualEdgePitchers: result.dualEdgePitchers,
+        stackAlertGames: result.stackAlertGames,
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (e) {
+      console.warn("[Discipline] getPitcherEdgePicks failed:", e);
+      return { picks: [], dualEdgePitchers: [], stackAlertGames: [], generatedAt: new Date().toISOString() };
     }
   }),
 });

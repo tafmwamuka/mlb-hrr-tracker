@@ -89,6 +89,195 @@ export function removeVig(overProb: number, underProb: number): { trueOver: numb
   };
 }
 
+// ─── Pitcher Prop Types ───────────────────────────────────────────────────────
+
+export interface PitcherPropLine {
+  pitcherName: string;
+  propType: 'strikeouts' | 'walks';
+  line: number;
+  overOdds: number;
+  underOdds: number;
+  impliedOverProb: number;  // vig-included
+  trueOverProb: number;     // vig-free
+  bookmaker: string;
+}
+
+export interface PitcherMarketData {
+  pitcherName: string;
+  /** Main K line (e.g. 5.5 K) */
+  mainKLine: number | null;
+  mainKOverOdds: number | null;
+  mainKUnderOdds: number | null;
+  /** Alternate K lines sorted ascending: 3.5, 4.5, 5.5, 6.5, 7.5 */
+  altKLines: Array<{ line: number; overOdds: number; underOdds: number; trueOverProb: number }>;
+  /** Walk lines */
+  walkLines: Array<{ line: number; overOdds: number; underOdds: number; trueOverProb: number }>;
+  bookmaker: string;
+}
+
+// In-memory cache for pitcher props — 15-minute TTL
+let pitcherOddsCache: { data: Map<string, PitcherMarketData>; ts: number } | null = null;
+
+/**
+ * Fetch pitcher strikeout and walk props for a specific game event
+ */
+async function fetchPitcherProps(apiKey: string, eventId: string): Promise<BookmakerData[]> {
+  const markets = [
+    'pitcher_strikeouts',
+    'pitcher_strikeouts_alternate',
+    'pitcher_walks',
+  ].join(',');
+
+  const url = `${ODDS_API_BASE}/sports/${SPORT}/events/${eventId}/odds?apiKey=${apiKey}&regions=us&markets=${markets}&oddsFormat=american`;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    // 422 means the market isn't available for this event — not an error worth logging loudly
+    if (response.status !== 422) {
+      console.warn(`[OddsAPI] Pitcher props request failed for event ${eventId}: ${response.status}`);
+    }
+    return [];
+  }
+
+  const data = await response.json();
+  return data?.bookmakers || [];
+}
+
+/**
+ * Parse bookmaker data into PitcherMarketData per pitcher name
+ */
+function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarketData> {
+  const pitcherMap = new Map<string, PitcherMarketData>();
+  const preferredBooks = ['fanduel', 'draftkings', 'bet365', 'betmgm', 'pointsbet'];
+
+  const sortedBookmakers = [...bookmakers].sort((a, b) => {
+    const aIdx = preferredBooks.indexOf(a.key);
+    const bIdx = preferredBooks.indexOf(b.key);
+    return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
+  });
+
+  for (const bookmaker of sortedBookmakers) {
+    for (const market of bookmaker.markets) {
+      const outcomes = market.outcomes || [];
+
+      // Group by pitcher name
+      const pitcherOutcomes = new Map<string, OddsOutcome[]>();
+      for (const outcome of outcomes) {
+        const existing = pitcherOutcomes.get(outcome.name) || [];
+        existing.push(outcome);
+        pitcherOutcomes.set(outcome.name, existing);
+      }
+
+      for (const [pitcherName, pOutcomes] of Array.from(pitcherOutcomes.entries())) {
+        if (!pitcherMap.has(pitcherName)) {
+          pitcherMap.set(pitcherName, {
+            pitcherName,
+            mainKLine: null,
+            mainKOverOdds: null,
+            mainKUnderOdds: null,
+            altKLines: [],
+            walkLines: [],
+            bookmaker: bookmaker.title,
+          });
+        }
+        const pd = pitcherMap.get(pitcherName)!;
+
+        const overOutcome = pOutcomes.find(o => o.description === 'Over');
+        const underOutcome = pOutcomes.find(o => o.description === 'Under');
+        if (!overOutcome) continue;
+
+        const overOdds = overOutcome.price;
+        const underOdds = underOutcome?.price ?? (overOdds < 0 ? 100 : -110);
+        const line = overOutcome.point;
+
+        const overImplied = americanToImpliedProbability(overOdds);
+        const underImplied = americanToImpliedProbability(underOdds);
+        const { trueOver } = removeVig(overImplied, underImplied);
+
+        if (market.key === 'pitcher_strikeouts' && pd.mainKLine === null) {
+          pd.mainKLine = line;
+          pd.mainKOverOdds = overOdds;
+          pd.mainKUnderOdds = underOdds;
+          // Also add to altKLines so all lines are in one array
+          if (!pd.altKLines.some(l => l.line === line)) {
+            pd.altKLines.push({ line, overOdds, underOdds, trueOverProb: trueOver });
+          }
+        } else if (market.key === 'pitcher_strikeouts_alternate') {
+          if (!pd.altKLines.some(l => l.line === line)) {
+            pd.altKLines.push({ line, overOdds, underOdds, trueOverProb: trueOver });
+          }
+        } else if (market.key === 'pitcher_walks') {
+          if (!pd.walkLines.some(l => l.line === line)) {
+            pd.walkLines.push({ line, overOdds, underOdds, trueOverProb: trueOver });
+          }
+        }
+      }
+    }
+  }
+
+  // Sort all line arrays ascending
+  pitcherMap.forEach(pd => {
+    pd.altKLines.sort((a, b) => a.line - b.line);
+    pd.walkLines.sort((a, b) => a.line - b.line);
+  });
+
+  return pitcherMap;
+}
+
+/**
+ * Fetch all pitcher prop market data for today's games
+ * Returns a map of pitcher name → PitcherMarketData
+ * Uses a shared 15-minute in-memory cache.
+ */
+export async function fetchPitcherMarketData(apiKey?: string): Promise<Map<string, PitcherMarketData>> {
+  const key = apiKey || process.env.ODDS_API_KEY || '';
+  if (!key) {
+    console.warn('[OddsAPI] No API key — skipping pitcher props fetch');
+    return new Map();
+  }
+
+  if (pitcherOddsCache && Date.now() - pitcherOddsCache.ts < ODDS_CACHE_TTL) {
+    console.log(`[OddsAPI] Returning cached pitcher odds (${pitcherOddsCache.data.size} pitchers)`);
+    return pitcherOddsCache.data;
+  }
+
+  if (!isWithinActiveWindow()) {
+    console.log('[OddsAPI] Outside active window — skipping pitcher props fetch');
+    return pitcherOddsCache?.data ?? new Map();
+  }
+
+  try {
+    const events = await fetchMLBEvents(key);
+    trackApiCall(1);
+    if (events.length === 0) return new Map();
+
+    const allBookmakers: BookmakerData[] = [];
+    // Fetch in chunks of 5 to avoid rate limits
+    const chunks: GameEvent[][] = [];
+    for (let i = 0; i < events.length; i += 5) {
+      chunks.push(events.slice(i, i + 5));
+    }
+    for (const chunk of chunks) {
+      const results = await Promise.allSettled(
+        chunk.map(event => fetchPitcherProps(key, event.id))
+      );
+      trackApiCall(chunk.length);
+      for (const result of results) {
+        if (result.status === 'fulfilled') allBookmakers.push(...result.value);
+      }
+    }
+
+    const pitcherMap = parsePitcherData(allBookmakers);
+    console.log(`[OddsAPI] Parsed pitcher props for ${pitcherMap.size} pitchers`);
+
+    pitcherOddsCache = { data: pitcherMap, ts: Date.now() };
+    return pitcherMap;
+  } catch (err) {
+    console.error('[OddsAPI] Failed to fetch pitcher market data:', err);
+    return pitcherOddsCache?.data ?? new Map();
+  }
+}
+
 /**
  * Fetch today's MLB game events
  */

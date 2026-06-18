@@ -1516,3 +1516,23 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Build PitchersTab.tsx UI: Today's Matchups, Team Grades, Leaderboards, Edge History
 - [x] Add Pitchers tab to Home.tsx navigation
 - [x] TypeScript check passes (0 errors)
+
+## Phase CA: Diamond Edge Platform Restructure
+- [ ] Reorder navigation: Money Picks → Pitchers → Smart Labs → Stats → Results
+- [ ] Remove floating notification bell from bottom-right corner
+- [ ] Move notification access into top navigation area
+- [ ] Build CorrelationEngine service — hitter+pitcher cross-signal analysis
+- [ ] Overhaul smartLab.ts router — ingest all 11 data sources, run correlation engine
+- [ ] Add Best Combined Edge hero card to Smart Labs output
+- [ ] Add Correlation Boost and Hidden Edge signal detection
+- [ ] Rebuild DiamondSmartLab.tsx — unified intelligence hub
+- [ ] TypeScript check passes
+
+## Phase CB: Pitcher Edge Lab (Full Pitcher Prop Intelligence Board)
+- [ ] Extend oddsApiService.ts to fetch pitcher_strikeouts, pitcher_strikeouts_alternate, pitcher_walks markets
+- [ ] Build pitcherEdgeEngine.ts — score each K/BB prop using TMS, discipline, umpire, weather, park, market, historical
+- [ ] Build pitcher prop recommendation pipeline — qualify and classify into Official/Elite Safety/Best Value/Dual Edge/Stack Alert
+- [ ] Add getPitcherEdgePicks procedure to discipline.ts tRPC router
+- [ ] Build PitcherEdgePicks.tsx frontend section — hero board at top of Pitchers tab with full explanation cards
+- [ ] Feed Pitcher Edge picks into Smart Labs context (smartLab.ts)
+- [ ] TypeScript check passes

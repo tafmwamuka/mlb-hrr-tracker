@@ -8,7 +8,7 @@
  * - AI Props: Link to full prop predictions page
  */
 
-import { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { SearchBar } from "@/components/SearchBar";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,7 +26,8 @@ import { ResultsTab } from "@/components/ResultsTab";
 import { GameCards } from "@/components/GameCards";
 import { PerformanceDashboard } from "@/components/PerformanceDashboard";
 import PitchersTab from "@/components/PitchersTab";
-import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, FlaskConical, BarChart3, Dna } from "lucide-react";
+import { RefreshCw, TrendingUp, Zap, Target, Sparkles, Flame, Trophy, FlaskConical, BarChart3, Dna, Bell } from "lucide-react";
+import { useNotifications } from "@/contexts/NotificationContext";
 
 type TabType = "topPlays" | "parlays" | "pitchers" | "results" | "stats";
 
@@ -62,31 +63,32 @@ const STAT_CONFIG = {
   },
 } as const;
 
-const TAB_CONFIG = {
+// Tab order: Money Picks → Pitchers → Smart Labs → Stats → Results
+const TAB_CONFIG: Record<TabType, { label: string; icon: React.ElementType; color: string }> = {
   topPlays: {
     label: "Money Picks",
     icon: Flame,
     color: "oklch(0.82 0.17 85)",
-  },
-  parlays: {
-    label: "Smart Lab",
-    icon: FlaskConical,
-    color: "oklch(0.82 0.17 85)",
-  },
-  results: {
-    label: "Results",
-    icon: Trophy,
-    color: "oklch(0.72 0.18 165)",
   },
   pitchers: {
     label: "Pitchers",
     icon: Dna,
     color: "oklch(0.78 0.15 300)",
   },
+  parlays: {
+    label: "Smart Lab",
+    icon: FlaskConical,
+    color: "oklch(0.75 0.18 280)",
+  },
   stats: {
     label: "Stats",
     icon: BarChart3,
     color: "oklch(0.72 0.10 220)",
+  },
+  results: {
+    label: "Results",
+    icon: Trophy,
+    color: "oklch(0.72 0.18 165)",
   },
 };
 
@@ -588,6 +590,66 @@ function LeaderboardTabContent() {
   );
 }
 
+// ─── Inline Notification Bell (top nav) ─────────────────────────────────────
+function NotificationBellInline() {
+  const { notifications, removeNotification } = useNotifications();
+  const [open, setOpen] = React.useState(false);
+  const unread = notifications.length;
+
+  return (
+    <div className="relative">
+      <motion.button
+        onClick={() => setOpen(o => !o)}
+        className="relative p-2 rounded-xl hover:bg-[oklch(1_0_0/6%)] transition-colors"
+        whileTap={{ scale: 0.92 }}
+      >
+        <Bell size={16} style={{ color: unread > 0 ? "oklch(0.82 0.17 85)" : "oklch(0.45 0.015 255)" }} />
+        {unread > 0 && (
+          <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-[oklch(0.68_0.22_25)] rounded-full flex items-center justify-center text-[8px] font-bold text-white">
+            {Math.min(unread, 9)}
+          </span>
+        )}
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="absolute top-10 right-0 w-80 max-h-80 overflow-y-auto bg-[oklch(0.14_0.022_255)] border border-[oklch(1_0_0/10%)] rounded-xl shadow-2xl z-50"
+            initial={{ opacity: 0, y: -8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 350, damping: 28 }}
+          >
+            <div className="px-4 py-3 border-b border-[oklch(1_0_0/8%)] flex items-center justify-between">
+              <span className="text-xs font-bold text-white">Notifications</span>
+              <button onClick={() => setOpen(false)} className="text-[oklch(0.45_0.015_255)] hover:text-white transition-colors">
+                <span className="text-xs">✕</span>
+              </button>
+            </div>
+            {notifications.length === 0 ? (
+              <div className="p-6 text-center text-[oklch(0.45_0.015_255)] text-xs">No notifications</div>
+            ) : (
+              <div className="divide-y divide-[oklch(1_0_0/6%)]">
+                {notifications.map(n => (
+                  <div key={n.id} className="px-4 py-3 flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-white truncate">{n.title}</p>
+                      <p className="text-[10px] text-[oklch(0.50_0.015_255)] mt-0.5 line-clamp-2">{n.message}</p>
+                    </div>
+                    <button onClick={() => removeNotification(n.id)} className="text-[oklch(0.35_0.015_255)] hover:text-white shrink-0">
+                      <span className="text-[10px]">✕</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>("topPlays");
@@ -624,12 +686,16 @@ export default function Home() {
                 <p className="text-[10px] font-medium tracking-widest uppercase" style={{ color: "oklch(0.65 0.12 165)" }}>HRR Analytics Platform</p>
               </div>
             </div>
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
-              style={{ background: "oklch(0.72 0.18 165 / 10%)", border: "1px solid oklch(0.72 0.18 165 / 20%)" }}
-            >
-              <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "oklch(0.72 0.18 165)" }} />
-              <span className="text-[10px] font-bold text-[oklch(0.72_0.18_165)]">LIVE</span>
+            <div className="flex items-center gap-2">
+              {/* Notification bell — inline in top nav, not floating */}
+              <NotificationBellInline />
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                style={{ background: "oklch(0.72 0.18 165 / 10%)", border: "1px solid oklch(0.72 0.18 165 / 20%)" }}
+              >
+                <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "oklch(0.72 0.18 165)" }} />
+                <span className="text-[10px] font-bold text-[oklch(0.72_0.18_165)]">LIVE</span>
+              </div>
             </div>
           </div>
           

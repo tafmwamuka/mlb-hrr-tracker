@@ -5,8 +5,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
-import { NotificationCenter } from "./components/NotificationCenter";
-import { useNotifications } from "./contexts/NotificationContext";
+
 import Home from "./pages/Home";
 import Favorites from "./pages/Favorites";
 import History from "./pages/History";
@@ -41,7 +40,6 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <Router />
-            <NotificationCenterWrapper />
         </TooltipProvider>
       </ThemeProvider>
     </NotificationProvider>
@@ -51,7 +49,4 @@ function App() {
 
 export default App;
 
-function NotificationCenterWrapper() {
-  const { notifications, removeNotification } = useNotifications();
-  return <NotificationCenter notifications={notifications} onDismiss={removeNotification} />;
-}
+

@@ -14,6 +14,7 @@ import { z } from "zod";
 import { router, publicProcedure } from "../_core/trpc";
 import { getEnrichedMoneyPicks } from "../services/hrrPicksService";
 import { invokeLLM } from "../_core/llm";
+import { runPitcherEdgeEngine } from "../services/pitcherEdgeEngine";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -102,11 +103,32 @@ export const smartLabRouter = router({
    * insights, and risk summary. All grounded in real Diamond Edge data.
    */
   analyzeSlate: publicProcedure.mutation(async () => {
-    const result = await getEnrichedMoneyPicks();
+    const [result, pitcherEdgeResult] = await Promise.all([
+      getEnrichedMoneyPicks(),
+      runPitcherEdgeEngine().catch(() => ({ picks: [], dualEdgePitchers: [], stackAlertGames: [] })),
+    ]);
 
     const officialPicks = result.moneyPicks.map(pickToStructured);
     const topCandidates = (result.topCandidates ?? []).map(pickToStructured);
     const allPicks = officialPicks.length > 0 ? officialPicks : topCandidates;
+
+    // Build pitcher edge context string
+    const pitcherPicksSummary = (pitcherEdgeResult.picks ?? []).slice(0, 8).map((p: any) => ({
+      pitcher: p.pitcherName,
+      team: p.pitcherTeam,
+      vs: p.opponentTeam,
+      prop: (p.propType === 'strikeouts' ? 'K' : 'BB') + ' ' + p.line,
+      odds: p.bookOdds,
+      modelProb: Math.round(p.modelProbability * 10) / 10,
+      edge: Math.round(p.edge * 10) / 10,
+      tms: p.tms,
+      tier: p.tier,
+      disciplineEdge: p.hasDisciplineEdge,
+      dualEdge: p.isDualEdge,
+    }));
+    const pitcherContext = pitcherPicksSummary.length > 0
+      ? '\n\nPITCHER EDGE PICKS (' + pitcherPicksSummary.length + ' qualifying):\n' + JSON.stringify(pitcherPicksSummary, null, 2)
+      : '';
 
     if (allPicks.length === 0) {
       return {
@@ -121,7 +143,7 @@ export const smartLabRouter = router({
       };
     }
 
-    const slateJson = JSON.stringify(allPicks, null, 2);
+    const slateJson = JSON.stringify(allPicks, null, 2) + pitcherContext;
     const isPartialSlate = officialPicks.length === 0;
 
     const systemPrompt = `You are Diamond Smart Lab — an elite MLB betting intelligence terminal powered by the Diamond Edge predictive model.
@@ -241,9 +263,23 @@ Return ONLY valid JSON. No markdown, no code fences.`;
       const topCandidates = (result.topCandidates ?? []).map(pickToStructured);
       const allPicks = officialPicks.length > 0 ? officialPicks : topCandidates;
 
+      const pitcherEdgeForChat = await runPitcherEdgeEngine().catch(() => ({ picks: [] as any[] }));
+      const pitcherChatSummary = (pitcherEdgeForChat.picks ?? []).slice(0, 6).map((p: any) => ({
+        pitcher: p.pitcherName,
+        vs: p.opponentTeam,
+        prop: (p.propType === 'strikeouts' ? 'K' : 'BB') + ' ' + p.line,
+        odds: p.bookOdds,
+        modelProb: Math.round(p.modelProbability * 10) / 10,
+        edge: Math.round(p.edge * 10) / 10,
+        tier: p.tier,
+      }));
+      const pitcherChatContext = pitcherChatSummary.length > 0
+        ? '\n\nPITCHER EDGE PICKS:\n' + JSON.stringify(pitcherChatSummary, null, 2)
+        : '';
+
       const slateContext = allPicks.length > 0
-        ? `Today's Diamond Edge slate (${result.dataDate}):\n${JSON.stringify(allPicks, null, 2)}`
-        : `No official picks qualify today (${result.dataDate}). Reasons: ${(result.emptySlateReasons ?? []).join(", ") || "lineups pending"}.`;
+        ? `Today's Diamond Edge slate (${result.dataDate}):\n${JSON.stringify(allPicks, null, 2)}${pitcherChatContext}`
+        : `No official picks qualify today (${result.dataDate}). Reasons: ${(result.emptySlateReasons ?? []).join(", ") || "lineups pending"}.${pitcherChatContext}`;
 
       const systemPrompt = `You are Diamond Smart Lab — an elite MLB betting intelligence terminal.
 
