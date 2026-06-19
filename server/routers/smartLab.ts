@@ -366,11 +366,11 @@ export const smartLabRouter = router({
     const slateJson = JSON.stringify(allPicks, null, 2) + pitcherContext;
     const isPartialSlate = officialPicks.length === 0;
 
-    const systemPrompt = `You are Diamond Smart Lab — an elite MLB betting intelligence terminal powered by the Diamond Edge predictive model.
+    const systemPrompt = `You are Diamond Smart Lab — the central intelligence engine of Diamond Edge, an elite MLB betting analytics platform.
 
 CRITICAL RULES:
 - You ONLY work with the structured Diamond Edge data provided. Never invent odds, probabilities, or stats.
-- All hrrProbability, edge, bookOdds, and fairLine values come from the Diamond Edge model — treat them as authoritative.
+- All hrrProbability, edge, bookOdds, fairLine, modelProbability, kTms, bbTms, and disciplineGrade values come from the Diamond Edge model — treat them as authoritative.
 - Sound analytical, sharp, and professional. Never hype or use generic gambling language.
 - When building parlays, prefer players from DIFFERENT games to reduce correlation risk.
 - For safe parlays: prioritize batting positions 1-4, high gameTotalOU, positive edge, low riskFlags.
@@ -378,7 +378,15 @@ CRITICAL RULES:
 - Always explain WHY a play qualifies using specific data points from the structured input.
 - If riskFlags exist, always mention the most important one.
 - Never force weak plays — if the slate is thin, say so honestly.
-- For pitcher recommendations: use kTms ≥ 70 as strong matchup, disciplineGrade C or lower favors K props.`;
+
+PITCHER ANALYSIS RULES:
+- For each pitcher in PITCHER DATA, kLines contains model probabilities for every alt K line (3.5–7.5). bbLines contains model probabilities for BB lines (0.5–2.5).
+- kTms ≥ 70 = strong K matchup. kTms ≥ 55 = moderate. kTms < 55 = weak.
+- disciplineGrade D or C = undisciplined hitters — favors K props.
+- disciplineGrade A or A+ = disciplined hitters — favors BB props, caution on K props.
+- hasDisciplineEdge = true means 💎 DISCIPLINE EDGE is confirmed — this is a premium signal.
+- For topPitcherPlays: select the 2-4 best K props AND 1-2 best BB props from the pitcher data. Use modelProbability from kLines/bbLines. Prefer lines where hasMarketData is true (live odds exist) but still include model-only plays with a note.
+- For each pitcher play: state the line, modelProbability, bookOdds (or 'Model only — no live line'), edge (or 'N/A'), and the top 2 qualifying reasons from the reasons array.`;
 
     const userPrompt = `Today's Diamond Edge slate data (${result.dataDate}):
 
@@ -397,11 +405,31 @@ Please provide a complete Diamond Smart Lab analysis in the following JSON struc
     "edgeSummary": "one-line edge/odds summary",
     "keyRiskFlag": "most important risk flag or null"
   },
+  "topPitcherPlays": [
+    {
+      "pitcherName": "string",
+      "pitcherTeam": "string",
+      "opponentTeam": "string",
+      "propType": "strikeouts" | "walks",
+      "line": number,
+      "modelProbability": number,
+      "bookOdds": "string (e.g. -145 or 'Model only — no live line')",
+      "edge": "string (e.g. '+12.3%' or 'N/A')",
+      "tier": "string (confidence tier from data)",
+      "kTms": number,
+      "disciplineGrade": "string",
+      "hasDisciplineEdge": boolean,
+      "topReasons": ["reason 1", "reason 2"],
+      "altLines": [
+        { "line": number, "modelProbability": number, "bookOdds": "string or null", "edge": "string or null" }
+      ]
+    }
+  ],
   "safeParlays": [
     {
       "type": "2-leg" | "3-leg",
       "legs": [
-        { "playerName": "string", "team": "string", "line": number, "reason": "one-line reason" }
+        { "playerName": "string", "team": "string", "line": number, "reason": "one-line reason", "propType": "hitter" | "strikeouts" | "walks" }
       ],
       "combinedProfile": "one sentence describing why these legs work together",
       "confidenceLabel": "HIGH" | "MEDIUM"
@@ -411,13 +439,13 @@ Please provide a complete Diamond Smart Lab analysis in the following JSON struc
     {
       "type": "3-leg" | "4-leg",
       "legs": [
-        { "playerName": "string", "team": "string", "line": number, "reason": "one-line reason" }
+        { "playerName": "string", "team": "string", "line": number, "reason": "one-line reason", "propType": "hitter" | "strikeouts" | "walks" }
       ],
       "combinedProfile": "one sentence",
       "confidenceLabel": "MEDIUM" | "SPECULATIVE"
     }
   ],
-  "slateInsights": "3-5 sentence analytical summary of today's slate: strongest environments, dangerous pitchers to target, weather boosts, weak bullpens, best overall edges",
+  "slateInsights": "3-5 sentence analytical summary of today's slate: strongest K/BB environments, top pitcher matchups, dangerous pitchers to target, weather boosts, weak bullpens, best overall edges across both hitter and pitcher props",
   "riskSummary": "2-3 sentences about the main risks on today's slate"
 }
 
@@ -442,6 +470,7 @@ Return ONLY valid JSON. No markdown, no code fences.`;
     } catch {
       return {
         bestValuePlay: null,
+        topPitcherPlays: [],
         safeParlays: [],
         upsideParlays: [],
         slateInsights: content || "Analysis unavailable — please try again.",
@@ -454,6 +483,7 @@ Return ONLY valid JSON. No markdown, no code fences.`;
 
     return {
       bestValuePlay: parsed.bestValuePlay ?? null,
+      topPitcherPlays: parsed.topPitcherPlays ?? [],
       safeParlays: parsed.safeParlays ?? [],
       upsideParlays: parsed.upsideParlays ?? [],
       slateInsights: parsed.slateInsights ?? "",

@@ -29,6 +29,24 @@ interface ParlayLeg {
   team: string;
   line: number;
   reason: string;
+  propType?: "hitter" | "strikeouts" | "walks";
+}
+
+interface TopPitcherPlay {
+  pitcherName: string;
+  pitcherTeam: string;
+  opponentTeam: string;
+  propType: "strikeouts" | "walks";
+  line: number;
+  modelProbability: number;
+  bookOdds: string;
+  edge: string;
+  tier: string;
+  kTms: number;
+  disciplineGrade: string;
+  hasDisciplineEdge: boolean;
+  topReasons: string[];
+  altLines: Array<{ line: number; modelProbability: number; bookOdds: string | null; edge: string | null }>;
 }
 
 interface SmartParlay {
@@ -49,6 +67,7 @@ interface BestValuePlay {
 
 interface SmartLabAnalysis {
   bestValuePlay: BestValuePlay | null;
+  topPitcherPlays: TopPitcherPlay[];
   safeParlays: SmartParlay[];
   upsideParlays: SmartParlay[];
   slateInsights: string;
@@ -132,7 +151,7 @@ function ParlayCard({ parlay, index, isUpside }: { parlay: SmartParlay; index: n
                 className="px-2 py-0.5 rounded-md text-[11px] font-bold shrink-0"
                 style={{ background: `${accentColor}15`, color: accentColor }}
               >
-                O{leg.line} HRR
+                {leg.propType === "strikeouts" ? `${leg.line}+ Ks` : leg.propType === "walks" ? `${leg.line}+ BBs` : `O${leg.line} HRR`}
               </div>
             </div>
           ))}
@@ -228,6 +247,124 @@ function HeroValueCard({ play }: { play: BestValuePlay }) {
           </div>
         )}
       </div>
+    </motion.div>
+  );
+}
+
+function PitcherPlayCard({ play, index }: { play: TopPitcherPlay; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const isK = play.propType === "strikeouts";
+  const accentColor = isK ? "oklch(0.68 0.22 25)" : "oklch(0.65 0.15 280)";
+  const propLabel = isK ? "Strikeouts" : "Walks";
+  const hasLiveOdds = play.bookOdds && !play.bookOdds.includes("Model only");
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.07, duration: 0.4 }}
+      className="rounded-xl overflow-hidden border"
+      style={{ background: `linear-gradient(145deg, oklch(0.14 0.03 ${isK ? '25' : '280'} / 35%), oklch(0.12 0.020 255))`, borderColor: `${accentColor}30` }}
+    >
+      <div className="h-0.5 w-full" style={{ background: `linear-gradient(90deg, ${accentColor}, ${accentColor}30)` }} />
+
+      <button onClick={() => setExpanded(!expanded)} className="w-full text-left p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1" style={{ background: `${accentColor}20`, color: accentColor }}>
+              {isK ? <Target size={11} /> : <Activity size={11} />}
+              {propLabel.toUpperCase()}
+            </div>
+            {play.hasDisciplineEdge && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full border font-bold" style={{ background: "oklch(0.82 0.17 85 / 15%)", color: "oklch(0.82 0.17 85)", borderColor: "oklch(0.82 0.17 85 / 30%)" }}>💎 EDGE</span>
+            )}
+            {!hasLiveOdds && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full border font-semibold" style={{ background: "oklch(0.55 0.015 255 / 15%)", color: "oklch(0.55 0.015 255)", borderColor: "oklch(0.55 0.015 255 / 30%)" }}>MODEL ONLY</span>
+            )}
+          </div>
+          <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown size={14} className="text-[oklch(0.40_0.015_255)]" />
+          </motion.div>
+        </div>
+
+        {/* Pitcher + line */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <div className="text-base font-bold text-white leading-tight">{play.pitcherName}</div>
+            <div className="text-[11px] text-[oklch(0.50_0.015_255)] mt-0.5">{play.pitcherTeam} vs {play.opponentTeam}</div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-xl font-extrabold" style={{ color: accentColor }}>{play.line}+ {isK ? 'Ks' : 'BBs'}</div>
+            <div className="text-[11px] text-[oklch(0.55_0.015_255)]">{Math.round(play.modelProbability)}% model</div>
+          </div>
+        </div>
+
+        {/* Odds row */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-lg p-2 bg-[oklch(1_0_0/4%)] border border-[oklch(1_0_0/8%)] text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)] mb-0.5">BOOK ODDS</div>
+            <div className="text-xs font-bold" style={{ color: hasLiveOdds ? accentColor : "oklch(0.45 0.015 255)" }}>{play.bookOdds}</div>
+          </div>
+          <div className="rounded-lg p-2 bg-[oklch(1_0_0/4%)] border border-[oklch(1_0_0/8%)] text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)] mb-0.5">EDGE</div>
+            <div className="text-xs font-bold" style={{ color: play.edge.startsWith('+') ? "oklch(0.72 0.18 165)" : "oklch(0.55 0.015 255)" }}>{play.edge}</div>
+          </div>
+          <div className="rounded-lg p-2 bg-[oklch(1_0_0/4%)] border border-[oklch(1_0_0/8%)] text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)] mb-0.5">K TMS</div>
+            <div className="text-xs font-bold" style={{ color: play.kTms >= 70 ? "oklch(0.72 0.18 165)" : play.kTms >= 55 ? accentColor : "oklch(0.55 0.015 255)" }}>{play.kTms}</div>
+          </div>
+        </div>
+      </button>
+
+      {/* Expanded */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 space-y-3">
+              {/* Tier + discipline */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border" style={{ background: `${accentColor}15`, color: accentColor, borderColor: `${accentColor}30` }}>{play.tier}</span>
+                <span className="text-[11px] text-[oklch(0.55_0.015_255)]">Discipline Grade: <span className="font-bold text-white">{play.disciplineGrade}</span></span>
+              </div>
+
+              {/* Reasons */}
+              {play.topReasons.length > 0 && (
+                <div className="space-y-1.5">
+                  {play.topReasons.map((r, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="text-[oklch(0.72_0.18_165)] text-xs mt-0.5">✅</span>
+                      <span className="text-[11px] text-[oklch(0.60_0.015_255)] leading-relaxed">{r}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Alt lines table */}
+              {play.altLines.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-bold text-[oklch(0.45_0.015_255)] mb-2 uppercase tracking-wide">All {isK ? 'K' : 'BB'} Lines</div>
+                  <div className="space-y-1">
+                    {play.altLines.map((alt, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-[oklch(1_0_0/3%)] border border-[oklch(1_0_0/6%)]">
+                        <span className="text-xs font-bold text-white">{alt.line}+ {isK ? 'Ks' : 'BBs'}</span>
+                        <span className="text-[11px]" style={{ color: accentColor }}>{alt.modelProbability}% model</span>
+                        <span className="text-[11px] text-[oklch(0.50_0.015_255)]">{alt.bookOdds ?? 'No line'}</span>
+                        <span className="text-[11px]" style={{ color: alt.edge && alt.edge.startsWith('+') ? "oklch(0.72 0.18 165)" : "oklch(0.50 0.015 255)" }}>{alt.edge ?? 'N/A'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -471,6 +608,18 @@ export function DiamondSmartLab() {
                 <div>
                   <SectionHeader icon={Star} title="Best Smart Value Play" badge="FEATURED" color="oklch(0.82 0.17 85)" />
                   <HeroValueCard play={analysis.bestValuePlay} />
+                </div>
+              )}
+
+              {/* Section 1b: Top Pitcher Plays */}
+              {analysis.topPitcherPlays && analysis.topPitcherPlays.length > 0 && (
+                <div>
+                  <SectionHeader icon={Target} title="Top Pitcher Props" badge="K &amp; BB" color="oklch(0.68 0.22 25)" />
+                  <div className="space-y-3">
+                    {analysis.topPitcherPlays.map((play, i) => (
+                      <PitcherPlayCard key={i} play={play} index={i} />
+                    ))}
+                  </div>
                 </div>
               )}
 
