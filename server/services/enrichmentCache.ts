@@ -123,7 +123,19 @@ async function warmCacheInBackground(players: PlayerRef[]): Promise<void> {
 
   try {
     const season = new Date().getFullYear();
-    const oddsApiKey = process.env.ODDS_API_KEY;
+    // Prefer .project-config.json key (updated immediately by webdev_request_secrets)
+    // over .env key which may be stale until the platform regenerates it
+    let oddsApiKey = process.env.ODDS_API_KEY;
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const configPath = path.resolve(process.cwd(), '.project-config.json');
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const configKey = config?.secrets?.ODDS_API_KEY || '';
+        if (configKey) oddsApiKey = configKey;
+      }
+    } catch { /* ignore */ }
 
     // Stage 1: Fetch Statcast, day/night splits, and streaks in parallel
     const [statcastCache, dayNightSplitsMap, mlbStreakMap] = await Promise.all([

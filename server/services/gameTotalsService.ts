@@ -9,6 +9,22 @@
  */
 
 // VS gate handles matchup scoring internally
+import fs from 'fs';
+import path from 'path';
+
+/** Resolve the Odds API key — always prefers .project-config.json over .env */
+function getOddsApiKey(override?: string): string {
+  if (override) return override;
+  try {
+    const configPath = path.resolve(process.cwd(), '.project-config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const configKey = config?.secrets?.ODDS_API_KEY || '';
+      if (configKey) return configKey;
+    }
+  } catch { /* ignore */ }
+  return process.env.ODDS_API_KEY || '';
+}
 
 export interface GameTotal {
   /** e.g. "Giants @ Dodgers" or "SF @ LAD" */
@@ -176,8 +192,9 @@ export async function fetchGameTotals(
   let oddsData = new Map<string, { overUnder: number; awayTeam: string; homeTeam: string }>();
 
   // Try Odds API first
-  if (apiKey) {
-    oddsData = await fetchOddsApiTotals(apiKey);
+  const resolvedKey = getOddsApiKey(apiKey);
+  if (resolvedKey) {
+    oddsData = await fetchOddsApiTotals(resolvedKey);
   }
 
   // Merge: prefer Odds API, fall back to default neutral scores

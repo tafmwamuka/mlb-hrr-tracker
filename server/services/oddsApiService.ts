@@ -9,8 +9,34 @@
  * - batter_rbis: Individual RBI line
  */
 
+import fs from 'fs';
+import path from 'path';
+
 const ODDS_API_BASE = "https://api.the-odds-api.com/v4";
 const SPORT = "baseball_mlb";
+
+/**
+ * Resolve the Odds API key.
+ * Priority: process.env.ODDS_API_KEY → .project-config.json secrets.ODDS_API_KEY
+ * This fallback handles the case where the local .env has a stale key but
+ * .project-config.json has already been updated with the new key.
+ */
+function getOddsApiKey(override?: string): string {
+  if (override) return override;
+  // Always prefer .project-config.json — it is updated by webdev_request_secrets
+  // before the .env file is regenerated, so it reflects the latest key immediately.
+  try {
+    const configPath = path.resolve(process.cwd(), '.project-config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const configKey = config?.secrets?.ODDS_API_KEY || '';
+      if (configKey) return configKey;
+    }
+  } catch {
+    // ignore — fall through to env
+  }
+  return process.env.ODDS_API_KEY || '';
+}
 
 export interface OddsOutcome {
   name: string;        // Player name
@@ -230,7 +256,7 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
  * Uses a shared 15-minute in-memory cache.
  */
 export async function fetchPitcherMarketData(apiKey?: string): Promise<Map<string, PitcherMarketData>> {
-  const key = apiKey || process.env.ODDS_API_KEY || '';
+  const key = getOddsApiKey(apiKey);
   if (!key) {
     console.warn('[OddsAPI] No API key — skipping pitcher props fetch');
     return new Map();
@@ -485,7 +511,7 @@ function isWithinActiveWindow(): boolean {
  * Uses 15-minute in-memory cache and 11AM-11:30PM ET time-window gate.
  */
 export async function fetchHRRMarketData(apiKey?: string): Promise<Map<string, HRRMarketData>> {
-  const key = apiKey || process.env.ODDS_API_KEY || '';
+  const key = getOddsApiKey(apiKey);
   if (!key) {
     console.warn('[OddsAPI] No API key available — skipping live odds fetch');
     return new Map();
@@ -550,7 +576,7 @@ export async function fetchOddsForPicks(
   picks: Array<{ playerName: string; team: string }>,
   apiKey?: string
 ): Promise<Map<string, HRRMarketData>> {
-  const key = apiKey || process.env.ODDS_API_KEY || '';
+  const key = getOddsApiKey(apiKey);
   if (!key || picks.length === 0) return new Map();
 
   // Return cached data if fresh (shared with fetchHRRMarketData)
