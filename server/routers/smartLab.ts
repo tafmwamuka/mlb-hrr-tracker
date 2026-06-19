@@ -1,22 +1,28 @@
 /**
  * Diamond Smart Lab Router
  *
- * Provides two procedures:
+ * Provides three procedures:
  *   1. getSlateData — assembles structured Diamond Edge data for the AI layer
  *   2. analyzeSlate — sends structured data to the LLM and returns Smart Lab analysis
- *   3. chat — conversational AI assistant grounded in today's slate data
+ *   3. chat — conversational AI assistant grounded in today's full pitcher + hitter data
  *
  * Architecture: Diamond Edge backend calculates everything; AI interprets, explains,
  * and builds parlays. The AI never invents odds or probabilities.
+ *
+ * PITCHER CONTEXT: The chat procedure always builds a full pitcher analysis block for
+ * every starting pitcher — regardless of whether live Odds API lines are available.
+ * This includes: TMS, discipline grade, K rate, BB rate, expected Ks/BBs, model
+ * probability for every alt line, market odds (when available), edge, fair odds,
+ * confidence tier, and qualifying reasons. The AI can always answer pitcher questions.
  */
 
 import { z } from "zod";
 import { router, publicProcedure } from "../_core/trpc";
 import { getEnrichedMoneyPicks } from "../services/hrrPicksService";
 import { invokeLLM } from "../_core/llm";
-import { runPitcherEdgeEngine } from "../services/pitcherEdgeEngine";
 import { fetchTodaysGames } from "../services/mlbLineupService";
 import { computeTeamMatchupScore, getTeamDiscipline } from "../services/teamDisciplineService";
+import { fetchPitcherMarketData } from "../services/oddsApiService";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,13 +78,208 @@ function pickToStructured(pick: any) {
   };
 }
 
+// ─── Poisson helpers (mirrors pitcherEdgeEngine) ──────────────────────────────
+
+function poissonOverProb(expectedValue: number, line: number): number {
+  const k = Math.floor(line);
+  let cdf = 0;
+  let term = Math.exp(-expectedValue);
+  cdf += term;
+  for (let i = 1; i <= k; i++) {
+    term *= expectedValue / i;
+    cdf += term;
+  }
+  return Math.max(0.01, Math.min(0.99, 1 - cdf));
+}
+
+function estimateExpectedKs(opponentKRate: number, tms: number): number {
+  const baseline = 5.5;
+  const kRateAdj = (opponentKRate - 0.24) * 20;
+  const tmsAdj = ((tms - 50) / 10) * 0.3;
+  return Math.max(1, baseline + kRateAdj + tmsAdj);
+}
+
+function estimateExpectedBBs(opponentBBRate: number, tms: number): number {
+  const baseline = 2.5;
+  const bbRateAdj = (opponentBBRate - 0.09) * 30;
+  const tmsAdj = ((tms - 50) / 10) * 0.15;
+  return Math.max(0.5, baseline + bbRateAdj + tmsAdj);
+}
+
+function probToAmericanOdds(prob: number): number {
+  if (prob <= 0 || prob >= 1) return -110;
+  if (prob >= 0.5) return Math.round(-(prob / (1 - prob)) * 100);
+  return Math.round(((1 - prob) / prob) * 100);
+}
+
+function confidenceTier(modelProb: number, edge: number, tms: number): string {
+  if (modelProb >= 0.72 && edge >= 0.12 && tms >= 75) return "🛡 ELITE";
+  if (modelProb >= 0.65 && edge >= 0.07 && tms >= 65) return "✅ OFFICIAL";
+  if (modelProb >= 0.60 && edge >= 0.05) return "📊 STRONG";
+  if (modelProb >= 0.55 && edge >= 0.03) return "🔵 LEAN";
+  return "⚠️ WATCH";
+}
+
+// ─── Full pitcher analysis builder ───────────────────────────────────────────
+
+/**
+ * Builds a rich analysis block for a single starting pitcher.
+ * Always runs regardless of whether Odds API has live lines.
+ * Includes: TMS, discipline grade, K/BB rates, expected Ks/BBs,
+ * model probability for every standard alt line, market odds (when available),
+ * edge per line, fair odds, confidence tier, qualifying reasons.
+ */
+async function buildPitcherAnalysis(params: {
+  pitcherName: string;
+  pitcherTeam: string;
+  opponentTeam: string;
+  gameTime: string;
+  marketData: Map<string, any>;
+}): Promise<Record<string, any>> {
+  const { pitcherName, pitcherTeam, opponentTeam, gameTime, marketData } = params;
+
+  // Fetch discipline + TMS in parallel for K and BB props
+  const [kTmsResult, bbTmsResult, opponentDiscipline] = await Promise.all([
+    computeTeamMatchupScore({ opponentTeam, pitcherHand: 'R', propType: 'strikeouts' }).catch(() => null),
+    computeTeamMatchupScore({ opponentTeam, pitcherHand: 'R', propType: 'walks' }).catch(() => null),
+    getTeamDiscipline(opponentTeam).catch(() => null),
+  ]);
+
+  const kTms = kTmsResult?.tms ?? 50;
+  const bbTms = bbTmsResult?.tms ?? 50;
+  const disciplineGrade = opponentDiscipline?.disciplineGrade ?? 'B';
+  const opponentKRate = opponentDiscipline?.strikeoutRate ?? 0.24;
+  const opponentBBRate = opponentDiscipline?.walkRate ?? 0.09;
+  const strikeoutTendencyScore = opponentDiscipline?.strikeoutTendencyScore ?? 50;
+  const walkTendencyScore = opponentDiscipline?.walkTendencyScore ?? 50;
+  const hasDisciplineEdge = kTmsResult?.hasDisciplineEdge ?? false;
+  const disciplineEdgeReason = kTmsResult?.disciplineEdgeReason ?? null;
+
+  // Expected counts from model
+  const expectedKs = estimateExpectedKs(opponentKRate, kTms);
+  const expectedBBs = estimateExpectedBBs(opponentBBRate, bbTms);
+
+  // Market data for this pitcher (may be null if Odds API has no lines)
+  const market = marketData.get(pitcherName) ?? null;
+
+  // ── Build K lines analysis ─────────────────────────────────────────────────
+  // Standard alt lines to always evaluate (even without market data)
+  const standardKLines = [3.5, 4.5, 5.5, 6.5, 7.5];
+  const kLinesAnalysis: Array<Record<string, any>> = [];
+
+  for (const line of standardKLines) {
+    const modelProb = poissonOverProb(expectedKs, line);
+    const fairOdds = probToAmericanOdds(modelProb);
+
+    // Find matching market line if available
+    const marketLine = market?.altKLines?.find((l: any) => l.line === line) ?? null;
+    const bookOdds = marketLine?.overOdds ?? null;
+    const impliedProb = marketLine?.trueOverProb ?? null;
+    const edge = impliedProb !== null ? Math.round((modelProb - impliedProb) * 1000) / 10 : null;
+    const tier = impliedProb !== null
+      ? confidenceTier(modelProb, (modelProb - impliedProb), kTms)
+      : (modelProb >= 0.65 ? "✅ MODEL STRONG" : modelProb >= 0.55 ? "🔵 MODEL LEAN" : "⚠️ MODEL WEAK");
+
+    kLinesAnalysis.push({
+      line,
+      modelProbability: Math.round(modelProb * 1000) / 10,  // as %
+      fairOdds,
+      bookOdds,
+      impliedProbability: impliedProb !== null ? Math.round(impliedProb * 1000) / 10 : null,
+      edge,
+      tier,
+      hasMarketData: bookOdds !== null,
+    });
+  }
+
+  // Main K line from market (if available)
+  const mainKLine = market?.mainKLine ?? null;
+  const mainKOdds = market?.mainKOverOdds ?? null;
+
+  // ── Build BB lines analysis ────────────────────────────────────────────────
+  const standardBBLines = [0.5, 1.5, 2.5];
+  const bbLinesAnalysis: Array<Record<string, any>> = [];
+
+  for (const line of standardBBLines) {
+    const modelProb = poissonOverProb(expectedBBs, line);
+    const fairOdds = probToAmericanOdds(modelProb);
+
+    const marketLine = market?.walkLines?.find((l: any) => l.line === line) ?? null;
+    const bookOdds = marketLine?.overOdds ?? null;
+    const impliedProb = marketLine?.trueOverProb ?? null;
+    const edge = impliedProb !== null ? Math.round((modelProb - impliedProb) * 1000) / 10 : null;
+    const tier = impliedProb !== null
+      ? confidenceTier(modelProb, (modelProb - impliedProb), bbTms)
+      : (modelProb >= 0.65 ? "✅ MODEL STRONG" : modelProb >= 0.55 ? "🔵 MODEL LEAN" : "⚠️ MODEL WEAK");
+
+    bbLinesAnalysis.push({
+      line,
+      modelProbability: Math.round(modelProb * 1000) / 10,
+      fairOdds,
+      bookOdds,
+      impliedProbability: impliedProb !== null ? Math.round(impliedProb * 1000) / 10 : null,
+      edge,
+      tier,
+      hasMarketData: bookOdds !== null,
+    });
+  }
+
+  // ── Build qualifying reasons ───────────────────────────────────────────────
+  const reasons: string[] = [];
+  if (opponentKRate >= 0.26) reasons.push(`Opponent K rate: ${(opponentKRate * 100).toFixed(1)}% vs RHP (above average)`);
+  else if (opponentKRate >= 0.23) reasons.push(`Opponent K rate: ${(opponentKRate * 100).toFixed(1)}% vs RHP (near average)`);
+  else reasons.push(`Opponent K rate: ${(opponentKRate * 100).toFixed(1)}% vs RHP (below average — caution on K props)`);
+
+  reasons.push(`Opponent Discipline Grade: ${disciplineGrade}`);
+  reasons.push(`Strikeout Tendency Score: ${strikeoutTendencyScore}/100`);
+  reasons.push(`Walk Tendency Score: ${walkTendencyScore}/100`);
+
+  if (kTms >= 70) reasons.push(`Strong K Matchup Score: ${kTms}/100`);
+  else if (kTms >= 55) reasons.push(`Moderate K Matchup Score: ${kTms}/100`);
+  else reasons.push(`Weak K Matchup Score: ${kTms}/100 — below threshold`);
+
+  if (hasDisciplineEdge && disciplineEdgeReason) reasons.push(`💎 DISCIPLINE EDGE: ${disciplineEdgeReason}`);
+
+  return {
+    pitcherName,
+    pitcherTeam,
+    opponentTeam,
+    gameTime,
+    hasMarketData: market !== null,
+    // Matchup scores
+    kTms,
+    bbTms,
+    kTmsRating: kTmsResult?.rating ?? 'Playable',
+    bbTmsRating: bbTmsResult?.rating ?? 'Playable',
+    // Opponent discipline
+    disciplineGrade,
+    opponentKRate: Math.round(opponentKRate * 1000) / 10,
+    opponentBBRate: Math.round(opponentBBRate * 1000) / 10,
+    strikeoutTendencyScore,
+    walkTendencyScore,
+    hasDisciplineEdge,
+    disciplineEdgeReason,
+    // Model projections
+    expectedKs: Math.round(expectedKs * 10) / 10,
+    expectedBBs: Math.round(expectedBBs * 10) / 10,
+    // Main market line (if available)
+    mainKLine,
+    mainKOdds,
+    // All K lines with model analysis
+    kLines: kLinesAnalysis,
+    // All BB lines with model analysis
+    bbLines: bbLinesAnalysis,
+    // Qualifying reasons
+    reasons,
+  };
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const smartLabRouter = router({
 
   /**
    * getSlateData — returns structured Diamond Edge data for the current slate.
-   * This is the "source of truth" payload the AI layer works from.
    */
   getSlateData: publicProcedure.query(async () => {
     const result = await getEnrichedMoneyPicks();
@@ -105,34 +306,51 @@ export const smartLabRouter = router({
    * insights, and risk summary. All grounded in real Diamond Edge data.
    */
   analyzeSlate: publicProcedure.mutation(async () => {
-    const [result, pitcherEdgeResult] = await Promise.all([
+    const [result, games, marketData] = await Promise.all([
       getEnrichedMoneyPicks(),
-      runPitcherEdgeEngine().catch(() => ({ picks: [], dualEdgePitchers: [], stackAlertGames: [] })),
+      fetchTodaysGames().catch(() => []),
+      fetchPitcherMarketData().catch(() => new Map()),
     ]);
 
     const officialPicks = result.moneyPicks.map(pickToStructured);
     const topCandidates = (result.topCandidates ?? []).map(pickToStructured);
     const allPicks = officialPicks.length > 0 ? officialPicks : topCandidates;
 
-    // Build pitcher edge context string
-    const pitcherPicksSummary = (pitcherEdgeResult.picks ?? []).slice(0, 8).map((p: any) => ({
-      pitcher: p.pitcherName,
-      team: p.pitcherTeam,
-      vs: p.opponentTeam,
-      prop: (p.propType === 'strikeouts' ? 'K' : 'BB') + ' ' + p.line,
-      odds: p.bookOdds,
-      modelProb: Math.round(p.modelProbability * 10) / 10,
-      edge: Math.round(p.edge * 10) / 10,
-      tms: p.tms,
-      tier: p.tier,
-      disciplineEdge: p.hasDisciplineEdge,
-      dualEdge: p.isDualEdge,
-    }));
-    const pitcherContext = pitcherPicksSummary.length > 0
-      ? '\n\nPITCHER EDGE PICKS (' + pitcherPicksSummary.length + ' qualifying):\n' + JSON.stringify(pitcherPicksSummary, null, 2)
+    // Build full pitcher analyses for all starters
+    const pitcherAnalyses: Array<Record<string, any>> = [];
+    for (const game of games.slice(0, 12)) {
+      const hp = game.homeTeam.probablePitcher;
+      const ap = game.awayTeam.probablePitcher;
+      if (hp) {
+        const analysis = await buildPitcherAnalysis({
+          pitcherName: hp.fullName,
+          pitcherTeam: game.homeTeam.abbreviation,
+          opponentTeam: game.awayTeam.abbreviation,
+          gameTime: game.gameTime,
+          marketData,
+        }).catch(() => null);
+        if (analysis) pitcherAnalyses.push(analysis);
+      }
+      if (ap) {
+        const analysis = await buildPitcherAnalysis({
+          pitcherName: ap.fullName,
+          pitcherTeam: game.awayTeam.abbreviation,
+          opponentTeam: game.homeTeam.abbreviation,
+          gameTime: game.gameTime,
+          marketData,
+        }).catch(() => null);
+        if (analysis) pitcherAnalyses.push(analysis);
+      }
+    }
+
+    // Sort pitchers by K TMS descending
+    pitcherAnalyses.sort((a, b) => (b.kTms ?? 0) - (a.kTms ?? 0));
+
+    const pitcherContext = pitcherAnalyses.length > 0
+      ? `\n\nTODAY'S PITCHER ANALYSIS (${pitcherAnalyses.length} starters, sorted by K TMS):\n${JSON.stringify(pitcherAnalyses, null, 2)}`
       : '';
 
-    if (allPicks.length === 0) {
+    if (allPicks.length === 0 && pitcherAnalyses.length === 0) {
       return {
         bestValuePlay: null,
         safeParlays: [],
@@ -159,7 +377,8 @@ CRITICAL RULES:
 - For upside parlays: allow higher lines (2.5+) and slightly lower scores but still positive edge.
 - Always explain WHY a play qualifies using specific data points from the structured input.
 - If riskFlags exist, always mention the most important one.
-- Never force weak plays — if the slate is thin, say so honestly.`;
+- Never force weak plays — if the slate is thin, say so honestly.
+- For pitcher recommendations: use kTms ≥ 70 as strong matchup, disciplineGrade C or lower favors K props.`;
 
     const userPrompt = `Today's Diamond Edge slate data (${result.dataDate}):
 
@@ -215,14 +434,12 @@ Return ONLY valid JSON. No markdown, no code fences.`;
     const rawContent = llmResult.choices[0]?.message?.content;
     const content = typeof rawContent === "string" ? rawContent : "";
 
-    // Strip any markdown code fences if present
     const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
 
     let parsed: any = null;
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      // If JSON parsing fails, return a graceful fallback
       return {
         bestValuePlay: null,
         safeParlays: [],
@@ -249,8 +466,14 @@ Return ONLY valid JSON. No markdown, no code fences.`;
 
   /**
    * chat — conversational AI assistant for the Smart Lab.
-   * Receives the user's message + conversation history, and responds
-   * grounded in today's structured Diamond Edge slate data.
+   *
+   * PITCHER CONTEXT: Always builds a full analysis block for every starting pitcher
+   * including TMS, discipline grade, K/BB rates, expected counts, model probability
+   * for every alt line (3.5–7.5 Ks, 0.5–2.5 BBs), market odds when available,
+   * edge per line, fair odds, and confidence tier.
+   *
+   * The AI can always answer: "5 Ks for Kevin Gausman?", "Best strikeout play?",
+   * "Safest pitcher parlay?", "Show me all Dual Edge pitchers." etc.
    */
   chat: publicProcedure
     .input(z.object({
@@ -260,76 +483,158 @@ Return ONLY valid JSON. No markdown, no code fences.`;
       })),
     }))
     .mutation(async ({ input }) => {
-      const result = await getEnrichedMoneyPicks();
+      // Fetch all data in parallel
+      const [result, games, marketData] = await Promise.all([
+        getEnrichedMoneyPicks(),
+        fetchTodaysGames().catch(() => [] as any[]),
+        fetchPitcherMarketData().catch(() => new Map<string, any>()),
+      ]);
+
       const officialPicks = result.moneyPicks.map(pickToStructured);
       const topCandidates = (result.topCandidates ?? []).map(pickToStructured);
       const allPicks = officialPicks.length > 0 ? officialPicks : topCandidates;
 
-      // Try to get pitcher edge picks from the full engine first
-      const pitcherEdgeForChat = await runPitcherEdgeEngine().catch(() => ({ picks: [] as any[] }));
-      const pitcherChatSummary = (pitcherEdgeForChat.picks ?? []).slice(0, 6).map((p: any) => ({
-        pitcher: p.pitcherName,
-        vs: p.opponentTeam,
-        prop: (p.propType === 'strikeouts' ? 'K' : 'BB') + ' ' + p.line,
-        odds: p.bookOdds,
-        modelProb: Math.round(p.modelProbability * 10) / 10,
-        edge: Math.round(p.edge * 10) / 10,
-        tier: p.tier,
-      }));
+      // ── Build full pitcher analysis for every starting pitcher ────────────
+      const pitcherAnalyses: Array<Record<string, any>> = [];
+      const pitcherLookup = new Map<string, Record<string, any>>();
 
-      // Always build a pitcher matchup context from today's starting pitchers (fallback)
-      let pitcherMatchupContext = '';
-      try {
-        const games = await fetchTodaysGames();
-        const matchups: string[] = [];
-        for (const game of games.slice(0, 12)) {
-          const hp = game.homeTeam.probablePitcher;
-          const ap = game.awayTeam.probablePitcher;
-          if (!hp && !ap) continue;
+      for (const game of games.slice(0, 15)) {
+        const slots = [
+          { pitcher: game.homeTeam.probablePitcher, pitcherTeam: game.homeTeam.abbreviation, opponentTeam: game.awayTeam.abbreviation },
+          { pitcher: game.awayTeam.probablePitcher, pitcherTeam: game.awayTeam.abbreviation, opponentTeam: game.homeTeam.abbreviation },
+        ];
 
-          const [homeTms, awayTms, homeDisc, awayDisc] = await Promise.all([
-            hp ? computeTeamMatchupScore({ opponentTeam: game.awayTeam.abbreviation, pitcherHand: 'R', propType: 'strikeouts' }).catch(() => null) : Promise.resolve(null),
-            ap ? computeTeamMatchupScore({ opponentTeam: game.homeTeam.abbreviation, pitcherHand: 'R', propType: 'strikeouts' }).catch(() => null) : Promise.resolve(null),
-            getTeamDiscipline(game.awayTeam.abbreviation).catch(() => null),
-            getTeamDiscipline(game.homeTeam.abbreviation).catch(() => null),
-          ]);
+        for (const slot of slots) {
+          if (!slot.pitcher) continue;
+          const analysis = await buildPitcherAnalysis({
+            pitcherName: slot.pitcher.fullName,
+            pitcherTeam: slot.pitcherTeam,
+            opponentTeam: slot.opponentTeam,
+            gameTime: game.gameTime,
+            marketData,
+          }).catch(() => null);
 
-          if (hp) {
-            matchups.push(`${hp.fullName} (${game.homeTeam.abbreviation}) vs ${game.awayTeam.abbreviation} | TMS: ${homeTms?.tms ?? 'N/A'} | Opp Discipline Grade: ${homeDisc?.disciplineGrade ?? 'N/A'}`);
-          }
-          if (ap) {
-            matchups.push(`${ap.fullName} (${game.awayTeam.abbreviation}) vs ${game.homeTeam.abbreviation} | TMS: ${awayTms?.tms ?? 'N/A'} | Opp Discipline Grade: ${awayDisc?.disciplineGrade ?? 'N/A'}`);
+          if (analysis) {
+            pitcherAnalyses.push(analysis);
+            // Index by full name and last name for fuzzy lookup
+            pitcherLookup.set(slot.pitcher.fullName.toLowerCase(), analysis);
+            const lastName = slot.pitcher.fullName.split(' ').slice(-1)[0].toLowerCase();
+            pitcherLookup.set(lastName, analysis);
           }
         }
-        if (matchups.length > 0) {
-          pitcherMatchupContext = '\n\nTODAY\'S STARTING PITCHERS (with Team Matchup Score and Opponent Discipline Grade):\n' + matchups.join('\n');
-        }
-      } catch {
-        // silently skip if matchup data unavailable
       }
 
-      const pitcherChatContext = pitcherChatSummary.length > 0
-        ? '\n\nPITCHER EDGE PICKS:\n' + JSON.stringify(pitcherChatSummary, null, 2) + pitcherMatchupContext
-        : pitcherMatchupContext;
+      // Sort by K TMS descending so AI sees best matchups first
+      pitcherAnalyses.sort((a, b) => (b.kTms ?? 0) - (a.kTms ?? 0));
 
-      const slateContext = allPicks.length > 0
-        ? `Today's Diamond Edge slate (${result.dataDate}):\n${JSON.stringify(allPicks, null, 2)}${pitcherChatContext}`
-        : `No official picks qualify today (${result.dataDate}). Reasons: ${(result.emptySlateReasons ?? []).join(", ") || "lineups pending"}.${pitcherChatContext}`;
+      // ── Build context strings ─────────────────────────────────────────────
+      const hitterContext = allPicks.length > 0
+        ? `TODAY'S HITTER PICKS (${result.dataDate}):\n${JSON.stringify(allPicks, null, 2)}`
+        : `No official hitter picks qualify today (${result.dataDate}). Reasons: ${(result.emptySlateReasons ?? []).join(", ") || "lineups pending"}.`;
 
-      const systemPrompt = `You are Diamond Smart Lab — an elite MLB betting intelligence terminal.
+      const pitcherContext = pitcherAnalyses.length > 0
+        ? `\n\n${'='.repeat(60)}\nTODAY'S PITCHER ANALYSIS — FULL DATA (${pitcherAnalyses.length} starters)\n${'='.repeat(60)}\n\nFor each pitcher you have:\n- kTms: K Matchup Score (0-100). ≥70 = strong, ≥55 = moderate, <55 = weak\n- bbTms: Walk Matchup Score (0-100)\n- disciplineGrade: Opponent plate discipline (A+=elite, A=strong, B=average, C=below avg, D=poor)\n- opponentKRate: Opponent K% vs RHP\n- expectedKs: Model-projected K count for this start\n- expectedBBs: Model-projected BB count for this start\n- kLines: Array of K prop lines (3.5–7.5) with model probability, fair odds, book odds (if available), edge, and confidence tier\n- bbLines: Array of BB prop lines (0.5–2.5) with same structure\n- hasDisciplineEdge: true = 💎 DISCIPLINE EDGE confirmed\n\nPITCHER DATA:\n${JSON.stringify(pitcherAnalyses, null, 2)}`
+        : '\n\nNo starting pitchers confirmed for today yet.';
 
-You have access to today's Diamond Edge model outputs including hitter picks, pitcher matchup scores, and team discipline grades. Answer the user's questions analytically and precisely.
+      const slateContext = hitterContext + pitcherContext;
 
-RULES:
-- Reference data from the structured slate context below.
-- For PITCHER questions: use the TMS (Team Matchup Score 0-100) and Opponent Discipline Grade to make recommendations. A TMS ≥ 70 is a strong matchup. An opponent grade of C or lower favors the pitcher for strikeouts. An opponent grade of A or B favors walks. Recommend the top 2-3 pitchers by TMS when asked.
-- For HITTER questions: use the Diamond Edge picks with edge, probability, and tier data.
-- Never invent sportsbook odds or probabilities not present in the data.
-- Be concise, analytical, and professional.
-- For parlay requests: prefer different games, positive edge, batting positions 1-4.
-- Always mention relevant risk flags when they exist.
-- If asked about a player not in today's slate, say so clearly.
-- When pitcher prop odds are available in PITCHER EDGE PICKS, reference them. When only TMS/discipline data is available, use that to make intelligent recommendations without fabricating odds.
+      // ── System prompt ─────────────────────────────────────────────────────
+      const systemPrompt = `You are Diamond Smart Lab — the central intelligence engine of Diamond Edge, an elite MLB betting analytics platform.
+
+You have FULL ACCESS to today's complete pitcher and hitter data. You MUST NEVER say you lack access to pitcher probabilities, strikeout models, walk models, or market odds. All data is in the context below.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PITCHER QUESTION RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When asked about a specific pitcher (e.g. "5 Ks for Kevin Gausman?"):
+1. Find the pitcher in the PITCHER DATA below by name
+2. Look at their kLines array — find the entry where line = 5 (or the closest)
+3. Report: modelProbability, bookOdds (if available), impliedProbability (if available), edge (if available), fairOdds, tier
+4. Use kTms, disciplineGrade, opponentKRate, hasDisciplineEdge, expectedKs for supporting analysis
+5. Give a clear YES/NO recommendation with the exact response format below
+
+RESPONSE FORMAT for pitcher prop questions:
+---
+[PITCHER NAME]
+[X]+ Strikeouts (or Walks)
+
+Model Probability: [X]%
+Market Odds: [odds] (or "No live line — model only")
+Implied Probability: [X]% (or "N/A")
+Edge: [+X%] (or "N/A — no market line")
+Fair Odds: [odds]
+Confidence: [tier from data]
+
+Why:
+✅ [reason from data — e.g. opponent K rate]
+✅ [reason from data — e.g. discipline grade]
+✅ [reason from data — e.g. TMS score]
+✅ [reason from data — e.g. discipline edge if applicable]
+
+Alt Lines Available:
+[List ALL kLines entries with their modelProbability, bookOdds/fairOdds, and tier]
+
+Recommendation: YES / LEAN YES / LEAN NO / NO
+[1-2 sentence explanation]
+---
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INTERPRETATION GUIDE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+kTms (K Matchup Score):
+- ≥80: Elite matchup — top K prop environment
+- 70-79: Strong matchup — recommend K props
+- 55-69: Moderate — lean K props if other signals align
+- <55: Weak — avoid K props unless exceptional edge
+
+disciplineGrade (opponent plate discipline):
+- D or C: Undisciplined hitters — strong K prop environment
+- B: Average — neutral
+- A or A+: Disciplined hitters — favors walk props, caution on K props
+
+hasDisciplineEdge = true: 💎 DISCIPLINE EDGE — 2+ signals align, auto-boost applies
+
+When live market odds are NOT available (hasMarketData: false):
+- Still give the model probability and fair odds
+- State "No live line — model only" for market odds
+- Still make a recommendation based on model probability and matchup signals
+- NEVER say you lack access to probabilities
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONVERSATIONAL CAPABILITIES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You can answer all of these natively:
+- "Best strikeout play today?" → Find pitcher with highest kTms + best model prob on main K line
+- "Best walk prop today?" → Find pitcher with highest bbTms + best model prob on main BB line
+- "Safest pitcher prop?" → Find highest model probability across all lines (prefer lines with market data)
+- "Would you play Gausman 5 Ks?" → Full analysis with alt lines
+- "Which pitcher has the highest probability today?" → Rank by expectedKs / model prob on 4.5 line
+- "Give me the safest pitcher parlay" → 2-3 legs with highest model probs from different games
+- "Which Pitcher Edge plays support today's Money Picks?" → Cross-reference hitter picks with pitcher matchups
+- "Show me all Dual Edge pitchers" → Find pitchers where both K and BB lines show strong model probs
+- "Give me all alt lines for [pitcher]" → List full kLines and bbLines arrays
+
+For parlay requests: prefer legs from DIFFERENT games, highest model probabilities, positive edge when available.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HITTER QUESTION RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For hitter questions: use the Diamond Edge picks with edge, probability, tier, and lineEvaluations data.
+For parlay requests mixing pitchers and hitters: combine the best from both datasets.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GENERAL RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- Be concise, analytical, and professional
+- Never invent numbers — only use values from the data
+- If a pitcher is not in today's data, say so clearly
+- Always mention risk flags when they exist
+- Sound like a sharp bettor, not a generic chatbot
 
 ${slateContext}`;
 
@@ -340,7 +645,7 @@ ${slateContext}`;
 
       const llmResult = await invokeLLM({
         messages: llmMessages,
-        maxTokens: 2048,
+        maxTokens: 3000,
       });
 
       const rawContent = llmResult.choices[0]?.message?.content;
