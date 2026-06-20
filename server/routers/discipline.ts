@@ -252,14 +252,19 @@ export const disciplineRouter = router({
           opponentBBRate: p.opponentBBRate !== null ? Math.round(p.opponentBBRate * 1000) / 10 : null,
           historicalHitRate: p.historicalHitRate !== null ? Math.round(p.historicalHitRate) : null,
           sampleSize: p.sampleSize,
+          isOfficialPlay: p.isOfficialPlay,
+          isLeanPlay: p.isLeanPlay,
+          isProjectionOnly: p.isProjectionOnly,
         })),
         dualEdgePitchers: result.dualEdgePitchers,
         stackAlertGames: result.stackAlertGames,
+        hasOfficialPlays: result.hasOfficialPlays,
+        hasLeanPlays: result.hasLeanPlays,
         generatedAt: new Date().toISOString(),
       };
     } catch (e) {
       console.warn("[Discipline] getPitcherEdgePicks failed:", e);
-      return { picks: [], dualEdgePitchers: [], stackAlertGames: [], generatedAt: new Date().toISOString() };
+      return { picks: [], dualEdgePitchers: [], stackAlertGames: [], hasOfficialPlays: false, hasLeanPlays: false, generatedAt: new Date().toISOString() };
     }
   }),
 });

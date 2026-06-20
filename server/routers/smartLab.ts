@@ -113,11 +113,15 @@ function probToAmericanOdds(prob: number): number {
 }
 
 function confidenceTier(modelProb: number, edge: number, tms: number): string {
-  if (modelProb >= 0.72 && edge >= 0.12 && tms >= 75) return "🛡 ELITE";
-  if (modelProb >= 0.65 && edge >= 0.07 && tms >= 65) return "✅ OFFICIAL";
-  if (modelProb >= 0.60 && edge >= 0.05) return "📊 STRONG";
-  if (modelProb >= 0.55 && edge >= 0.03) return "🔵 LEAN";
-  return "⚠️ WATCH";
+  // 4-tier system matching PitcherEdgeEngine
+  // ELITE: 75%+ prob (line-adjusted), positive EV, 5+ factors
+  if (modelProb >= 0.75 && edge >= 0.05 && tms >= 70) return "🏆 ELITE";
+  // OFFICIAL: 70%+ prob, positive EV, 4+ factors
+  if (modelProb >= 0.70 && edge >= 0.03 && tms >= 55) return "🔥 OFFICIAL";
+  // LEAN: 65%+ prob, 3+ factors
+  if (modelProb >= 0.65 && tms >= 45) return "🛡 LEAN";
+  // PROJECTION: anything below lean threshold
+  return "🧪 PROJECTION";
 }
 
 // ─── Full pitcher analysis builder ───────────────────────────────────────────
@@ -613,6 +617,20 @@ Recommendation: YES / LEAN YES / LEAN NO / NO
 INTERPRETATION GUIDE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+CONFIDENCE TIERS (4-tier system):
+- 🏆 ELITE: 75%+ model prob, positive EV, 5+ supporting factors. Strongest plays. Eligible for Play of the Day.
+- 🔥 OFFICIAL: 70%+ model prob, positive EV, 4+ factors. Primary recommendations. Tracked in Results & ROI.
+- 🛡 LEAN: 65%+ model prob, 3+ factors. Shown but NOT in official results. Use cautiously.
+- 🧪 PROJECTION: Below lean threshold. Research only. Do NOT recommend as a play.
+
+MARKET-SPECIFIC THRESHOLDS (line-adjusted):
+- 3+ Ks: Elite 80%+, Official 75%+, Lean 70%+
+- 4+ Ks: Elite 75%+, Official 70%+, Lean 65%+
+- 5+ Ks: Elite 70%+, Official 65%+, Lean 60%+
+- 6+ Ks: Elite 65%+, Official 60%+, Lean 55%+
+- 7+ Ks: Elite 60%+, Official 55%+, Lean 50%+
+- Walk Overs: Elite 75%+, Official 70%+, Lean 65%+
+
 kTms (K Matchup Score):
 - ≥80: Elite matchup — top K prop environment
 - 70-79: Strong matchup — recommend K props
@@ -631,6 +649,8 @@ When live market odds are NOT available (hasMarketData: false):
 - State "No live line — model only" for market odds
 - Still make a recommendation based on model probability and matchup signals
 - NEVER say you lack access to probabilities
+
+For recommendations: only say YES for ELITE or OFFICIAL tier. Say LEAN YES for LEAN tier. Say NO for PROJECTION tier.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CONVERSATIONAL CAPABILITIES

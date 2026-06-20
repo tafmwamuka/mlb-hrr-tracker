@@ -13,6 +13,20 @@
  *   - Pitch count / leash projection
  *
  * Output: PitcherEdgePick[] — qualified, scored, and tiered recommendations.
+ *
+ * TIER SYSTEM (4-tier):
+ *   🏆 ELITE   — Strongest opportunities. Eligible for Play of the Day, Dual Edge, Smart Labs Priority.
+ *   🔥 OFFICIAL — Primary recommendations. Tracked in Results, ROI, Hit Rate.
+ *   🛡 LEAN    — Displayed but separated. NOT in official Results/ROI/Hit Rate.
+ *   🧪 PROJECTION — Below threshold. Research only. Not recommended.
+ *
+ * MARKET-SPECIFIC THRESHOLDS (per K line):
+ *   Walk Overs:   Elite 75%+, Official 70%+, Lean 65-69%
+ *   3+ Ks:        Elite 80%+, Official 75%+, Lean 70-74%
+ *   4+ Ks:        Elite 75%+, Official 70%+, Lean 65-69%
+ *   5+ Ks:        Elite 70%+, Official 65%+, Lean 60-64%
+ *   6+ Ks:        Elite 65%+, Official 60%+, Lean 55-59%
+ *   7+ Ks:        Elite 60%+, Official 55%+, Lean 50-54%
  */
 
 import { fetchPitcherMarketData, type PitcherMarketData, americanToImpliedProbability, removeVig } from './oddsApiService';
@@ -20,23 +34,59 @@ import { detectDisciplineEdge, type PitcherPropInput } from './disciplineEdgeDet
 import { getTeamDiscipline, computeTeamMatchupScore } from './teamDisciplineService';
 import { fetchTodaysGames } from './mlbLineupService';
 
-// ── Qualification Thresholds ──────────────────────────────────────────────────
+// ── Market-specific tier thresholds ──────────────────────────────────────────
+
+/**
+ * Returns the probability thresholds for a given prop type and line.
+ * Higher K lines naturally have lower hit probabilities, so thresholds
+ * are scaled down accordingly.
+ */
+function getLineThresholds(propType: 'strikeouts' | 'walks', line: number): {
+  elite: number;
+  official: number;
+  lean: number;
+  minQualify: number;
+} {
+  if (propType === 'walks') {
+    return { elite: 0.75, official: 0.70, lean: 0.65, minQualify: 0.55 };
+  }
+
+  // Strikeouts — scale thresholds by line
+  if (line <= 3.5) {
+    // 3+ Ks
+    return { elite: 0.80, official: 0.75, lean: 0.70, minQualify: 0.60 };
+  } else if (line <= 4.5) {
+    // 4+ Ks
+    return { elite: 0.75, official: 0.70, lean: 0.65, minQualify: 0.55 };
+  } else if (line <= 5.5) {
+    // 5+ Ks
+    return { elite: 0.70, official: 0.65, lean: 0.60, minQualify: 0.50 };
+  } else if (line <= 6.5) {
+    // 6+ Ks
+    return { elite: 0.65, official: 0.60, lean: 0.55, minQualify: 0.45 };
+  } else {
+    // 7+ Ks
+    return { elite: 0.60, official: 0.55, lean: 0.50, minQualify: 0.40 };
+  }
+}
+
+// ── Minimum supporting factors per tier ──────────────────────────────────────
+
+const FACTOR_REQUIREMENTS = {
+  ELITE: 5,
+  OFFICIAL: 4,
+  LEAN: 3,
+};
+
+// ── Qualification Thresholds (global) ────────────────────────────────────────
 
 const THRESHOLDS = {
-  /** Minimum model probability to qualify a prop */
-  MIN_PROB: 0.52,
-  /** Minimum edge (model prob − vig-free implied) to qualify */
-  MIN_EDGE: 0.03,
-  /** Minimum TMS score to qualify */
-  MIN_TMS: 45,
-  /** Official Money Pick: prob ≥ 0.65, edge ≥ 0.07, TMS ≥ 65 */
-  OFFICIAL: { prob: 0.65, edge: 0.07, tms: 65 },
-  /** Elite Safety: prob ≥ 0.72, odds between -250 and -100 */
-  ELITE_SAFETY: { prob: 0.72, maxOdds: -100, minOdds: -250 },
-  /** Best Value: prob ≥ 0.55, edge ≥ 0.08, odds ≥ +100 */
-  BEST_VALUE: { prob: 0.55, edge: 0.08, minOdds: 100 },
+  /** Minimum edge (model prob − vig-free implied) to include at all */
+  MIN_EDGE: 0.01,
+  /** Minimum TMS score to include at all */
+  MIN_TMS: 35,
   /** Dual Edge: both K and BB qualify for same pitcher */
-  DUAL_EDGE: { prob: 0.55, edge: 0.05 },
+  DUAL_EDGE: { prob: 0.55, edge: 0.03 },
   /** Stack Alert: 3+ pitchers qualify in same game */
   STACK_ALERT_MIN: 3,
 };
@@ -44,12 +94,27 @@ const THRESHOLDS = {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type PitcherPropTier =
+  | 'ELITE'
   | 'OFFICIAL'
-  | 'ELITE_SAFETY'
-  | 'BEST_VALUE'
+  | 'LEAN'
+  | 'PROJECTION'
   | 'DUAL_EDGE'
-  | 'STACK_ALERT'
-  | 'QUALIFIED';
+  | 'STACK_ALERT';
+
+/** Whether a pick is tracked in official results */
+export function isOfficialTier(tier: PitcherPropTier): boolean {
+  return tier === 'ELITE' || tier === 'OFFICIAL' || tier === 'DUAL_EDGE' || tier === 'STACK_ALERT';
+}
+
+/** Whether a pick is a lean (shown but not official) */
+export function isLeanTier(tier: PitcherPropTier): boolean {
+  return tier === 'LEAN';
+}
+
+/** Whether a pick is projection-only (research, not shown in main board) */
+export function isProjectionTier(tier: PitcherPropTier): boolean {
+  return tier === 'PROJECTION';
+}
 
 export interface PitcherEdgePick {
   // Identity
@@ -87,29 +152,23 @@ export interface PitcherEdgePick {
   opponentBBRate: number | null; // opponent team BB% vs this hand
   historicalHitRate: number | null;
   sampleSize: number;
+
+  // Tier metadata
+  isOfficialPlay: boolean;   // ELITE or OFFICIAL — tracked in results/ROI
+  isLeanPlay: boolean;       // LEAN — shown but not official
+  isProjectionOnly: boolean; // PROJECTION — research only
 }
 
 // ── Pitch count / leash projection ───────────────────────────────────────────
 
-/**
- * Estimate expected pitch count based on game context.
- * Returns a score 0-100 representing how favourable the leash is for Ks.
- */
 function estimatePitchCountScore(pitcherTeam: string, opponentTeam: string): number {
   // Without real-time leash data we use a neutral baseline of 65.
-  // This will be replaced when pitcher workload data is available.
   return 65;
 }
 
 // ── Model probability for K/BB props ─────────────────────────────────────────
 
-/**
- * Estimate model probability for a pitcher prop using Poisson distribution.
- * @param expectedValue  Expected K or BB count (from discipline/TMS signals)
- * @param line           Sportsbook line (e.g. 5.5)
- */
 function poissonOverProb(expectedValue: number, line: number): number {
-  // P(X > line) = 1 - P(X <= floor(line))
   const k = Math.floor(line);
   let cdf = 0;
   let term = Math.exp(-expectedValue);
@@ -121,51 +180,32 @@ function poissonOverProb(expectedValue: number, line: number): number {
   return Math.max(0.01, Math.min(0.99, 1 - cdf));
 }
 
-/**
- * Estimate expected K count for a pitcher given opponent discipline data.
- */
 function estimateExpectedKs(
-  opponentKRate: number,     // e.g. 0.24 = 24% K rate
-  tms: number,               // 0-100
-  umpireKBoost: number = 0,  // basis points
+  opponentKRate: number,
+  tms: number,
+  umpireKBoost: number = 0,
   pitchCountScore: number = 65,
 ): number {
-  // Baseline: 5.5 Ks per 6 innings for an average starter
   const baseline = 5.5;
-  // Opponent K rate adjustment: 24% is average; each 1% above/below shifts by 0.2 Ks
   const kRateAdj = (opponentKRate - 0.24) * 20;
-  // TMS adjustment: TMS 50 = neutral; each 10 points above/below shifts by 0.3 Ks
   const tmsAdj = ((tms - 50) / 10) * 0.3;
-  // Umpire boost: 100 bps = +0.2 Ks
   const umpireAdj = (umpireKBoost / 100) * 0.2;
-  // Pitch count score: 65 = neutral; each 10 points above/below shifts by 0.2 Ks
   const pcAdj = ((pitchCountScore - 65) / 10) * 0.2;
-
   return Math.max(1, baseline + kRateAdj + tmsAdj + umpireAdj + pcAdj);
 }
 
-/**
- * Estimate expected BB count for a pitcher given opponent discipline data.
- */
 function estimateExpectedBBs(
-  opponentBBRate: number,    // e.g. 0.09 = 9% BB rate
+  opponentBBRate: number,
   tms: number,
 ): number {
-  // Baseline: 2.5 BBs per 6 innings for an average starter
   const baseline = 2.5;
-  // Opponent BB rate adjustment: 9% is average; each 1% above/below shifts by 0.3 BBs
   const bbRateAdj = (opponentBBRate - 0.09) * 30;
-  // TMS walk component: higher TMS for walks = more BBs expected
   const tmsAdj = ((tms - 50) / 10) * 0.15;
-
   return Math.max(0.5, baseline + bbRateAdj + tmsAdj);
 }
 
 // ── Composite Pitcher Edge Score ──────────────────────────────────────────────
 
-/**
- * Compute the Pitcher Edge Score (0-100) from all available signals.
- */
 function computePitcherEdgeScore(params: {
   modelProb: number;
   edge: number;
@@ -177,27 +217,14 @@ function computePitcherEdgeScore(params: {
 }): number {
   const { modelProb, edge, tms, hasDisciplineEdge, historicalHitRate, sampleSize, pitchCountScore } = params;
 
-  // Component weights
   let score = 0;
-
-  // Model probability (0-40 points)
   score += Math.min(40, modelProb * 40);
-
-  // Edge (0-20 points): 10% edge = 20 pts
   score += Math.min(20, edge * 200);
-
-  // TMS (0-20 points)
   score += (tms / 100) * 20;
-
-  // Discipline Edge bonus (5 points)
   if (hasDisciplineEdge) score += 5;
-
-  // Historical hit rate (0-10 points, only if sample ≥ 5)
   if (historicalHitRate !== null && sampleSize >= 5) {
     score += (historicalHitRate / 100) * 10;
   }
-
-  // Pitch count score (0-5 points)
   score += (pitchCountScore / 100) * 5;
 
   return Math.round(Math.min(100, Math.max(0, score)));
@@ -213,6 +240,39 @@ function probToAmericanOdds(prob: number): number {
   return Math.round(((1 - prob) / prob) * 100);
 }
 
+// ── Count supporting factors ──────────────────────────────────────────────────
+
+function countSupportingFactors(params: {
+  opponentKRate?: number;
+  opponentBBRate?: number;
+  disciplineGrade: string | null;
+  tms: number;
+  hasDisciplineEdge: boolean;
+  historicalHitRate: number | null;
+  sampleSize: number;
+  pitchCountScore: number;
+  edge: number;
+  propType: 'strikeouts' | 'walks';
+}): number {
+  let count = 0;
+  const { opponentKRate, opponentBBRate, disciplineGrade, tms, hasDisciplineEdge, historicalHitRate, sampleSize, pitchCountScore, edge, propType } = params;
+
+  if (propType === 'strikeouts') {
+    if (opponentKRate !== undefined && opponentKRate >= 0.23) count++;
+  } else {
+    if (opponentBBRate !== undefined && opponentBBRate >= 0.09) count++;
+  }
+
+  if (disciplineGrade && ['D', 'D+', 'C-', 'C'].includes(disciplineGrade)) count++;
+  if (tms >= 55) count++;
+  if (hasDisciplineEdge) count++;
+  if (historicalHitRate !== null && sampleSize >= 5 && historicalHitRate >= 60) count++;
+  if (pitchCountScore >= 75) count++;
+  if (edge >= 0.06) count++;
+
+  return count;
+}
+
 // ── Main engine ───────────────────────────────────────────────────────────────
 
 export interface PitcherEdgeEngineResult {
@@ -221,6 +281,10 @@ export interface PitcherEdgeEngineResult {
   dualEdgePitchers: string[];
   /** Game IDs where 3+ pitchers qualify — Stack Alert */
   stackAlertGames: string[];
+  /** Whether the board has any Elite or Official picks */
+  hasOfficialPlays: boolean;
+  /** Whether the board has any Lean picks */
+  hasLeanPlays: boolean;
 }
 
 export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
@@ -230,9 +294,7 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
   ]);
 
   const allPicks: PitcherEdgePick[] = [];
-  // Track qualifying picks per pitcher for Dual Edge detection
   const pitcherQualifyingProps = new Map<string, { k: boolean; bb: boolean }>();
-  // Track qualifying picks per game for Stack Alert detection
   const gameQualifyingPitchers = new Map<string, Set<string>>();
 
   for (const game of games) {
@@ -260,13 +322,11 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
       const pitcherName = slot.pitcher.fullName;
       const marketData: PitcherMarketData | undefined = pitcherMarketMap.get(pitcherName);
 
-      // Get opponent discipline data
       const opponentDiscipline = await getTeamDiscipline(slot.opponentTeam).catch(() => null);
       const opponentKRate = opponentDiscipline?.strikeoutRate ?? 0.24;
       const opponentBBRate = opponentDiscipline?.walkRate ?? 0.09;
       const disciplineGrade = opponentDiscipline?.disciplineGrade ?? null;
 
-      // Compute TMS for both K and BB prop types
       const [kmsTms, bbTms] = await Promise.all([
         computeTeamMatchupScore({
           opponentTeam: slot.opponentTeam,
@@ -290,11 +350,14 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
       for (const kLine of kLines) {
         const expectedKs = estimateExpectedKs(opponentKRate, kTms, 0, pitchCountScore);
         const modelProb = poissonOverProb(expectedKs, kLine.line);
-        const edge = modelProb - kLine.trueOverProb;
+        const thresholds = getLineThresholds('strikeouts', kLine.line);
 
-        if (modelProb < THRESHOLDS.MIN_PROB || edge < THRESHOLDS.MIN_EDGE || kTms < THRESHOLDS.MIN_TMS) {
-          continue;
-        }
+        // Skip anything below the minimum qualify threshold
+        if (modelProb < thresholds.minQualify) continue;
+        if (kTms < THRESHOLDS.MIN_TMS) continue;
+
+        // Compute edge (0 if no market data)
+        const edge = kLine.trueOverProb > 0 ? modelProb - kLine.trueOverProb : 0;
 
         const propInput: PitcherPropInput = {
           pitcherName,
@@ -324,6 +387,18 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           pitchCountScore,
         });
 
+        const supportingFactors = countSupportingFactors({
+          opponentKRate,
+          disciplineGrade,
+          tms: kTms,
+          hasDisciplineEdge,
+          historicalHitRate,
+          sampleSize,
+          pitchCountScore,
+          edge,
+          propType: 'strikeouts',
+        });
+
         const fairOdds = probToAmericanOdds(modelProb);
         const qualifyingReasons = buildKReasons({
           opponentKRate,
@@ -339,9 +414,9 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
         const tier = classifyTier({
           modelProb,
           edge,
-          tms: kTms,
+          supportingFactors,
+          thresholds,
           bookOdds: kLine.overOdds,
-          pitcherEdgeScore,
           hasDisciplineEdge,
         });
 
@@ -370,19 +445,23 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           opponentBBRate,
           historicalHitRate,
           sampleSize,
+          isOfficialPlay: isOfficialTier(tier),
+          isLeanPlay: isLeanTier(tier),
+          isProjectionOnly: isProjectionTier(tier),
         };
 
         allPicks.push(pick);
 
-        // Track for Dual Edge
-        const existing = pitcherQualifyingProps.get(pitcherName) ?? { k: false, bb: false };
-        existing.k = true;
-        pitcherQualifyingProps.set(pitcherName, existing);
+        // Track for Dual Edge (only official/lean picks)
+        if (!isProjectionTier(tier)) {
+          const existing = pitcherQualifyingProps.get(pitcherName) ?? { k: false, bb: false };
+          existing.k = true;
+          pitcherQualifyingProps.set(pitcherName, existing);
 
-        // Track for Stack Alert
-        const gameSet = gameQualifyingPitchers.get(gameKey) ?? new Set();
-        gameSet.add(pitcherName);
-        gameQualifyingPitchers.set(gameKey, gameSet);
+          const gameSet = gameQualifyingPitchers.get(gameKey) ?? new Set();
+          gameSet.add(pitcherName);
+          gameQualifyingPitchers.set(gameKey, gameSet);
+        }
       }
 
       // ── Evaluate BB lines ──────────────────────────────────────────────────
@@ -391,11 +470,12 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
       for (const bbLine of bbLines) {
         const expectedBBs = estimateExpectedBBs(opponentBBRate, bbTmsScore);
         const modelProb = poissonOverProb(expectedBBs, bbLine.line);
-        const edge = modelProb - bbLine.trueOverProb;
+        const thresholds = getLineThresholds('walks', bbLine.line);
 
-        if (modelProb < THRESHOLDS.MIN_PROB || edge < THRESHOLDS.MIN_EDGE || bbTmsScore < THRESHOLDS.MIN_TMS) {
-          continue;
-        }
+        if (modelProb < thresholds.minQualify) continue;
+        if (bbTmsScore < THRESHOLDS.MIN_TMS) continue;
+
+        const edge = bbLine.trueOverProb > 0 ? modelProb - bbLine.trueOverProb : 0;
 
         const propInput: PitcherPropInput = {
           pitcherName,
@@ -425,6 +505,18 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           pitchCountScore,
         });
 
+        const supportingFactors = countSupportingFactors({
+          opponentBBRate,
+          disciplineGrade,
+          tms: bbTmsScore,
+          hasDisciplineEdge,
+          historicalHitRate,
+          sampleSize,
+          pitchCountScore,
+          edge,
+          propType: 'walks',
+        });
+
         const fairOdds = probToAmericanOdds(modelProb);
         const qualifyingReasons = buildBBReasons({
           opponentBBRate,
@@ -439,9 +531,9 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
         const tier = classifyTier({
           modelProb,
           edge,
-          tms: bbTmsScore,
+          supportingFactors,
+          thresholds,
           bookOdds: bbLine.overOdds,
-          pitcherEdgeScore,
           hasDisciplineEdge,
         });
 
@@ -470,19 +562,22 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           opponentBBRate,
           historicalHitRate,
           sampleSize,
+          isOfficialPlay: isOfficialTier(tier),
+          isLeanPlay: isLeanTier(tier),
+          isProjectionOnly: isProjectionTier(tier),
         };
 
         allPicks.push(pick);
 
-        // Track for Dual Edge
-        const existing = pitcherQualifyingProps.get(pitcherName) ?? { k: false, bb: false };
-        existing.bb = true;
-        pitcherQualifyingProps.set(pitcherName, existing);
+        if (!isProjectionTier(tier)) {
+          const existing = pitcherQualifyingProps.get(pitcherName) ?? { k: false, bb: false };
+          existing.bb = true;
+          pitcherQualifyingProps.set(pitcherName, existing);
 
-        // Track for Stack Alert
-        const gameSet = gameQualifyingPitchers.get(gameKey) ?? new Set();
-        gameSet.add(pitcherName);
-        gameQualifyingPitchers.set(gameKey, gameSet);
+          const gameSet = gameQualifyingPitchers.get(gameKey) ?? new Set();
+          gameSet.add(pitcherName);
+          gameQualifyingPitchers.set(gameKey, gameSet);
+        }
       }
     }
   }
@@ -497,7 +592,14 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
   for (const pick of allPicks) {
     if (dualEdgePitchers.includes(pick.pitcherName)) {
       pick.isDualEdge = true;
-      if (pick.tier === 'QUALIFIED') pick.tier = 'DUAL_EDGE';
+      // Upgrade LEAN to OFFICIAL if it's a dual edge
+      if (pick.tier === 'LEAN') {
+        pick.tier = 'DUAL_EDGE';
+        pick.isOfficialPlay = true;
+        pick.isLeanPlay = false;
+      } else if (pick.tier === 'OFFICIAL') {
+        pick.tier = 'DUAL_EDGE';
+      }
     }
   }
 
@@ -507,26 +609,28 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
     if (pitchers.size >= THRESHOLDS.STACK_ALERT_MIN) stackAlertGames.push(gameKey);
   });
 
-  // Mark Stack Alert tier
+  // Mark Stack Alert tier (only on official picks)
   for (const pick of allPicks) {
     const gameKey = `${pick.opponentTeam}@${pick.pitcherTeam}`;
     const reverseKey = `${pick.pitcherTeam}@${pick.opponentTeam}`;
     if (
       (stackAlertGames.includes(gameKey) || stackAlertGames.includes(reverseKey)) &&
-      pick.tier === 'QUALIFIED'
+      (pick.tier === 'OFFICIAL' || pick.tier === 'LEAN')
     ) {
       pick.tier = 'STACK_ALERT';
+      pick.isOfficialPlay = true;
+      pick.isLeanPlay = false;
     }
   }
 
-  // ── Sort: Official first, then by pitcherEdgeScore desc ──────────────────
+  // ── Sort: Elite first, then Official, Dual, Stack, Lean, Projection ──────
   const tierOrder: Record<PitcherPropTier, number> = {
-    OFFICIAL: 0,
+    ELITE: 0,
     DUAL_EDGE: 1,
-    ELITE_SAFETY: 2,
-    BEST_VALUE: 3,
-    STACK_ALERT: 4,
-    QUALIFIED: 5,
+    OFFICIAL: 2,
+    STACK_ALERT: 3,
+    LEAN: 4,
+    PROJECTION: 5,
   };
 
   allPicks.sort((a, b) => {
@@ -535,7 +639,10 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
     return b.pitcherEdgeScore - a.pitcherEdgeScore;
   });
 
-  return { picks: allPicks, dualEdgePitchers, stackAlertGames };
+  const hasOfficialPlays = allPicks.some(p => p.isOfficialPlay);
+  const hasLeanPlays = allPicks.some(p => p.isLeanPlay);
+
+  return { picks: allPicks, dualEdgePitchers, stackAlertGames, hasOfficialPlays, hasLeanPlays };
 }
 
 // ── Tier classification ───────────────────────────────────────────────────────
@@ -543,41 +650,47 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
 function classifyTier(params: {
   modelProb: number;
   edge: number;
-  tms: number;
+  supportingFactors: number;
+  thresholds: { elite: number; official: number; lean: number; minQualify: number };
   bookOdds: number;
-  pitcherEdgeScore: number;
   hasDisciplineEdge: boolean;
 }): PitcherPropTier {
-  const { modelProb, edge, tms, bookOdds, pitcherEdgeScore, hasDisciplineEdge } = params;
+  const { modelProb, edge, supportingFactors, thresholds, hasDisciplineEdge } = params;
 
-  // Official Money Pick
+  // No major red flags check — edge must not be deeply negative
+  const noMajorRedFlags = edge >= -0.05;
+
+  // 🏆 ELITE: 75%+ prob (line-adjusted), positive EV, 5+ factors, no red flags
   if (
-    modelProb >= THRESHOLDS.OFFICIAL.prob &&
-    edge >= THRESHOLDS.OFFICIAL.edge &&
-    tms >= THRESHOLDS.OFFICIAL.tms
+    modelProb >= thresholds.elite &&
+    edge >= 0 &&
+    supportingFactors >= FACTOR_REQUIREMENTS.ELITE &&
+    noMajorRedFlags
+  ) {
+    return 'ELITE';
+  }
+
+  // 🔥 OFFICIAL: 70%+ prob (line-adjusted), positive EV, 4+ factors, no red flags
+  if (
+    modelProb >= thresholds.official &&
+    edge >= 0 &&
+    supportingFactors >= FACTOR_REQUIREMENTS.OFFICIAL &&
+    noMajorRedFlags
   ) {
     return 'OFFICIAL';
   }
 
-  // Elite Safety: very high probability, short odds
+  // 🛡 LEAN: 65%+ prob (line-adjusted), 3+ factors, no red flags
   if (
-    modelProb >= THRESHOLDS.ELITE_SAFETY.prob &&
-    bookOdds >= THRESHOLDS.ELITE_SAFETY.minOdds &&
-    bookOdds <= THRESHOLDS.ELITE_SAFETY.maxOdds
+    modelProb >= thresholds.lean &&
+    supportingFactors >= FACTOR_REQUIREMENTS.LEAN &&
+    noMajorRedFlags
   ) {
-    return 'ELITE_SAFETY';
+    return 'LEAN';
   }
 
-  // Best Value: positive odds with strong edge
-  if (
-    modelProb >= THRESHOLDS.BEST_VALUE.prob &&
-    edge >= THRESHOLDS.BEST_VALUE.edge &&
-    bookOdds >= THRESHOLDS.BEST_VALUE.minOdds
-  ) {
-    return 'BEST_VALUE';
-  }
-
-  return 'QUALIFIED';
+  // 🧪 PROJECTION: anything that passed minQualify but doesn't meet Lean
+  return 'PROJECTION';
 }
 
 // ── Reason builders ───────────────────────────────────────────────────────────
@@ -625,7 +738,7 @@ function buildKReasons(params: {
 
   if (edge >= 0.10) {
     reasons.push(`Strong market value: +${(edge * 100).toFixed(1)}% edge`);
-  } else if (edge >= 0.06) {
+  } else if (edge >= 0.05) {
     reasons.push(`Positive market value: +${(edge * 100).toFixed(1)}% edge`);
   }
 
@@ -670,7 +783,7 @@ function buildBBReasons(params: {
 
   if (edge >= 0.10) {
     reasons.push(`Strong market value: +${(edge * 100).toFixed(1)}% edge`);
-  } else if (edge >= 0.06) {
+  } else if (edge >= 0.05) {
     reasons.push(`Positive market value: +${(edge * 100).toFixed(1)}% edge`);
   }
 

@@ -1,8 +1,13 @@
 /**
  * PitcherEdgePicks — Hero board at the top of the Pitchers tab
  *
- * Displays Official Money Picks, Elite Safety, Best Value, Dual Edge,
- * and Stack Alert pitcher prop recommendations.
+ * 4-tier display:
+ *   Section 1: 🏆 Elite Plays
+ *   Section 2: 🔥 Official Pitcher Plays
+ *   Section 3: 🛡 Qualified Leans (not in official results)
+ *   Section 4: 🧪 Projection Board (research only, collapsed)
+ *
+ * No-empty-board rule: if no Elite/Official plays, auto-shows best Qualified Leans.
  */
 
 import { useState } from "react";
@@ -12,23 +17,23 @@ import {
   ChevronUp,
   Zap,
   Shield,
-  TrendingUp,
-  Star,
   Layers,
   AlertTriangle,
   RefreshCw,
-  Target,
+  FlaskConical,
+  Trophy,
+  Flame,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type PitcherPropTier =
+  | "ELITE"
   | "OFFICIAL"
-  | "ELITE_SAFETY"
-  | "BEST_VALUE"
+  | "LEAN"
+  | "PROJECTION"
   | "DUAL_EDGE"
-  | "STACK_ALERT"
-  | "QUALIFIED";
+  | "STACK_ALERT";
 
 interface PitcherEdgePick {
   pitcherName: string;
@@ -55,6 +60,9 @@ interface PitcherEdgePick {
   opponentBBRate: number | null;
   historicalHitRate: number | null;
   sampleSize: number;
+  isOfficialPlay: boolean;
+  isLeanPlay: boolean;
+  isProjectionOnly: boolean;
 }
 
 // ── Tier config ───────────────────────────────────────────────────────────────
@@ -71,35 +79,44 @@ const TIER_CONFIG: Record<
     description: string;
   }
 > = {
+  ELITE: {
+    label: "🏆 ELITE PLAY",
+    icon: Trophy,
+    bg: "bg-[oklch(0.18_0.06_60)]",
+    border: "border-[oklch(0.72_0.22_60)]",
+    badge: "bg-[oklch(0.72_0.22_60)] text-black",
+    text: "text-[oklch(0.90_0.20_60)]",
+    description: "Highest-confidence — all signals aligned, 5+ factors",
+  },
   OFFICIAL: {
-    label: "💎 Official Pitcher Money Pick",
-    icon: Star,
+    label: "🔥 OFFICIAL PLAY",
+    icon: Flame,
     bg: "bg-[oklch(0.18_0.05_280)]",
     border: "border-[oklch(0.55_0.25_280)]",
     badge: "bg-[oklch(0.55_0.25_280)] text-white",
     text: "text-[oklch(0.85_0.15_280)]",
-    description: "Highest-confidence pitcher prop — all signals aligned",
+    description: "Primary recommendation — tracked in Results & ROI",
   },
-  ELITE_SAFETY: {
-    label: "🛡 Elite Safety",
+  LEAN: {
+    label: "🛡 QUALIFIED LEAN",
     icon: Shield,
     bg: "bg-[oklch(0.16_0.04_240)]",
-    border: "border-[oklch(0.50_0.18_240)]",
-    badge: "bg-[oklch(0.50_0.18_240)] text-white",
-    text: "text-[oklch(0.80_0.12_240)]",
-    description: "Very high probability, short odds — lower risk",
+    border: "border-[oklch(0.45_0.14_240)]",
+    badge: "bg-[oklch(0.45_0.14_240)] text-white",
+    text: "text-[oklch(0.78_0.10_240)]",
+    description: "Meets lean threshold — NOT in official results",
   },
-  BEST_VALUE: {
-    label: "💰 Best Value",
-    icon: TrendingUp,
-    bg: "bg-[oklch(0.16_0.05_150)]",
-    border: "border-[oklch(0.55_0.20_150)]",
-    badge: "bg-[oklch(0.55_0.20_150)] text-white",
-    text: "text-[oklch(0.80_0.14_150)]",
-    description: "Positive odds with strong market edge",
+  PROJECTION: {
+    label: "🧪 PROJECTION ONLY",
+    icon: FlaskConical,
+    bg: "bg-[oklch(0.14_0.02_255)]",
+    border: "border-[oklch(0.30_0.04_255)]",
+    badge: "bg-[oklch(0.30_0.04_255)] text-white",
+    text: "text-[oklch(0.60_0.04_255)]",
+    description: "Research only — not a recommendation",
   },
   DUAL_EDGE: {
-    label: "⚡ Dual Edge",
+    label: "⚡ DUAL EDGE",
     icon: Zap,
     bg: "bg-[oklch(0.17_0.06_60)]",
     border: "border-[oklch(0.72_0.22_60)]",
@@ -108,22 +125,13 @@ const TIER_CONFIG: Record<
     description: "Both K and BB qualify for this pitcher",
   },
   STACK_ALERT: {
-    label: "🔥 Stack Alert",
+    label: "🔥 STACK ALERT",
     icon: Layers,
     bg: "bg-[oklch(0.17_0.06_25)]",
     border: "border-[oklch(0.68_0.22_25)]",
     badge: "bg-[oklch(0.68_0.22_25)] text-white",
     text: "text-[oklch(0.82_0.16_25)]",
     description: "3+ pitchers qualify in this game",
-  },
-  QUALIFIED: {
-    label: "✓ Qualified",
-    icon: Target,
-    bg: "bg-[oklch(0.15_0.02_255)]",
-    border: "border-[oklch(0.35_0.05_255)]",
-    badge: "bg-[oklch(0.35_0.05_255)] text-white",
-    text: "text-[oklch(0.70_0.05_255)]",
-    description: "Meets minimum thresholds",
   },
 };
 
@@ -153,18 +161,15 @@ function tmsColor(tms: number): string {
 function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
   const [expanded, setExpanded] = useState(false);
   const cfg = TIER_CONFIG[pick.tier];
-  const Icon = cfg.icon;
   const propLabel = pick.propType === "strikeouts" ? "Strikeouts" : "Walks";
   const propAbbr = pick.propType === "strikeouts" ? "K" : "BB";
 
   return (
-    <div
-      className={`rounded-2xl border ${cfg.border} ${cfg.bg} overflow-hidden mb-3`}
-    >
+    <div className={`rounded-2xl border ${cfg.border} ${cfg.bg} overflow-hidden mb-3`}>
       {/* Header row */}
       <div className="px-4 pt-3 pb-2">
-        {/* Tier badge */}
-        <div className="flex items-center gap-2 mb-2">
+        {/* Tier badge row */}
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.badge}`}>
             {cfg.label}
           </span>
@@ -176,6 +181,16 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
           {pick.isDualEdge && (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[oklch(0.72_0.22_60)] text-black">
               ⚡ DUAL
+            </span>
+          )}
+          {pick.isLeanPlay && (
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[oklch(0.25_0.03_240)] text-[oklch(0.65_0.10_240)]">
+              Not in official results
+            </span>
+          )}
+          {pick.isProjectionOnly && (
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[oklch(0.20_0.02_255)] text-[oklch(0.50_0.04_255)]">
+              Research only
             </span>
           )}
         </div>
@@ -194,7 +209,7 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
           {/* Prop box */}
           <div className="text-right shrink-0">
             <div className={`font-stat text-2xl font-extrabold leading-none ${cfg.text}`}>
-              {pick.line} {propAbbr}
+              {pick.line}+ {propAbbr}
             </div>
             <div className="text-[oklch(0.55_0.015_255)] text-xs mt-0.5">
               {propLabel} Over
@@ -202,82 +217,64 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
           </div>
         </div>
 
-        {/* Stat row */}
-        <div className="flex items-center gap-3 mt-2.5 flex-wrap">
+        {/* Key stats row */}
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
+          {/* Model probability */}
           <div className="flex flex-col items-center">
             <span className={`font-stat text-lg font-bold leading-none ${cfg.text}`}>
-              {pick.modelProbability}%
+              {pick.modelProbability.toFixed(1)}%
             </span>
-            <span className="text-[oklch(0.45_0.015_255)] text-[10px]">Model</span>
+            <span className="text-[oklch(0.45_0.015_255)] text-[9px] mt-0.5">Model</span>
           </div>
-          <div className="w-px h-6 bg-[oklch(1_0_0/10%)]" />
-          <div className="flex flex-col items-center">
-            <span className="font-stat text-lg font-bold leading-none text-[oklch(0.65_0.015_255)]">
-              {pick.impliedProbability}%
-            </span>
-            <span className="text-[oklch(0.45_0.015_255)] text-[10px]">Book</span>
-          </div>
-          <div className="w-px h-6 bg-[oklch(1_0_0/10%)]" />
-          <div className="flex flex-col items-center">
-            <span className={`font-stat text-lg font-bold leading-none ${pick.edge >= 5 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.82_0.17_85)]"}`}>
-              +{pick.edge}%
-            </span>
-            <span className="text-[oklch(0.45_0.015_255)] text-[10px]">Edge</span>
-          </div>
-          <div className="w-px h-6 bg-[oklch(1_0_0/10%)]" />
+
+          <div className="w-px h-8 bg-[oklch(1_0_0/10%)]" />
+
+          {/* Book odds */}
           <div className="flex flex-col items-center">
             <span className="font-stat text-lg font-bold leading-none text-white">
-              {formatOdds(pick.bookOdds)}
+              {pick.bookOdds !== 0 ? formatOdds(pick.bookOdds) : "—"}
             </span>
-            <span className="text-[oklch(0.45_0.015_255)] text-[10px]">Odds</span>
+            <span className="text-[oklch(0.45_0.015_255)] text-[9px] mt-0.5">Book</span>
           </div>
-          <div className="w-px h-6 bg-[oklch(1_0_0/10%)]" />
+
+          <div className="w-px h-8 bg-[oklch(1_0_0/10%)]" />
+
+          {/* Fair odds */}
           <div className="flex flex-col items-center">
             <span className="font-stat text-lg font-bold leading-none text-[oklch(0.65_0.015_255)]">
               {formatOdds(pick.fairOdds)}
             </span>
-            <span className="text-[oklch(0.45_0.015_255)] text-[10px]">Fair</span>
+            <span className="text-[oklch(0.45_0.015_255)] text-[9px] mt-0.5">Fair</span>
           </div>
-        </div>
 
-        {/* TMS + Discipline Grade row */}
-        <div className="flex items-center gap-3 mt-2">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[oklch(0.45_0.015_255)] text-xs">TMS</span>
-            <span className={`font-stat font-bold text-sm ${tmsColor(pick.tms)}`}>
+          <div className="w-px h-8 bg-[oklch(1_0_0/10%)]" />
+
+          {/* Edge */}
+          <div className="flex flex-col items-center">
+            <span className={`font-stat text-lg font-bold leading-none ${pick.edge > 0 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.60_0.20_0)]"}`}>
+              {pick.edge > 0 ? "+" : ""}{pick.edge.toFixed(1)}%
+            </span>
+            <span className="text-[oklch(0.45_0.015_255)] text-[9px] mt-0.5">Edge</span>
+          </div>
+
+          <div className="w-px h-8 bg-[oklch(1_0_0/10%)]" />
+
+          {/* TMS */}
+          <div className="flex flex-col items-center">
+            <span className={`font-stat text-lg font-bold leading-none ${tmsColor(pick.tms)}`}>
               {pick.tms}
             </span>
+            <span className="text-[oklch(0.45_0.015_255)] text-[9px] mt-0.5">TMS</span>
           </div>
+
           {pick.disciplineGrade && (
             <>
-              <span className="text-[oklch(0.30_0.015_255)]">·</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[oklch(0.45_0.015_255)] text-xs">Opp Grade</span>
-                <span className={`font-stat font-bold text-sm ${gradeColor(pick.disciplineGrade)}`}>
+              <div className="w-px h-8 bg-[oklch(1_0_0/10%)]" />
+              <div className="flex flex-col items-center">
+                <span className={`font-stat text-lg font-bold leading-none ${gradeColor(pick.disciplineGrade)}`}>
                   {pick.disciplineGrade}
                 </span>
-              </div>
-            </>
-          )}
-          {pick.pitcherEdgeScore >= 70 && (
-            <>
-              <span className="text-[oklch(0.30_0.015_255)]">·</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[oklch(0.45_0.015_255)] text-xs">Edge Score</span>
-                <span className="font-stat font-bold text-sm text-[oklch(0.72_0.18_165)]">
-                  {pick.pitcherEdgeScore}
-                </span>
-              </div>
-            </>
-          )}
-          {pick.historicalHitRate !== null && pick.sampleSize >= 5 && (
-            <>
-              <span className="text-[oklch(0.30_0.015_255)]">·</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[oklch(0.45_0.015_255)] text-xs">Historical</span>
-                <span className="font-stat font-bold text-sm text-[oklch(0.82_0.17_85)]">
-                  {pick.historicalHitRate}%
-                </span>
+                <span className="text-[oklch(0.45_0.015_255)] text-[9px] mt-0.5">Grade</span>
               </div>
             </>
           )}
@@ -286,29 +283,26 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
 
       {/* Expand toggle */}
       <button
-        className="w-full flex items-center justify-between px-4 py-2 border-t border-[oklch(1_0_0/8%)] text-[oklch(0.55_0.015_255)] text-xs hover:bg-[oklch(1_0_0/4%)] transition-colors"
+        className="w-full flex items-center justify-center gap-1 py-2 border-t border-[oklch(1_0_0/8%)] text-[oklch(0.50_0.015_255)] text-xs"
         onClick={() => setExpanded(!expanded)}
       >
-        <span className="flex items-center gap-1.5">
-          <Icon size={12} />
-          {expanded ? "Hide analysis" : "View analysis"}
-        </span>
-        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        {expanded ? "Less" : "Details"}
       </button>
 
-      {/* Expanded analysis */}
+      {/* Expanded details */}
       {expanded && (
-        <div className="px-4 pb-4 pt-2 border-t border-[oklch(1_0_0/6%)] space-y-3">
-          {/* Why this pick */}
+        <div className="px-4 pb-4 space-y-3 border-t border-[oklch(1_0_0/8%)] pt-3">
+          {/* Qualifying reasons */}
           {pick.qualifyingReasons.length > 0 && (
             <div>
-              <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-1.5">
-                Why this pick
+              <div className="text-[oklch(0.50_0.015_255)] text-[10px] uppercase tracking-wider mb-1.5">
+                Why This Play
               </div>
               <div className="space-y-1">
                 {pick.qualifyingReasons.map((reason, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-[oklch(0.72_0.015_255)]">
-                    <span className={`mt-0.5 shrink-0 ${cfg.text}`}>✓</span>
+                  <div key={i} className="flex items-start gap-2 text-xs text-[oklch(0.75_0.015_255)]">
+                    <span className="text-[oklch(0.72_0.18_165)] mt-0.5">✓</span>
                     <span>{reason}</span>
                   </div>
                 ))}
@@ -319,35 +313,40 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
           {/* Opponent stats */}
           {(pick.opponentKRate !== null || pick.opponentBBRate !== null) && (
             <div>
-              <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-1.5">
-                Opponent discipline
+              <div className="text-[oklch(0.50_0.015_255)] text-[10px] uppercase tracking-wider mb-1.5">
+                Opponent Profile
               </div>
               <div className="flex gap-4">
                 {pick.opponentKRate !== null && (
-                  <div className="flex flex-col">
-                    <span className="font-stat font-bold text-base text-[oklch(0.82_0.17_85)]">
-                      {pick.opponentKRate}%
-                    </span>
-                    <span className="text-[oklch(0.45_0.015_255)] text-[10px]">K Rate</span>
+                  <div>
+                    <span className="text-[oklch(0.55_0.015_255)] text-xs">K Rate: </span>
+                    <span className="text-white text-xs font-semibold">{pick.opponentKRate.toFixed(1)}%</span>
                   </div>
                 )}
                 {pick.opponentBBRate !== null && (
-                  <div className="flex flex-col">
-                    <span className="font-stat font-bold text-base text-[oklch(0.68_0.22_25)]">
-                      {pick.opponentBBRate}%
-                    </span>
-                    <span className="text-[oklch(0.45_0.015_255)] text-[10px]">BB Rate</span>
+                  <div>
+                    <span className="text-[oklch(0.55_0.015_255)] text-xs">BB Rate: </span>
+                    <span className="text-white text-xs font-semibold">{pick.opponentBBRate.toFixed(1)}%</span>
                   </div>
                 )}
               </div>
             </div>
           )}
 
+          {/* Historical */}
+          {pick.historicalHitRate !== null && pick.sampleSize >= 5 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[oklch(0.55_0.015_255)] text-xs">Historical Hit Rate:</span>
+              <span className="text-white text-xs font-semibold">{pick.historicalHitRate.toFixed(0)}%</span>
+              <span className="text-[oklch(0.40_0.015_255)] text-xs">({pick.sampleSize} games)</span>
+            </div>
+          )}
+
           {/* Risk flags */}
           {pick.riskFlags.length > 0 && (
             <div>
-              <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-1.5">
-                Risk flags
+              <div className="text-[oklch(0.50_0.015_255)] text-[10px] uppercase tracking-wider mb-1.5">
+                Risk Flags
               </div>
               <div className="space-y-1">
                 {pick.riskFlags.map((flag, i) => (
@@ -370,6 +369,50 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
   );
 }
 
+// ── Collapsible section ───────────────────────────────────────────────────────
+
+function CollapsibleSection({
+  title,
+  subtitle,
+  picks,
+  defaultOpen = false,
+  idPrefix,
+}: {
+  title: string;
+  subtitle?: string;
+  picks: PitcherEdgePick[];
+  defaultOpen?: boolean;
+  idPrefix: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (picks.length === 0) return null;
+
+  return (
+    <div className="mb-4">
+      <button
+        className="w-full flex items-center justify-between mb-2"
+        onClick={() => setOpen(!open)}
+      >
+        <div>
+          <span className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider">
+            {title}
+          </span>
+          {subtitle && (
+            <span className="text-[oklch(0.40_0.015_255)] text-[10px] ml-2">{subtitle}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 text-[oklch(0.45_0.015_255)]">
+          <span className="text-[10px]">{picks.length}</span>
+          {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </div>
+      </button>
+      {open && picks.map((pick, i) => (
+        <PitcherPickCard key={`${idPrefix}-${i}`} pick={pick} />
+      ))}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function PitcherEdgePicks() {
@@ -381,14 +424,21 @@ export function PitcherEdgePicks() {
   const picks = data?.picks ?? [];
   const dualEdgePitchers = data?.dualEdgePitchers ?? [];
   const stackAlertGames = data?.stackAlertGames ?? [];
+  const hasOfficialPlays = data?.hasOfficialPlays ?? false;
 
   // Group picks by tier
-  const official = picks.filter(p => p.tier === "OFFICIAL");
-  const eliteSafety = picks.filter(p => p.tier === "ELITE_SAFETY");
-  const bestValue = picks.filter(p => p.tier === "BEST_VALUE");
-  const dualEdge = picks.filter(p => p.tier === "DUAL_EDGE");
-  const stackAlert = picks.filter(p => p.tier === "STACK_ALERT");
-  const qualified = picks.filter(p => p.tier === "QUALIFIED");
+  const elitePicks = picks.filter(p => p.tier === "ELITE");
+  const officialPicks = picks.filter(p => p.tier === "OFFICIAL");
+  const dualEdgePicks = picks.filter(p => p.tier === "DUAL_EDGE");
+  const stackAlertPicks = picks.filter(p => p.tier === "STACK_ALERT");
+  const leanPicks = picks.filter(p => p.tier === "LEAN");
+  const projectionPicks = picks.filter(p => p.tier === "PROJECTION");
+
+  // All official-tier picks (Elite + Official + Dual + Stack)
+  const officialTierPicks = [...elitePicks, ...dualEdgePicks, ...officialPicks, ...stackAlertPicks];
+
+  // No-empty-board rule: if no official plays, show leans as primary
+  const showLeansAsPrimary = officialTierPicks.length === 0 && leanPicks.length > 0;
 
   if (isLoading) {
     return (
@@ -430,7 +480,9 @@ export function PitcherEdgePicks() {
         <div>
           <div className="text-white font-bold text-base">Pitcher Edge Lab</div>
           <div className="text-[oklch(0.50_0.015_255)] text-xs">
-            {picks.length} qualifying prop{picks.length !== 1 ? "s" : ""}
+            {officialTierPicks.length > 0
+              ? `${officialTierPicks.length} official play${officialTierPicks.length !== 1 ? "s" : ""}`
+              : `${leanPicks.length} lean${leanPicks.length !== 1 ? "s" : ""} (no official plays today)`}
             {dualEdgePitchers.length > 0 && ` · ${dualEdgePitchers.length} dual-edge`}
             {stackAlertGames.length > 0 && ` · ${stackAlertGames.length} stack alert`}
           </div>
@@ -445,69 +497,57 @@ export function PitcherEdgePicks() {
         </button>
       </div>
 
-      {/* Official Money Picks */}
-      {official.length > 0 && (
+      {/* ── Section 1: Elite Plays ─────────────────────────────────────────── */}
+      {elitePicks.length > 0 && (
         <div className="mb-4">
           <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
-            Official Pitcher Money Picks
+            🏆 Elite Plays
           </div>
-          {official.map((pick, i) => (
-            <PitcherPickCard key={`official-${i}`} pick={pick} />
-          ))}
-        </div>
-      )}
-
-      {/* Elite Safety */}
-      {eliteSafety.length > 0 && (
-        <div className="mb-4">
-          <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
-            Elite Safety Plays
-          </div>
-          {eliteSafety.map((pick, i) => (
+          {elitePicks.map((pick, i) => (
             <PitcherPickCard key={`elite-${i}`} pick={pick} />
           ))}
         </div>
       )}
 
-      {/* Dual Edge */}
-      {dualEdge.length > 0 && (
+      {/* ── Section 2: Official Plays (Dual Edge + Official + Stack Alert) ─── */}
+      {(dualEdgePicks.length > 0 || officialPicks.length > 0 || stackAlertPicks.length > 0) && (
         <div className="mb-4">
           <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
-            Dual Edge Pitchers
+            🔥 Official Pitcher Plays
+            <span className="ml-2 text-[oklch(0.40_0.015_255)] normal-case">Tracked in Results & ROI</span>
           </div>
-          {dualEdge.map((pick, i) => (
+          {dualEdgePicks.map((pick, i) => (
             <PitcherPickCard key={`dual-${i}`} pick={pick} />
           ))}
-        </div>
-      )}
-
-      {/* Best Value */}
-      {bestValue.length > 0 && (
-        <div className="mb-4">
-          <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
-            Best Value Plays
-          </div>
-          {bestValue.map((pick, i) => (
-            <PitcherPickCard key={`value-${i}`} pick={pick} />
+          {officialPicks.map((pick, i) => (
+            <PitcherPickCard key={`official-${i}`} pick={pick} />
           ))}
-        </div>
-      )}
-
-      {/* Stack Alert */}
-      {stackAlert.length > 0 && (
-        <div className="mb-4">
-          <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
-            Stack Alert Games
-          </div>
-          {stackAlert.map((pick, i) => (
+          {stackAlertPicks.map((pick, i) => (
             <PitcherPickCard key={`stack-${i}`} pick={pick} />
           ))}
         </div>
       )}
 
-      {/* Qualified (collapsed by default, show toggle) */}
-      {qualified.length > 0 && (
-        <QualifiedSection picks={qualified} />
+      {/* ── Section 3: Qualified Leans ────────────────────────────────────── */}
+      {leanPicks.length > 0 && (
+        <CollapsibleSection
+          title="🛡 Qualified Leans"
+          subtitle="Not in official results"
+          picks={leanPicks}
+          defaultOpen={showLeansAsPrimary}
+          idPrefix="lean"
+        />
+      )}
+
+      {/* ── Section 4: Projection Board (collapsed) ───────────────────────── */}
+      {projectionPicks.length > 0 && (
+        <CollapsibleSection
+          title="🧪 Projection Board"
+          subtitle="Research only — not recommended"
+          picks={projectionPicks}
+          defaultOpen={false}
+          idPrefix="proj"
+        />
       )}
 
       {/* Generated at */}
@@ -516,24 +556,6 @@ export function PitcherEdgePicks() {
           Generated {new Date(data.generatedAt).toLocaleTimeString()}
         </p>
       )}
-    </div>
-  );
-}
-
-function QualifiedSection({ picks }: { picks: PitcherEdgePick[] }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="mb-4">
-      <button
-        className="w-full flex items-center justify-between text-[oklch(0.50_0.015_255)] text-[10px] uppercase tracking-wider mb-2"
-        onClick={() => setShow(!show)}
-      >
-        <span>Other Qualifying Plays ({picks.length})</span>
-        {show ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-      </button>
-      {show && picks.map((pick, i) => (
-        <PitcherPickCard key={`qual-${i}`} pick={pick} />
-      ))}
     </div>
   );
 }
