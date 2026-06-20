@@ -48,6 +48,12 @@ let cachedTotals: Map<string, GameTotal> | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
+/** Clear the in-memory game totals cache (e.g. after an API key change) */
+export function clearGameTotalsCache(): void {
+  cachedTotals = null;
+  cacheTimestamp = 0;
+}
+
 // ─── Odds API ─────────────────────────────────────────────────────────────────
 
 const ODDS_API_BASE = "https://api.the-odds-api.com/v4";
