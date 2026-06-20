@@ -1091,7 +1091,8 @@ export function rankAIPicks(
     const qualityPickIds = new Set(qualityPicks.map(p => p.playerId));
     const remaining = picksWithGamePk
       .filter(p => !qualityPickIds.has(p.playerId))
-      .slice(0, GUARANTEED_MIN - qualityPicks.length);
+      .slice(0, GUARANTEED_MIN - qualityPicks.length)
+      .map(p => ({ ...p, leanTier: true, isFilledPick: true })); // tag as projection-only fills
     const filledPicks = [...qualityPicks, ...remaining].map((pick, index) => ({
       ...pick,
       rank: index + 1,

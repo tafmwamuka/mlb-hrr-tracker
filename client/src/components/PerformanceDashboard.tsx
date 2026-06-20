@@ -270,12 +270,19 @@ export function PerformanceDashboard() {
   }
 
   const s = stats?.stats;
-  const overallRate = s?.overallHitRate ?? 0;
-  const totalPredictions = s?.totalPredictions ?? 0;
-  const totalHits = s?.totalHits ?? 0;
-  const sTierData = (s?.byTier as any)?.s ?? { hitRate: 0, total: 0, hits: 0 };
-  const aTierData = (s?.byTier as any)?.a ?? { hitRate: 0, total: 0, hits: 0 };
-  const leanData = (s?.byTier as any)?.lean ?? { hitRate: 0, total: 0, hits: 0 };
+  // Official-only metrics (Elite + Official tier — what drives the public results page)
+  const official = (s as any)?.official ?? {};
+  const officialAll = official.all ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
+  const eliteData = official.elite ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
+  const officialTierData = official.officialTier ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
+  const leanData = official.lean ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
+  const projData = official.projection ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
+  const timeWindows = (s as any)?.timeWindows ?? {};
+  const last7 = timeWindows.last7 ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
+  const last30 = timeWindows.last30 ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
+  const overallRate = officialAll.hitRate;
+  const totalPredictions = officialAll.total;
+  const totalHits = officialAll.hits;
   const rateColor = overallRate >= 65 ? "oklch(0.72 0.18 165)" : overallRate >= 50 ? "oklch(0.82 0.17 85)" : "oklch(0.68 0.22 25)";
 
   return (
@@ -332,66 +339,90 @@ export function PerformanceDashboard() {
         </div>
       </div>
 
-      {/* Stat-type breakdown */}
+      {/* Time window performance */}
       <div
-          className="rounded-2xl p-4"
-          style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}
-        >
-          <div className="flex items-center gap-2 mb-3">
-            <Zap size={13} style={{ color: "oklch(0.82 0.17 85)" }} />
-            <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Hit Rate by Tier</span>
-          </div>
-          <div className="space-y-3">
-            {[
-              { label: "S Tier (83+)", tier: "S", rate: sTierData.hitRate, total: sTierData.total, hits: sTierData.hits, color: "oklch(0.82 0.17 85)" },
-              { label: "A Tier (74–82)", tier: "A", rate: aTierData.hitRate, total: aTierData.total, hits: aTierData.hits, color: "oklch(0.72 0.18 165)" },
-              { label: "Lean (68–73)", tier: "L", rate: leanData.hitRate, total: leanData.total, hits: leanData.hits, color: "oklch(0.72 0.10 220)" },
-            ].map(({ label, tier, rate, total, hits, color }) => (
-              <div key={tier}>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                      style={{ background: `${color}20`, color, border: `1px solid ${color}40` }}
-                    >{tier}</span>
-                    <span className="text-[10px] font-semibold text-[oklch(0.55_0.015_255)]">{label}</span>
-                  </div>
-                  <span className="text-[10px] font-bold" style={{ color }}>
-                    {total > 0 ? `${rate}% (${hits}/${total})` : "—"}
-                  </span>
-                </div>
-                {total > 0 && <StatBar value={rate} color={color} />}
-              </div>
-            ))}
-          </div>
+        className="rounded-2xl p-4"
+        style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Zap size={13} style={{ color: "oklch(0.82 0.17 85)" }} />
+          <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Official Plays — Time Windows</span>
+          <span className="text-[9px] text-[oklch(0.40_0.015_255)] ml-1">(Elite + Official tier only)</span>
         </div>
+        <div className="space-y-3">
+          {[
+            { label: "Last 7 Days", rate: last7.hitRate, total: last7.total, hits: last7.hits, units: last7.units, color: "oklch(0.72 0.18 165)" },
+            { label: "Last 30 Days", rate: last30.hitRate, total: last30.total, hits: last30.hits, units: last30.units, color: "oklch(0.82 0.17 85)" },
+            { label: "All Time", rate: officialAll.hitRate, total: officialAll.total, hits: officialAll.hits, units: officialAll.units, color: "oklch(0.55 0.25 280)" },
+          ].map(({ label, rate, total, hits, units, color }) => (
+            <div key={label}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-[oklch(0.55_0.015_255)]">{label}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-[oklch(0.45_0.015_255)]">
+                    {total > 0 ? `${hits}/${total}` : "—"}
+                  </span>
+                  <span className="text-[10px] font-bold" style={{ color }}>
+                    {total > 0 ? `${rate}%` : "—"}
+                  </span>
+                  {total > 0 && (
+                    <span className={`text-[10px] font-bold ${units >= 0 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.68_0.22_25)]"}`}>
+                      {units >= 0 ? "+" : ""}{units.toFixed(1)}u
+                    </span>
+                  )}
+                </div>
+              </div>
+              {total > 0 && <StatBar value={rate} color={color} />}
+            </div>
+          ))}
+        </div>
+      </div>
 
-      {/* Tier system */}
+      {/* Tier performance breakdown */}
       <div
         className="rounded-2xl p-4"
         style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}
       >
         <div className="flex items-center gap-2 mb-3">
           <Award size={13} style={{ color: "oklch(0.82 0.17 85)" }} />
-          <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Tier System</span>
+          <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Performance by Tier</span>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-3">
           {[
-            { tier: "S", label: "S Tier (83+)", desc: "Highest confidence — model's strongest plays", color: "oklch(0.82 0.17 85)" },
-            { tier: "A", label: "A Tier (74–82)", desc: "Strong plays — solid edge with favorable conditions", color: "oklch(0.72 0.18 165)" },
-            { tier: "B", label: "Lean (68–73)", desc: "Borderline plays — informational, lower confidence", color: "oklch(0.72 0.10 220)" },
-          ].map(({ tier, label, desc, color }) => (
-            <div key={tier} className="flex items-start gap-3">
-              <div
-                className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center font-stat font-bold text-xs"
-                style={{ background: `${color}15`, border: `1px solid ${color}40`, color }}
-              >
-                {tier}
+            { emoji: "🏆", label: "Elite Plays", desc: "75%+ prob, 5+ factors", rate: eliteData.hitRate, total: eliteData.total, hits: eliteData.hits, units: eliteData.units, color: "oklch(0.82 0.17 85)", tracked: true },
+            { emoji: "🔥", label: "Official Plays", desc: "70%+ prob, 4+ factors", rate: officialTierData.hitRate, total: officialTierData.total, hits: officialTierData.hits, units: officialTierData.units, color: "oklch(0.55 0.25 280)", tracked: true },
+            { emoji: "🛡", label: "Qualified Leans", desc: "65–69% — not in official results", rate: leanData.hitRate, total: leanData.total, hits: leanData.hits, units: leanData.units, color: "oklch(0.55 0.14 240)", tracked: false },
+            { emoji: "🧪", label: "Projection Only", desc: "Below 65% — research use only", rate: projData.hitRate, total: projData.total, hits: projData.hits, units: projData.units, color: "oklch(0.40 0.04 255)", tracked: false },
+          ].map(({ emoji, label, desc, rate, total, hits, units, color, tracked }) => (
+            <div key={label}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">{emoji}</span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-white">{label}</span>
+                      {!tracked && (
+                        <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: "oklch(0.20 0.02 255)", color: "oklch(0.45 0.015 255)" }}>not tracked</span>
+                      )}
+                    </div>
+                    <div className="text-[9px] text-[oklch(0.40_0.015_255)]">{desc}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-right">
+                  <span className="text-[10px] text-[oklch(0.45_0.015_255)]">
+                    {total > 0 ? `${hits}/${total}` : "—"}
+                  </span>
+                  <span className="text-[10px] font-bold" style={{ color }}>
+                    {total > 0 ? `${rate}%` : "—"}
+                  </span>
+                  {total > 0 && (
+                    <span className={`text-[10px] font-bold ${units >= 0 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.68_0.22_25)]"}`}>
+                      {units >= 0 ? "+" : ""}{units.toFixed(1)}u
+                    </span>
+                  )}
+                </div>
               </div>
-              <div>
-                <div className="text-[11px] font-bold text-white">{label}</div>
-                <div className="text-[9px] text-[oklch(0.45_0.015_255)] leading-tight">{desc}</div>
-              </div>
+              {total > 0 && <StatBar value={rate} color={color} />}
             </div>
           ))}
         </div>

@@ -479,13 +479,32 @@ export const resultsRouter = router({
    * Get hit rate statistics
    */
   getHitRateStats: publicProcedure.query(async () => {
+    // ── Helper: compute stats for a row set ──────────────────────────────────
+    const computeStats = (rows: { result: string; odds: string | null; matrixScore: number | null; tier: string | null; isOfficialPlay: number | null; gameDate: string; category: string | null }[]) => {
+      const total = rows.length;
+      const hits = rows.filter(r => r.result === "hit").length;
+      const misses = rows.filter(r => r.result === "miss").length;
+      const hitRate = total > 0 ? Math.round((hits / total) * 100) : 0;
+      let units = 0;
+      for (const r of rows) {
+        const odds = r.odds ? parseInt(r.odds) : -110;
+        if (r.result === "hit") {
+          units += odds < 0 ? 100 / Math.abs(odds) : odds / 100;
+        } else if (r.result === "miss") {
+          units -= 1;
+        }
+      }
+      const roi = total > 0 ? Math.round((units / total) * 100) / 100 : 0;
+      return { total, hits, misses, hitRate, units: Math.round(units * 100) / 100, roi };
+    };
+
     try {
       const db = await getDb();
       if (!db) {
-        return { success: false, stats: { overallHitRate: 0, totalPredictions: 0, totalHits: 0, byStatType: { hits: 0, runs: 0, rbi: 0 }, byTier: { s: { hitRate: 0, total: 0, hits: 0 }, a: { hitRate: 0, total: 0, hits: 0 }, lean: { hitRate: 0, total: 0, hits: 0 } }, last7Days: 0, last30Days: 0 } };
+        return { success: false, stats: null };
       }
 
-      // Read from dailyResults — money picks only, exclude pending AND ppd
+      // Read all graded rows — money picks only, exclude pending AND ppd
       const allRows = await db
         .select()
         .from(dailyResults)
@@ -495,61 +514,85 @@ export const resultsRouter = router({
           ne(dailyResults.result, "ppd")
         ));
 
-      // All-time totals (ppd already excluded by query)
-      const totalPredictions = allRows.length;
-      const totalHits = allRows.filter(r => r.result === "hit").length;
-      const overallHitRate = totalPredictions > 0 ? Math.round((totalHits / totalPredictions) * 100) : 0;
+      // ── Official plays only (Elite + Official tier, isOfficialPlay=1) ──────────
+      // For historical rows without the new tier field, use matrixScore >= 68 as proxy
+      const officialRows = allRows.filter(r =>
+        r.isOfficialPlay === 1 ||
+        (r.isOfficialPlay === null && (r.matrixScore ?? 0) >= 68 && r.tier !== 'Projection')
+      );
+      const eliteRows = allRows.filter(r =>
+        r.tier === 'Elite' ||
+        (r.tier === null && (r.matrixScore ?? 0) >= 83)
+      );
+      const officialOnlyRows = allRows.filter(r =>
+        r.tier === 'Official' ||
+        (r.tier === null && (r.matrixScore ?? 0) >= 74 && (r.matrixScore ?? 0) < 83)
+      );
+      const leanRows = allRows.filter(r =>
+        r.tier === 'Lean' ||
+        (r.tier === null && (r.matrixScore ?? 0) >= 68 && (r.matrixScore ?? 0) < 74)
+      );
+      const projectionRows = allRows.filter(r =>
+        r.tier === 'Projection' ||
+        (r.tier === null && (r.matrixScore ?? 0) < 68)
+      );
 
-      // 7-day and 30-day hit rates
+      // ── Time windows ────────────────────────────────────────────────────────
       const now = new Date();
       const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(now.getDate() - 7);
       const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(now.getDate() - 30);
       const sevenDayStr = sevenDaysAgo.toISOString().split("T")[0];
       const thirtyDayStr = thirtyDaysAgo.toISOString().split("T")[0];
 
-      const last7Rows = allRows.filter(r => r.gameDate >= sevenDayStr);
-      const last30Rows = allRows.filter(r => r.gameDate >= thirtyDayStr);
-      const last7Days = last7Rows.length > 0 ? Math.round((last7Rows.filter(r => r.result === "hit").length / last7Rows.length) * 100) : 0;
-      const last30Days = last30Rows.length > 0 ? Math.round((last30Rows.filter(r => r.result === "hit").length / last30Rows.length) * 100) : 0;
+      const last7Official = officialRows.filter(r => r.gameDate >= sevenDayStr);
+      const last30Official = officialRows.filter(r => r.gameDate >= thirtyDayStr);
 
-      // Tier breakdown (S = matrixScore >= 83, A = 74-82, Lean = 68-73)
-      const sTierRows = allRows.filter(r => (r.matrixScore ?? 0) >= 83);
-      const aTierRows = allRows.filter(r => (r.matrixScore ?? 0) >= 74 && (r.matrixScore ?? 0) < 83);
-      const leanRows = allRows.filter(r => (r.matrixScore ?? 0) >= 68 && (r.matrixScore ?? 0) < 74);
-      const sTierHitRate = sTierRows.length > 0 ? Math.round((sTierRows.filter(r => r.result === "hit").length / sTierRows.length) * 100) : 0;
-      const aTierHitRate = aTierRows.length > 0 ? Math.round((aTierRows.filter(r => r.result === "hit").length / aTierRows.length) * 100) : 0;
-      const leanHitRate = leanRows.length > 0 ? Math.round((leanRows.filter(r => r.result === "hit").length / leanRows.length) * 100) : 0;
-
-      // By stat type
-      const hrrRows = allRows.filter(r => r.statType === "hrr");
-      const hitsRows = allRows.filter(r => r.statType === "hits");
-      const runsRows = allRows.filter(r => r.statType === "runs");
-      const rbiRows = allRows.filter(r => r.statType === "rbi");
-      const hrrHitRate = hrrRows.length > 0 ? Math.round((hrrRows.filter(r => r.result === "hit").length / hrrRows.length) * 100) : 0;
+      // ── All-time totals ──────────────────────────────────────────────────────
+      const allStats = computeStats(allRows);
+      const officialStats = computeStats(officialRows);
+      const eliteStats = computeStats(eliteRows);
+      const officialOnlyStats = computeStats(officialOnlyRows);
+      const leanStats = computeStats(leanRows);
+      const projectionStats = computeStats(projectionRows);
+      const last7Stats = computeStats(last7Official);
+      const last30Stats = computeStats(last30Official);
 
       return {
         success: true,
         stats: {
-          overallHitRate,
-          totalPredictions,
-          totalHits,
-          byStatType: {
-            hits: hitsRows.length > 0 ? Math.round((hitsRows.filter(r => r.result === "hit").length / hitsRows.length) * 100) : hrrHitRate,
-            runs: runsRows.length > 0 ? Math.round((runsRows.filter(r => r.result === "hit").length / runsRows.length) * 100) : 0,
-            rbi: rbiRows.length > 0 ? Math.round((rbiRows.filter(r => r.result === "hit").length / rbiRows.length) * 100) : 0,
-          },
+          // Legacy fields (kept for backward compat)
+          overallHitRate: officialStats.hitRate,
+          totalPredictions: officialStats.total,
+          totalHits: officialStats.hits,
+          last7Days: last7Stats.hitRate,
+          last30Days: last30Stats.hitRate,
+          byStatType: { hits: officialStats.hitRate, runs: 0, rbi: 0 },
           byTier: {
-            s: { hitRate: sTierHitRate, total: sTierRows.length, hits: sTierRows.filter(r => r.result === "hit").length },
-            a: { hitRate: aTierHitRate, total: aTierRows.length, hits: aTierRows.filter(r => r.result === "hit").length },
-            lean: { hitRate: leanHitRate, total: leanRows.length, hits: leanRows.filter(r => r.result === "hit").length },
+            s: { hitRate: eliteStats.hitRate, total: eliteStats.total, hits: eliteStats.hits },
+            a: { hitRate: officialOnlyStats.hitRate, total: officialOnlyStats.total, hits: officialOnlyStats.hits },
+            lean: { hitRate: leanStats.hitRate, total: leanStats.total, hits: leanStats.hits },
           },
-          last7Days,
-          last30Days,
+          // New structured breakdown
+          official: {
+            all: officialStats,
+            elite: eliteStats,
+            officialTier: officialOnlyStats,
+            lean: leanStats,
+            projection: projectionStats,
+          },
+          timeWindows: {
+            last7: last7Stats,
+            last30: last30Stats,
+          },
+          // Category breakdown (populated once category field is populated for new picks)
+          byCategory: {
+            moneyPick: computeStats(allRows.filter(r => r.category === 'MoneyPick' || r.category === null)),
+          },
         },
       };
     } catch (error) {
       console.error("Error fetching hit rate stats:", error);
-      return { success: false, stats: { overallHitRate: 0, totalPredictions: 0, totalHits: 0, byStatType: { hits: 0, runs: 0, rbi: 0 }, byTier: { s: { hitRate: 0, total: 0, hits: 0 }, a: { hitRate: 0, total: 0, hits: 0 }, lean: { hitRate: 0, total: 0, hits: 0 } }, last7Days: 0, last30Days: 0 } };
+      return { success: false, stats: null };
     }
   }),
 });
