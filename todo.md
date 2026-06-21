@@ -1593,3 +1593,11 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Confirmed: pitcher odds cache now LIVE (8 pitchers, 8 mainK, 22 altK, 4 walk lines)
 - [x] All 3 oddsApiKey validation tests pass (including live HTTP 200 from Odds API)
 - [x] TypeScript clean (0 errors)
+
+## Phase CH: Production Startup Warm-Up & Key Diagnostic (2026-06-21)
+- [x] Added startup warm-up in server/_core/index.ts for pitcher odds and HRR odds caches (5s delay)
+- [x] Added getOddsApiKeyStatus() export to oddsApiService.ts (masked: prefix + length only)
+- [x] Updated getDataStatus tRPC procedure to include oddsApiKeyStatus field
+- [x] Updated smartLab.dataStatus.test.ts mock and assertions for oddsApiKeyStatus
+- [x] TypeScript: 0 errors
+- [x] All 4 dataStatus tests pass, all 3 oddsApiKey tests pass

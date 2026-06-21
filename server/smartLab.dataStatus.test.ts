@@ -15,6 +15,7 @@ vi.mock("./services/oddsApiService", async (importOriginal) => {
     ...actual,
     getPitcherOddsStatus: vi.fn(() => ({ loaded: false, pitcherCount: 0, lastUpdated: null })),
     getHRROddsStatus: vi.fn(() => ({ loaded: false, playerCount: 0, lastUpdated: null })),
+    getOddsApiKeyStatus: vi.fn(() => ({ present: false, prefix: '', length: 0 })),
   };
 });
 
@@ -58,6 +59,10 @@ describe("smartLab.getDataStatus", () => {
     expect(result).toHaveProperty("enrichmentCache");
     expect(result).toHaveProperty("tmsDatabase");
     expect(result).toHaveProperty("disciplineDatabase");
+    expect(result).toHaveProperty("oddsApiKeyStatus");
+    expect(result.oddsApiKeyStatus).toHaveProperty("present");
+    expect(result.oddsApiKeyStatus).toHaveProperty("prefix");
+    expect(result.oddsApiKeyStatus).toHaveProperty("length");
 
     // TMS and Discipline are always connected (computed in-memory)
     expect(result.tmsDatabase.connected).toBe(true);

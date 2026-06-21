@@ -10,6 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import scheduledBackfillRouter from "../routes/scheduledBackfill";
 import { warmEnrichmentCacheOnStartup } from "../services/enrichmentCache";
+import { fetchPitcherMarketData, fetchHRRMarketData } from "../services/oddsApiService";
 import { startAutoGradeJob } from "../jobs/autoGradeResults";
 import { startPostponedGameCleanupJob } from "../jobs/postponedGameCleanup";
 
@@ -73,6 +74,22 @@ async function startServer() {
         console.error('[Startup] Enrichment cache warm failed:', err);
       });
     }, 2000); // 2s delay to let Vite/Express finish initializing
+
+    // Warm pitcher odds and HRR odds caches on startup
+    // Production instances start cold — pre-warming ensures Book odds and Edge are
+    // available immediately on first user request without a cold-start delay.
+    setTimeout(() => {
+      fetchPitcherMarketData().then(map => {
+        console.log(`[Startup] Pitcher odds cache warmed: ${map.size} pitchers`);
+      }).catch(err => {
+        console.error('[Startup] Pitcher odds warm failed:', err);
+      });
+      fetchHRRMarketData().then(map => {
+        console.log(`[Startup] HRR odds cache warmed: ${map.size} players`);
+      }).catch(err => {
+        console.error('[Startup] HRR odds warm failed:', err);
+      });
+    }, 5000); // 5s delay — after enrichment cache starts warming
 
     // Start server-side auto-grade results job
     // Grades money picks against live boxscores and saves to DB every 30 min (7 PM–2 AM NDT)

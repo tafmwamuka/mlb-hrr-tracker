@@ -831,6 +831,21 @@ export async function fetchOddsForPicks(
 }
 
 /**
+ * Returns masked key status for production diagnostic purposes.
+ * Exposes only the first 8 characters and total length — never the full key.
+ * Used by getDataStatus to confirm the key is present in production without leaking it.
+ */
+export function getOddsApiKeyStatus(): { present: boolean; prefix: string; length: number } {
+  const key = getOddsApiKey();
+  if (!key) return { present: false, prefix: '', length: 0 };
+  return {
+    present: true,
+    prefix: key.slice(0, 8),
+    length: key.length,
+  };
+}
+
+/**
  * Get the best available HRR line for a player
  * Falls back to model-calculated line if no sportsbook line available
  */

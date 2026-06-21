@@ -22,7 +22,7 @@ import { getEnrichedMoneyPicks } from "../services/hrrPicksService";
 import { invokeLLM } from "../_core/llm";
 import { fetchTodaysGames } from "../services/mlbLineupService";
 import { computeTeamMatchupScore, getTeamDiscipline } from "../services/teamDisciplineService";
-import { fetchPitcherMarketData, getPitcherOddsStatus, getHRROddsStatus } from "../services/oddsApiService";
+import { fetchPitcherMarketData, getPitcherOddsStatus, getHRROddsStatus, getOddsApiKeyStatus } from "../services/oddsApiService";
 import { isEnrichmentWarm } from "../services/enrichmentCache";
 import { getGameTotalsStatus } from "../services/gameTotalsService";
 
@@ -765,6 +765,7 @@ ${slateContext}`;
     const hrrOdds = getHRROddsStatus();
     const gameTotals = getGameTotalsStatus();
     const enrichmentWarm = isEnrichmentWarm();
+    const oddsApiKeyStatus = getOddsApiKeyStatus();
 
     // Determine the most recent update across all sources
     const timestamps = [
@@ -807,6 +808,7 @@ ${slateContext}`;
         connected: true, // Discipline grades computed from MLB API data — always available
       },
       lastUpdated,
+      oddsApiKeyStatus,
     };
   }),
 });
