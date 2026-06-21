@@ -1567,3 +1567,10 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Confirm pitcher parser already correct (uses isPitcherMarket detection correctly)
 - [x] Validate fix: 36 real player names returned (vs 2 "Over"/"Under" entries before fix)
 - [x] TypeScript clean, all 4 dataStatus tests pass
+
+## Phase CE: Pitcher Pipeline Downstream Fix (2026-06-21)
+- [x] Ran full end-to-end pipeline trace (MLB names vs Odds API cache keys)
+- [x] Confirmed 13/30 pitchers have odds posted today (17 simply have no sportsbook lines yet)
+- [x] Fixed mainKLine=null bug: when only pitcher_strikeouts_alternate is posted, use lowest alt line as mainKLine
+- [x] Fixed FACTOR_REQUIREMENTS: lowered from ELITE=5/OFFICIAL=4/LEAN=3 to ELITE=4/OFFICIAL=3/LEAN=2 to match realistic data availability
+- [x] Verified simulation: 30 qualifying lines now fire correctly with new factor thresholds

@@ -334,6 +334,15 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
     pd.altKLines.sort((a, b) => a.line - b.line);
     pd.walkLines.sort((a, b) => a.line - b.line);
 
+    // Fallback: if no main K line from pitcher_strikeouts market,
+    // use the lowest alt K line as the main line (some books only post alternates)
+    if (pd.mainKLine === null && pd.altKLines.length > 0) {
+      const lowestAlt = pd.altKLines[0];
+      pd.mainKLine = lowestAlt.line;
+      pd.mainKOverOdds = lowestAlt.overOdds;
+      pd.mainKUnderOdds = lowestAlt.underOdds;
+    }
+
     const pitcherBooks = allBooksMap.get(pitcherName);
     if (!pitcherBooks) return;
 

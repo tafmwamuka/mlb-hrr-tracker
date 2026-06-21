@@ -73,10 +73,14 @@ function getLineThresholds(propType: 'strikeouts' | 'walks', line: number): {
 
 // ── Minimum supporting factors per tier ──────────────────────────────────────
 
+// Factor requirements calibrated to realistic data availability:
+// With 7 possible factors but only 3-4 typically available per pitcher
+// (opponent K rate, TMS, edge, and sometimes discipline grade/discipline edge),
+// requirements are set to ensure picks fire when model + odds + TMS all align.
 const FACTOR_REQUIREMENTS = {
-  ELITE: 5,
-  OFFICIAL: 4,
-  LEAN: 3,
+  ELITE: 4,
+  OFFICIAL: 3,
+  LEAN: 2,
 };
 
 // ── Rejection reason types ────────────────────────────────────────────────────
