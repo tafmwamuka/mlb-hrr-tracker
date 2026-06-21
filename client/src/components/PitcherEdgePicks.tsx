@@ -45,7 +45,7 @@ interface RejectedPlay {
   requiredThreshold: number;  // as %
   rejectionReasons: string[];
   rejectionSummary: string;
-  supportingFactors: string[];
+  supportingFactors: number;  // count of supporting factors
   requiredFactors: number;
   hasMarketData: boolean;
   edge: number | null;
@@ -79,6 +79,7 @@ interface PitcherEdgePick {
   isOfficialPlay: boolean;
   isLeanPlay: boolean;
   isProjectionOnly: boolean;
+  hasMarketData: boolean;
 }
 
 // ── Tier config ───────────────────────────────────────────────────────────────
@@ -206,7 +207,7 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
           )}
           {pick.isProjectionOnly && (
             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[oklch(0.20_0.02_255)] text-[oklch(0.50_0.04_255)]">
-              Research only
+              {pick.hasMarketData ? "Research only" : "Awaiting Market Data"}
             </span>
           )}
         </div>
@@ -599,46 +600,64 @@ export function PitcherEdgePicks() {
                     <div>
                       <div className="text-white font-semibold text-sm">{r.pitcherName}</div>
                       <div className="text-[oklch(0.45_0.015_255)] text-xs">
-                        {r.pitcherTeam} vs {r.opponentTeam} · {r.propType === "strikeouts" ? "K" : "BB"} O{r.line}
+                        Market: {r.propType === "strikeouts" ? "Strikeouts" : "Walks"} · Line: O{r.line}
+                      </div>
+                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mt-0.5">
+                        {r.pitcherTeam} vs {r.opponentTeam}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[oklch(0.65_0.18_25)/15%] text-[oklch(0.65_0.18_25)]">
                         REJECTED
                       </span>
-                      {!r.hasMarketData && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] bg-[oklch(0.55_0.015_255)/10%] text-[oklch(0.50_0.015_255)]">
-                          No Market Data
-                        </span>
-                      )}
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        r.hasMarketData
+                          ? 'bg-[oklch(0.72_0.18_165)/15%] text-[oklch(0.72_0.18_165)]'
+                          : 'bg-[oklch(0.55_0.015_255)/10%] text-[oklch(0.50_0.015_255)]'
+                      }`}>
+                        Odds: {r.hasMarketData ? 'Live' : 'Missing'}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Summary */}
-                  <div className="text-[oklch(0.65_0.18_25)] text-xs mb-2 font-medium">{r.rejectionSummary}</div>
-
-                  {/* Probability vs threshold */}
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="flex-1 bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
-                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">Model Prob</div>
+                  {/* Stats grid: Model Prob | Required | Edge | EV Status */}
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <div className="bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
+                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">Model Probability</div>
                       <div className="text-white font-bold text-sm">{r.modelProbability.toFixed(1)}%</div>
                     </div>
-                    <div className="text-[oklch(0.40_0.015_255)] text-xs">vs</div>
-                    <div className="flex-1 bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
-                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">Required</div>
+                    <div className="bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
+                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">Required Threshold</div>
                       <div className="text-[oklch(0.65_0.18_25)] font-bold text-sm">{r.requiredThreshold.toFixed(1)}%</div>
                     </div>
-                    {r.edge !== null && (
-                      <div className="flex-1 bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
-                        <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">Edge</div>
-                        <div className={`font-bold text-sm ${r.edge > 0 ? 'text-[oklch(0.72_0.18_165)]' : 'text-[oklch(0.65_0.18_25)]'}`}>
-                          {r.edge > 0 ? '+' : ''}{r.edge.toFixed(1)}%
-                        </div>
+                    <div className="bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
+                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">Odds Status</div>
+                      <div className={`font-bold text-sm ${r.hasMarketData ? 'text-[oklch(0.72_0.18_165)]' : 'text-[oklch(0.65_0.18_25)]'}`}>
+                        {r.hasMarketData ? 'Live' : 'Missing'}
                       </div>
-                    )}
+                    </div>
+                    <div className="bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
+                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">EV Status</div>
+                      <div className={`font-bold text-sm ${
+                        !r.hasMarketData ? 'text-[oklch(0.50_0.015_255)]'
+                        : r.edge !== null && r.edge > 0 ? 'text-[oklch(0.72_0.18_165)]'
+                        : 'text-[oklch(0.65_0.18_25)]'
+                      }`}>
+                        {!r.hasMarketData ? 'N/A — No Odds'
+                          : r.edge !== null && r.edge > 0 ? `+${r.edge.toFixed(1)}% Edge`
+                          : r.edge !== null ? `${r.edge.toFixed(1)}% (Negative)`
+                          : 'N/A'}
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Rejection reasons */}
+                  {/* Rejection reason summary */}
+                  <div className="mb-2">
+                    <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-1">Rejection Reason</div>
+                    <div className="text-[oklch(0.65_0.18_25)] text-xs font-medium">{r.rejectionSummary}</div>
+                  </div>
+
+                  {/* Detailed rejection reasons */}
                   <div className="space-y-1">
                     {r.rejectionReasons.map((reason, j) => (
                       <div key={j} className="flex items-start gap-1.5">
@@ -648,17 +667,14 @@ export function PitcherEdgePicks() {
                     ))}
                   </div>
 
-                  {/* Supporting factors (what it did have) */}
-                  {r.supportingFactors.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-[oklch(1_0_0/5%)]">
-                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-1">Supporting factors ({r.supportingFactors.length}/{r.requiredFactors} required):</div>
-                      <div className="flex flex-wrap gap-1">
-                        {r.supportingFactors.map((f, j) => (
-                          <span key={j} className="px-1.5 py-0.5 rounded text-[10px] bg-[oklch(0.72_0.18_165)/10%] text-[oklch(0.72_0.18_165)]">{f}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* Supporting factors count */}
+                  <div className="mt-2 pt-2 border-t border-[oklch(1_0_0/5%)] flex items-center gap-2">
+                    <span className="text-[oklch(0.40_0.015_255)] text-[10px]">Supporting factors:</span>
+                    <span className={`text-xs font-bold ${r.supportingFactors >= r.requiredFactors ? 'text-[oklch(0.72_0.18_165)]' : 'text-[oklch(0.65_0.18_25)]'}`}>
+                      {r.supportingFactors}/{r.requiredFactors}
+                    </span>
+                    <span className="text-[oklch(0.40_0.015_255)] text-[10px]">required for Official</span>
+                  </div>
                 </div>
               ))}
             </div>

@@ -786,6 +786,10 @@ ${slateContext}`;
         connected: pitcherOdds.loaded && pitcherOdds.pitcherCount > 0,
         pitcherCount: pitcherOdds.pitcherCount,
         lastUpdated: pitcherOdds.lastUpdated,
+        // Granular per-market counts
+        mainKCount: pitcherOdds.mainKCount,
+        altKLineCount: pitcherOdds.altKLineCount,
+        walkLineCount: pitcherOdds.walkLineCount,
       },
       gameTotals: {
         connected: gameTotals.loaded,

@@ -255,6 +255,7 @@ export const disciplineRouter = router({
           isOfficialPlay: p.isOfficialPlay,
           isLeanPlay: p.isLeanPlay,
           isProjectionOnly: p.isProjectionOnly,
+          hasMarketData: p.hasMarketData,
         })),
         dualEdgePitchers: result.dualEdgePitchers,
         stackAlertGames: result.stackAlertGames,

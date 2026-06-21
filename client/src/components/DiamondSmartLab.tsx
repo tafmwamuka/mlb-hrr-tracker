@@ -421,6 +421,12 @@ function DataStatusPanel() {
     );
   }
 
+  // Granular pitcher market sub-statuses
+  const pitcherOdds = status.pitcherStrikeoutOdds;
+  const hasMainK = (pitcherOdds.mainKCount ?? 0) > 0;
+  const hasAltK = (pitcherOdds.altKLineCount ?? 0) > 0;
+  const hasWalk = (pitcherOdds.walkLineCount ?? 0) > 0;
+
   const sources: Array<{ label: string; status: SourceStatus; detail?: string }> = [
     {
       label: 'Money Pick Odds',
@@ -429,8 +435,23 @@ function DataStatusPanel() {
     },
     {
       label: 'Pitcher K/BB Odds',
-      status: status.pitcherStrikeoutOdds.connected ? 'ok' : 'offline',
-      detail: status.pitcherStrikeoutOdds.connected ? `${status.pitcherStrikeoutOdds.pitcherCount} pitchers` : 'No data',
+      status: pitcherOdds.connected ? 'ok' : 'offline',
+      detail: pitcherOdds.connected ? `${pitcherOdds.pitcherCount} pitchers` : 'No data',
+    },
+    {
+      label: 'Main K Lines',
+      status: hasMainK ? 'ok' : pitcherOdds.connected ? 'partial' : 'offline',
+      detail: hasMainK ? `${pitcherOdds.mainKCount} pitchers` : pitcherOdds.connected ? 'None loaded' : 'Offline',
+    },
+    {
+      label: 'Alt K Lines',
+      status: hasAltK ? 'ok' : pitcherOdds.connected ? 'partial' : 'offline',
+      detail: hasAltK ? `${pitcherOdds.altKLineCount} lines` : pitcherOdds.connected ? 'None loaded' : 'Offline',
+    },
+    {
+      label: 'Walk Lines',
+      status: hasWalk ? 'ok' : pitcherOdds.connected ? 'partial' : 'offline',
+      detail: hasWalk ? `${pitcherOdds.walkLineCount} lines` : pitcherOdds.connected ? 'None loaded' : 'Offline',
     },
     {
       label: 'Game Totals',

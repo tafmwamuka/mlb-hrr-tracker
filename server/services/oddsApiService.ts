@@ -176,12 +176,30 @@ export function clearPitcherOddsCache(): void {
   console.log('[OddsAPI] Pitcher odds cache cleared');
 }
 /** Return status of the pitcher odds in-memory cache */
-export function getPitcherOddsStatus(): { loaded: boolean; pitcherCount: number; lastUpdated: Date | null } {
-  if (!pitcherOddsCache) return { loaded: false, pitcherCount: 0, lastUpdated: null };
+export function getPitcherOddsStatus(): {
+  loaded: boolean;
+  pitcherCount: number;
+  lastUpdated: Date | null;
+  altKLineCount: number;   // total alt K lines across all pitchers
+  walkLineCount: number;   // total walk lines across all pitchers
+  mainKCount: number;      // pitchers with a main K line
+} {
+  if (!pitcherOddsCache) return { loaded: false, pitcherCount: 0, lastUpdated: null, altKLineCount: 0, walkLineCount: 0, mainKCount: 0 };
+  let altKLineCount = 0;
+  let walkLineCount = 0;
+  let mainKCount = 0;
+  for (const market of Array.from(pitcherOddsCache.data.values())) {
+    altKLineCount += market.altKLines?.length ?? 0;
+    walkLineCount += market.walkLines?.length ?? 0;
+    if (market.mainKLine !== null) mainKCount++;
+  }
   return {
     loaded: pitcherOddsCache.data.size > 0,
     pitcherCount: pitcherOddsCache.data.size,
     lastUpdated: new Date(pitcherOddsCache.ts),
+    altKLineCount,
+    walkLineCount,
+    mainKCount,
   };
 }
 
@@ -193,6 +211,7 @@ async function fetchPitcherProps(apiKey: string, eventId: string): Promise<Bookm
     'pitcher_strikeouts',
     'pitcher_strikeouts_alternate',
     'pitcher_walks',
+    'pitcher_walks_alternate',
   ].join(',');
 
   const url = `${ODDS_API_BASE}/sports/${SPORT}/events/${eventId}/odds?apiKey=${apiKey}&regions=us&markets=${markets}&oddsFormat=american`;
@@ -301,7 +320,7 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
           if (!pd.altKLines.some(l => l.line === line)) {
             pd.altKLines.push({ line, overOdds, underOdds, trueOverProb: trueOver });
           }
-        } else if (market.key === 'pitcher_walks') {
+        } else if (market.key === 'pitcher_walks' || market.key === 'pitcher_walks_alternate') {
           if (!pd.walkLines.some(l => l.line === line)) {
             pd.walkLines.push({ line, overOdds, underOdds, trueOverProb: trueOver });
           }
@@ -325,9 +344,11 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
       kLine.allBooks = [...mainBooks, ...altBooks];
     }
 
-    // Attach allBooks to each walk line
+    // Attach allBooks to each walk line (merge main + alternate books)
     for (const wLine of pd.walkLines) {
-      wLine.allBooks = pitcherBooks.get('pitcher_walks')?.get(wLine.line) || [];
+      const mainWalkBooks = pitcherBooks.get('pitcher_walks')?.get(wLine.line) || [];
+      const altWalkBooks = pitcherBooks.get('pitcher_walks_alternate')?.get(wLine.line) || [];
+      wLine.allBooks = [...mainWalkBooks, ...altWalkBooks];
     }
 
     // Compute best available over odds for main K line (highest over odds = best for bettor)

@@ -1545,3 +1545,16 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Build DataStatusPanel component in DiamondSmartLab.tsx (collapsible, green/yellow/red indicators)
 - [x] Insert DataStatusPanel between section tabs and analysis section
 - [x] Write and pass 4 vitest tests for getDataStatus procedure
+
+## Phase CD: Pitcher Odds Feed Pipeline Fix
+- [x] Add `pitcher_walks_alternate` to the 4-market fetch list in `oddsApiService.ts`
+- [x] Parse `pitcher_walks_alternate` outcomes into `walkLines` (merged with `pitcher_walks`)
+- [x] Enhance `getPitcherOddsStatus()` to return `mainKCount`, `altKLineCount`, `walkLineCount`
+- [x] Add `hasMarketData` field to `PitcherEdgePick` interface and both K/BB pick constructions
+- [x] Expose `hasMarketData` in `discipline.ts` picks mapping
+- [x] Fix `RejectedPlay.supportingFactors` type mismatch (was `string[]`, now `number` count)
+- [x] Add `hasMarketData` to `PitcherEdgePick` frontend interface
+- [x] Update pick card badge: show "Awaiting Market Data" when `!hasMarketData` (was "Research only")
+- [x] Redesign diagnostics panel: 2x2 grid with Model Prob, Required Threshold, Odds Status, EV Status
+- [x] Update `getDataStatus` procedure to expose `mainKCount`, `altKLineCount`, `walkLineCount`
+- [x] Update Smart Lab DataStatusPanel with 3 granular pitcher market rows (Main K, Alt K, Walk Lines)

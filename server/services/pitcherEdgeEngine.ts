@@ -185,6 +185,7 @@ export interface PitcherEdgePick {
   isOfficialPlay: boolean;   // ELITE or OFFICIAL — tracked in results/ROI
   isLeanPlay: boolean;       // LEAN — shown but not official
   isProjectionOnly: boolean; // PROJECTION — research only
+  hasMarketData: boolean;    // false = model-only, no live odds
 }
 
 // ── Pitch count / leash projection ───────────────────────────────────────────
@@ -548,13 +549,12 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           opponentBBRate,
           historicalHitRate,
           sampleSize,
-          isOfficialPlay: isOfficialTier(tier),
+                    isOfficialPlay: isOfficialTier(tier),
           isLeanPlay: isLeanTier(tier),
           isProjectionOnly: isProjectionTier(tier),
+          hasMarketData,
         };
-
         allPicks.push(pick);
-
         // Track for Dual Edge (only official/lean picks)
         if (!isProjectionTier(tier)) {
           const existing = pitcherQualifyingProps.get(pitcherName) ?? { k: false, bb: false };
@@ -728,13 +728,12 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           opponentBBRate,
           historicalHitRate,
           sampleSize,
-          isOfficialPlay: isOfficialTier(bbTier),
+                    isOfficialPlay: isOfficialTier(bbTier),
           isLeanPlay: isLeanTier(bbTier),
           isProjectionOnly: isProjectionTier(bbTier),
+          hasMarketData: bbHasMarketData,
         };
-
         allPicks.push(pick);
-
         if (!isProjectionTier(bbTier)) {
           const existing = pitcherQualifyingProps.get(pitcherName) ?? { k: false, bb: false };
           existing.bb = true;
