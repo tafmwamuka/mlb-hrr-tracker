@@ -351,7 +351,26 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
     for (const slot of pitcherSlots) {
       if (!slot.pitcher) continue;
       const pitcherName = slot.pitcher.fullName;
-      const marketData: PitcherMarketData | undefined = pitcherMarketMap.get(pitcherName);
+      // Direct match first, then fuzzy fallback for name variants (e.g. "Zach" vs "Zack")
+      let marketData: PitcherMarketData | undefined = pitcherMarketMap.get(pitcherName);
+      if (!marketData) {
+        // Normalize: lowercase, remove accents, collapse spaces
+        const normalize = (n: string) => n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+        const normTarget = normalize(pitcherName);
+        // Try last-name-only match as fallback
+        const lastName = normTarget.split(' ').slice(-1)[0];
+        for (const [key, val] of Array.from(pitcherMarketMap.entries())) {
+          const normKey = normalize(key);
+          if (normKey === normTarget) { marketData = val; break; }
+          // Last name + first initial match (e.g. "R. Gasser" → "Robert Gasser")
+          const keyLastName = normKey.split(' ').slice(-1)[0];
+          const keyFirstInitial = normKey.split(' ')[0]?.[0] ?? '';
+          const targetFirstInitial = normTarget.split(' ')[0]?.[0] ?? '';
+          if (keyLastName === lastName && keyFirstInitial === targetFirstInitial) {
+            marketData = val; break;
+          }
+        }
+      }
 
       const opponentDiscipline = await getTeamDiscipline(slot.opponentTeam).catch(() => null);
       const opponentKRate = opponentDiscipline?.strikeoutRate ?? 0.24;

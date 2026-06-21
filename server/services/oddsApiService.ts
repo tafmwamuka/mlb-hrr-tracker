@@ -170,6 +170,21 @@ export interface PitcherMarketData {
 // In-memory cache for pitcher props — 15-minute TTL
 let pitcherOddsCache: { data: Map<string, PitcherMarketData>; ts: number } | null = null;
 
+/** Clear the in-memory pitcher odds cache so the next request re-fetches from the API */
+export function clearPitcherOddsCache(): void {
+  pitcherOddsCache = null;
+  console.log('[OddsAPI] Pitcher odds cache cleared');
+}
+/** Return status of the pitcher odds in-memory cache */
+export function getPitcherOddsStatus(): { loaded: boolean; pitcherCount: number; lastUpdated: Date | null } {
+  if (!pitcherOddsCache) return { loaded: false, pitcherCount: 0, lastUpdated: null };
+  return {
+    loaded: pitcherOddsCache.data.size > 0,
+    pitcherCount: pitcherOddsCache.data.size,
+    lastUpdated: new Date(pitcherOddsCache.ts),
+  };
+}
+
 /**
  * Fetch pitcher strikeout and walk props for a specific game event
  */
@@ -217,11 +232,21 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
       const outcomes = market.outcomes || [];
 
       // Group by pitcher name
+      // NOTE: For pitcher markets (pitcher_strikeouts, pitcher_walks etc.) the Odds API
+      // uses name = 'Over'/'Under' and description = pitcher name.
+      // For batter markets it's the opposite (name = player, description = Over/Under).
+      // We detect which layout is in use by checking if the first outcome's name is Over/Under.
+      const isPitcherMarket = outcomes.length > 0 &&
+        (outcomes[0].name === 'Over' || outcomes[0].name === 'Under');
+
       const pitcherOutcomes = new Map<string, OddsOutcome[]>();
       for (const outcome of outcomes) {
-        const existing = pitcherOutcomes.get(outcome.name) || [];
+        // Use description as pitcher name for pitcher markets, name for batter markets
+        const groupKey = isPitcherMarket ? (outcome.description || '') : outcome.name;
+        if (!groupKey) continue;
+        const existing = pitcherOutcomes.get(groupKey) || [];
         existing.push(outcome);
-        pitcherOutcomes.set(outcome.name, existing);
+        pitcherOutcomes.set(groupKey, existing);
       }
 
       for (const [pitcherName, pOutcomes] of Array.from(pitcherOutcomes.entries())) {
@@ -238,8 +263,13 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
         }
         const pd = pitcherMap.get(pitcherName)!;
 
-        const overOutcome = pOutcomes.find(o => o.description === 'Over');
-        const underOutcome = pOutcomes.find(o => o.description === 'Under');
+        // For pitcher markets: name = 'Over'/'Under'; for batter markets: description = 'Over'/'Under'
+        const overOutcome = isPitcherMarket
+          ? pOutcomes.find(o => o.name === 'Over')
+          : pOutcomes.find(o => o.description === 'Over');
+        const underOutcome = isPitcherMarket
+          ? pOutcomes.find(o => o.name === 'Under')
+          : pOutcomes.find(o => o.description === 'Under');
         if (!overOutcome) continue;
 
         const overOdds = overOutcome.price;
@@ -578,6 +608,15 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
 // In-memory cache: 15-minute TTL to conserve API credits
 let oddsCache: { data: Map<string, HRRMarketData>; ts: number } | null = null;
 const ODDS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+/** Return status of the HRR odds in-memory cache */
+export function getHRROddsStatus(): { loaded: boolean; playerCount: number; lastUpdated: Date | null } {
+  if (!oddsCache) return { loaded: false, playerCount: 0, lastUpdated: null };
+  return {
+    loaded: oddsCache.data.size > 0,
+    playerCount: oddsCache.data.size,
+    lastUpdated: new Date(oddsCache.ts),
+  };
+}
 
 // Daily usage counter — resets at midnight ET
 let dailyCallCount = 0;

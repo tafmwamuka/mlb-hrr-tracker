@@ -22,7 +22,9 @@ import { getEnrichedMoneyPicks } from "../services/hrrPicksService";
 import { invokeLLM } from "../_core/llm";
 import { fetchTodaysGames } from "../services/mlbLineupService";
 import { computeTeamMatchupScore, getTeamDiscipline } from "../services/teamDisciplineService";
-import { fetchPitcherMarketData } from "../services/oddsApiService";
+import { fetchPitcherMarketData, getPitcherOddsStatus, getHRROddsStatus } from "../services/oddsApiService";
+import { isEnrichmentWarm } from "../services/enrichmentCache";
+import { getGameTotalsStatus } from "../services/gameTotalsService";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -164,7 +166,21 @@ async function buildPitcherAnalysis(params: {
   const expectedBBs = estimateExpectedBBs(opponentBBRate, bbTms);
 
   // Market data for this pitcher (may be null if Odds API has no lines)
-  const market = marketData.get(pitcherName) ?? null;
+  // Try direct match first, then fuzzy fallback for name variants
+  let market = marketData.get(pitcherName) ?? null;
+  if (!market) {
+    const norm = (n: string) => n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+    const normTarget = norm(pitcherName);
+    const lastName = normTarget.split(' ').slice(-1)[0];
+    const firstInitial = normTarget.split(' ')[0]?.[0] ?? '';
+    for (const [key, val] of Array.from(marketData.entries())) {
+      const normKey = norm(key);
+      if (normKey === normTarget) { market = val; break; }
+      const kLast = normKey.split(' ').slice(-1)[0];
+      const kFirst = normKey.split(' ')[0]?.[0] ?? '';
+      if (kLast === lastName && kFirst === firstInitial) { market = val; break; }
+    }
+  }
 
   // ── Build K lines analysis ─────────────────────────────────────────────────
   // Standard alt lines to always evaluate (even without market data)
@@ -735,9 +751,58 @@ ${slateContext}`;
         maxTokens: 3000,
       });
 
-      const rawContent = llmResult.choices[0]?.message?.content;
+            const rawContent = llmResult.choices[0]?.message?.content;
       const reply = typeof rawContent === "string" ? rawContent : "I couldn't generate a response. Please try again.";
-
       return { reply };
     }),
+
+  /**
+   * getDataStatus — returns connection status for each data source
+   * Used by the Smart Lab data status panel to show green/yellow/red indicators.
+   */
+  getDataStatus: publicProcedure.query(async () => {
+    const pitcherOdds = getPitcherOddsStatus();
+    const hrrOdds = getHRROddsStatus();
+    const gameTotals = getGameTotalsStatus();
+    const enrichmentWarm = isEnrichmentWarm();
+
+    // Determine the most recent update across all sources
+    const timestamps = [
+      pitcherOdds.lastUpdated,
+      hrrOdds.lastUpdated,
+      gameTotals.lastUpdated,
+    ].filter(Boolean) as Date[];
+    const lastUpdated = timestamps.length > 0
+      ? new Date(Math.max(...timestamps.map(d => d.getTime())))
+      : null;
+
+    return {
+      moneyPickOdds: {
+        connected: hrrOdds.loaded,
+        playerCount: hrrOdds.playerCount,
+        lastUpdated: hrrOdds.lastUpdated,
+      },
+      pitcherStrikeoutOdds: {
+        connected: pitcherOdds.loaded && pitcherOdds.pitcherCount > 0,
+        pitcherCount: pitcherOdds.pitcherCount,
+        lastUpdated: pitcherOdds.lastUpdated,
+      },
+      gameTotals: {
+        connected: gameTotals.loaded,
+        gameCount: gameTotals.gameCount,
+        lastUpdated: gameTotals.lastUpdated,
+      },
+      enrichmentCache: {
+        connected: enrichmentWarm,
+        lastUpdated: null as Date | null,
+      },
+      tmsDatabase: {
+        connected: true, // TMS is computed in-memory from MLB API data — always available
+      },
+      disciplineDatabase: {
+        connected: true, // Discipline grades computed from MLB API data — always available
+      },
+      lastUpdated,
+    };
+  }),
 });

@@ -19,7 +19,7 @@ import { AIChatBox, type Message } from "@/components/AIChatBox";
 import {
   Sparkles, Shield, Zap, TrendingUp, AlertTriangle, Info,
   RefreshCw, ChevronDown, Layers, Target, BarChart3, MessageSquare,
-  FlaskConical, Star, Activity
+  FlaskConical, Star, Activity, CheckCircle2, Clock, XCircle
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -388,6 +388,150 @@ function SectionHeader({ icon: Icon, title, badge, color = "oklch(0.72 0.18 165)
   );
 }
 
+// ─── Data Status Panel ───────────────────────────────────────────────────────
+
+type SourceStatus = 'ok' | 'partial' | 'offline' | 'loading';
+
+function SourceStatusDot({ status }: { status: SourceStatus }) {
+  if (status === 'ok') return <CheckCircle2 size={10} style={{ color: 'oklch(0.72 0.18 165)' }} />;
+  if (status === 'partial') return <AlertTriangle size={10} style={{ color: 'oklch(0.82 0.17 85)' }} />;
+  if (status === 'loading') return <Clock size={10} style={{ color: 'oklch(0.65 0.15 280)' }} />;
+  return <XCircle size={10} style={{ color: 'oklch(0.68 0.22 25)' }} />;
+}
+
+function SourceStatusLabel({ status }: { status: SourceStatus }) {
+  if (status === 'ok') return <span style={{ color: 'oklch(0.72 0.18 165)' }} className="text-[9px] font-bold">LIVE</span>;
+  if (status === 'partial') return <span style={{ color: 'oklch(0.82 0.17 85)' }} className="text-[9px] font-bold">PARTIAL</span>;
+  if (status === 'loading') return <span style={{ color: 'oklch(0.65 0.15 280)' }} className="text-[9px] font-bold">LOADING</span>;
+  return <span style={{ color: 'oklch(0.68 0.22 25)' }} className="text-[9px] font-bold">OFFLINE</span>;
+}
+
+function DataStatusPanel() {
+  const [expanded, setExpanded] = useState(false);
+  const { data: status, isLoading } = trpc.smartLab.getDataStatus.useQuery(undefined, {
+    refetchInterval: 2 * 60 * 1000, // refresh every 2 min
+  });
+
+  if (isLoading || !status) {
+    return (
+      <div className="rounded-xl px-3 py-2 border border-[oklch(1_0_0/8%)] bg-[oklch(1_0_0/3%)] flex items-center gap-2">
+        <Activity size={11} style={{ color: 'oklch(0.45 0.015 255)' }} />
+        <span className="text-[10px] text-[oklch(0.45_0.015_255)]">Checking data sources...</span>
+      </div>
+    );
+  }
+
+  const sources: Array<{ label: string; status: SourceStatus; detail?: string }> = [
+    {
+      label: 'Money Pick Odds',
+      status: status.moneyPickOdds.connected ? 'ok' : 'offline',
+      detail: status.moneyPickOdds.connected ? `${status.moneyPickOdds.playerCount} players` : 'No data',
+    },
+    {
+      label: 'Pitcher K/BB Odds',
+      status: status.pitcherStrikeoutOdds.connected ? 'ok' : 'offline',
+      detail: status.pitcherStrikeoutOdds.connected ? `${status.pitcherStrikeoutOdds.pitcherCount} pitchers` : 'No data',
+    },
+    {
+      label: 'Game Totals',
+      status: status.gameTotals.connected ? 'ok' : 'offline',
+      detail: status.gameTotals.connected ? `${status.gameTotals.gameCount} games` : 'No data',
+    },
+    {
+      label: 'Enrichment Cache',
+      status: status.enrichmentCache.connected ? 'ok' : 'loading',
+      detail: status.enrichmentCache.connected ? 'Warm' : 'Warming up',
+    },
+    {
+      label: 'TMS Database',
+      status: status.tmsDatabase.connected ? 'ok' : 'offline',
+      detail: status.tmsDatabase.connected ? 'Connected' : 'Offline',
+    },
+    {
+      label: 'Discipline DB',
+      status: status.disciplineDatabase.connected ? 'ok' : 'offline',
+      detail: status.disciplineDatabase.connected ? 'Connected' : 'Offline',
+    },
+  ];
+
+  const offlineCount = sources.filter(s => s.status === 'offline').length;
+  const partialCount = sources.filter(s => s.status === 'partial' || s.status === 'loading').length;
+  const allOk = offlineCount === 0 && partialCount === 0;
+
+  const lastUpdatedStr = (() => {
+    if (!status.lastUpdated) return null;
+    try {
+      const d = new Date(status.lastUpdated);
+      const diffMin = Math.round((Date.now() - d.getTime()) / 60000);
+      if (diffMin < 1) return 'Just now';
+      if (diffMin < 60) return `${diffMin}m ago`;
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    } catch { return null; }
+  })();
+
+  const overallColor = allOk ? 'oklch(0.72 0.18 165)' : offlineCount > 0 ? 'oklch(0.68 0.22 25)' : 'oklch(0.82 0.17 85)';
+  const overallBg = allOk ? 'oklch(0.14 0.03 165 / 0.4)' : offlineCount > 0 ? 'oklch(0.14 0.04 25 / 0.35)' : 'oklch(0.14 0.04 60 / 0.35)';
+  const overallBorder = allOk ? 'oklch(0.72 0.18 165 / 25%)' : offlineCount > 0 ? 'oklch(0.68 0.22 25 / 30%)' : 'oklch(0.82 0.17 85 / 30%)';
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: overallBg, border: `1px solid ${overallBorder}` }}>
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 gap-2"
+      >
+        <div className="flex items-center gap-2">
+          <Activity size={11} style={{ color: overallColor }} />
+          <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: overallColor }}>
+            {allOk ? 'All Data Sources Live' : offlineCount > 0 ? `${offlineCount} Source${offlineCount > 1 ? 's' : ''} Offline` : `${partialCount} Source${partialCount > 1 ? 's' : ''} Loading`}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            {sources.map(s => <SourceStatusDot key={s.label} status={s.status} />)}
+          </div>
+          {lastUpdatedStr && (
+            <div className="flex items-center gap-1">
+              <Clock size={9} style={{ color: 'oklch(0.40 0.015 255)' }} />
+              <span className="text-[9px] text-[oklch(0.40_0.015_255)]">{lastUpdatedStr}</span>
+            </div>
+          )}
+          <ChevronDown
+            size={11}
+            className="transition-transform"
+            style={{ color: 'oklch(0.45 0.015 255)', transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          />
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-3 grid grid-cols-2 gap-2">
+          {sources.map(s => (
+            <div
+              key={s.label}
+              className="flex items-center justify-between px-2 py-1.5 rounded-lg"
+              style={{ background: 'oklch(1 0 0 / 4%)' }}
+            >
+              <div className="min-w-0">
+                <div className="text-[10px] text-[oklch(0.60_0.015_255)] font-medium leading-tight">{s.label}</div>
+                {s.detail && <div className="text-[9px] text-[oklch(0.40_0.015_255)] leading-tight">{s.detail}</div>}
+              </div>
+              <div className="flex items-center gap-1 shrink-0 ml-1">
+                <SourceStatusDot status={s.status} />
+                <SourceStatusLabel status={s.status} />
+              </div>
+            </div>
+          ))}
+          {offlineCount > 0 && (
+            <div className="col-span-2 mt-1 text-[9px] text-[oklch(0.50_0.015_255)] leading-relaxed">
+              {offlineCount} data source{offlineCount > 1 ? 's are' : ' is'} offline. This may be due to the Odds API time window (active 9AM–11:30PM ET) or a connection issue. Use the Admin panel to bust the cache and retry.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function DiamondSmartLab() {
@@ -496,6 +640,8 @@ export function DiamondSmartLab() {
           </button>
         ))}
       </div>
+      {/* ── Data Status Panel ──────────────────────────────────────────────────── */}
+      <DataStatusPanel />
 
       {/* ── Analysis Section ─────────────────────────────────────────────────── */}
       {activeSection === "analysis" && (

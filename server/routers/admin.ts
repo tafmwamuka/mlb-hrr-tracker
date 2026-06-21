@@ -2,6 +2,7 @@ import { publicProcedure, router } from "../_core/trpc";
 import { runDailyPropsJob } from "../jobs/daily-props";
 import { invalidateEnrichmentCache } from "../services/enrichmentCache";
 import { clearGameTotalsCache } from "../services/gameTotalsService";
+import { clearPitcherOddsCache } from "../services/oddsApiService";
 
 /**
  * Admin router — handles admin operations like triggering jobs and cache management
@@ -19,8 +20,9 @@ export const adminRouter = router({
   bustCache: publicProcedure.mutation(async () => {
     invalidateEnrichmentCache();
     clearGameTotalsCache();
-    console.log('[Admin] Cache busted — enrichment + game totals cleared');
-    return { success: true, message: 'Cache cleared. Next request will re-fetch with the current API key.' };
+    clearPitcherOddsCache();
+    console.log('[Admin] Cache busted — enrichment + game totals + pitcher odds cleared');
+    return { success: true, message: 'All caches cleared. Next request will re-fetch with the current API key.' };
   }),
 
   triggerDailyPropsJob: publicProcedure.mutation(async () => {

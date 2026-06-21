@@ -53,6 +53,15 @@ export function clearGameTotalsCache(): void {
   cachedTotals = null;
   cacheTimestamp = 0;
 }
+/** Return status of the game totals in-memory cache */
+export function getGameTotalsStatus(): { loaded: boolean; gameCount: number; lastUpdated: Date | null } {
+  if (!cachedTotals) return { loaded: false, gameCount: 0, lastUpdated: null };
+  return {
+    loaded: cachedTotals.size > 0,
+    gameCount: cachedTotals.size,
+    lastUpdated: cacheTimestamp > 0 ? new Date(cacheTimestamp) : null,
+  };
+}
 
 // ─── Odds API ─────────────────────────────────────────────────────────────────
 

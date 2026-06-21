@@ -1536,3 +1536,12 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [ ] Build PitcherEdgePicks.tsx frontend section — hero board at top of Pitchers tab with full explanation cards
 - [ ] Feed Pitcher Edge picks into Smart Labs context (smartLab.ts)
 - [ ] TypeScript check passes
+
+## Phase CC: Smart Lab Data Status Panel
+- [x] Add getPitcherOddsStatus() export to oddsApiService.ts
+- [x] Add getHRROddsStatus() export to oddsApiService.ts
+- [x] Add getGameTotalsStatus() export to gameTotalsService.ts
+- [x] Add getDataStatus tRPC procedure to smartLab.ts router
+- [x] Build DataStatusPanel component in DiamondSmartLab.tsx (collapsible, green/yellow/red indicators)
+- [x] Insert DataStatusPanel between section tabs and analysis section
+- [x] Write and pass 4 vitest tests for getDataStatus procedure
