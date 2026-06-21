@@ -39,8 +39,8 @@ function getOddsApiKey(override?: string): string {
 }
 
 export interface OddsOutcome {
-  name: string;        // Player name
-  description: string; // "Over" or "Under"
+  name: string;        // "Over" or "Under" — The Odds API uses this for direction on ALL markets
+  description: string; // Player/pitcher name — The Odds API uses this for the entity on ALL markets
   price: number;       // American odds (e.g., -110, +120)
   point: number;       // Line value (e.g., 2.5)
 }
@@ -489,12 +489,16 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
     for (const market of bookmaker.markets) {
       const outcomes = market.outcomes || [];
       
-      // Group outcomes by player name
+      // The Odds API uses name=Over/Under and description=player name for ALL markets
+      // (both batter and pitcher markets use this same layout).
+      // Group outcomes by description (player name), then find Over/Under by name.
       const playerOutcomes = new Map<string, OddsOutcome[]>();
       for (const outcome of outcomes) {
-        const existing = playerOutcomes.get(outcome.name) || [];
+        const playerKey = outcome.description || '';
+        if (!playerKey || playerKey === 'Over' || playerKey === 'Under') continue; // skip malformed
+        const existing = playerOutcomes.get(playerKey) || [];
         existing.push(outcome);
-        playerOutcomes.set(outcome.name, existing);
+        playerOutcomes.set(playerKey, existing);
       }
 
       for (const [playerName, pOutcomes] of Array.from(playerOutcomes.entries())) {
@@ -513,10 +517,11 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
         }
         const playerData = playerMap.get(playerName)!;
 
+        // All markets: name=Over/Under, description=player
         // Parse based on market type
         if (market.key === "batter_hits_runs_rbis") {
-          const over = pOutcomes.find((o: OddsOutcome) => o.description === "Over");
-          const under = pOutcomes.find((o: OddsOutcome) => o.description === "Under");
+          const over = pOutcomes.find((o: OddsOutcome) => o.name === "Over");
+          const under = pOutcomes.find((o: OddsOutcome) => o.name === "Under");
           if (over) {
             // Set featured line from first (preferred) book only
             if (playerData.featuredLine === null) {
@@ -537,8 +542,8 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
 
         if (market.key === "batter_hits_runs_rbis_alternate") {
           // Alternate lines — multiple lines per player
-          const overs = pOutcomes.filter((o: OddsOutcome) => o.description === "Over");
-          const unders = pOutcomes.filter((o: OddsOutcome) => o.description === "Under");
+          const overs = pOutcomes.filter((o: OddsOutcome) => o.name === "Over");
+          const unders = pOutcomes.filter((o: OddsOutcome) => o.name === "Under");
           
           for (const over of overs) {
             const matchingUnder = unders.find((u: OddsOutcome) => u.point === over.point);
@@ -565,17 +570,17 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
         }
 
         if (market.key === "batter_hits" && playerData.hitsLine === null) {
-          const over = pOutcomes.find((o: OddsOutcome) => o.description === "Over");
+          const over = pOutcomes.find((o: OddsOutcome) => o.name === "Over");
           if (over) playerData.hitsLine = over.point;
         }
 
         if (market.key === "batter_runs_scored" && playerData.runsLine === null) {
-          const over = pOutcomes.find((o: OddsOutcome) => o.description === "Over");
+          const over = pOutcomes.find((o: OddsOutcome) => o.name === "Over");
           if (over) playerData.runsLine = over.point;
         }
 
         if (market.key === "batter_rbis" && playerData.rbiLine === null) {
-          const over = pOutcomes.find((o: OddsOutcome) => o.description === "Over");
+          const over = pOutcomes.find((o: OddsOutcome) => o.name === "Over");
           if (over) playerData.rbiLine = over.point;
         }
       }

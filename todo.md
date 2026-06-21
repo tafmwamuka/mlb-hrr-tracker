@@ -1558,3 +1558,12 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Redesign diagnostics panel: 2x2 grid with Model Prob, Required Threshold, Odds Status, EV Status
 - [x] Update `getDataStatus` procedure to expose `mainKCount`, `altKLineCount`, `walkLineCount`
 - [x] Update Smart Lab DataStatusPanel with 3 granular pitcher market rows (Main K, Alt K, Walk Lines)
+
+## Phase CE: Odds API Pipeline Diagnostic & Parser Fix
+- [x] Run full end-to-end diagnostic script against live Odds API
+- [x] Identify root cause: parseHRRData used outcome.name (always "Over"/"Under") as player key instead of outcome.description (actual player name)
+- [x] Fix parseHRRData to group by outcome.description (player name) and find Over/Under by outcome.name
+- [x] Fix OddsOutcome interface comment to document correct API layout
+- [x] Confirm pitcher parser already correct (uses isPitcherMarket detection correctly)
+- [x] Validate fix: 36 real player names returned (vs 2 "Over"/"Under" entries before fix)
+- [x] TypeScript clean, all 4 dataStatus tests pass
