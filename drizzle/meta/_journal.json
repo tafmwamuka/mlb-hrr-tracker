@@ -85,6 +85,13 @@
       "when": 1781965620038,
       "tag": "0011_simple_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1782058108569,
+      "tag": "0012_wild_thunderbolt_ross",
+      "breakpoints": true
     }
   ]
 }

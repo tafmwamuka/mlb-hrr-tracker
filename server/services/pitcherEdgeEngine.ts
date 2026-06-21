@@ -48,24 +48,25 @@ function getLineThresholds(propType: 'strikeouts' | 'walks', line: number): {
   minQualify: number;
 } {
   if (propType === 'walks') {
-    return { elite: 0.75, official: 0.70, lean: 0.65, minQualify: 0.55 };
+    // Walk Overs: Elite 75%+, Official 68%+, Lean 63-67%
+    return { elite: 0.75, official: 0.68, lean: 0.63, minQualify: 0.50 };
   }
 
-  // Strikeouts — scale thresholds by line
+  // Strikeouts — scale thresholds by line (new spec values)
   if (line <= 3.5) {
-    // 3+ Ks
-    return { elite: 0.80, official: 0.75, lean: 0.70, minQualify: 0.60 };
+    // 3+ Ks: Elite 78%+, Official 72%+, Lean 67-71%
+    return { elite: 0.78, official: 0.72, lean: 0.67, minQualify: 0.57 };
   } else if (line <= 4.5) {
-    // 4+ Ks
-    return { elite: 0.75, official: 0.70, lean: 0.65, minQualify: 0.55 };
+    // 4+ Ks: Elite 75%+, Official 68%+, Lean 63-67%
+    return { elite: 0.75, official: 0.68, lean: 0.63, minQualify: 0.53 };
   } else if (line <= 5.5) {
-    // 5+ Ks
+    // 5+ Ks: Elite 70%+, Official 65%+, Lean 60-64%
     return { elite: 0.70, official: 0.65, lean: 0.60, minQualify: 0.50 };
   } else if (line <= 6.5) {
-    // 6+ Ks
+    // 6+ Ks: Elite 65%+, Official 60%+, Lean 55-59%
     return { elite: 0.65, official: 0.60, lean: 0.55, minQualify: 0.45 };
   } else {
-    // 7+ Ks
+    // 7+ Ks: Elite 60%+, Official 55%+, Lean 50-54%
     return { elite: 0.60, official: 0.55, lean: 0.50, minQualify: 0.40 };
   }
 }
@@ -77,6 +78,33 @@ const FACTOR_REQUIREMENTS = {
   OFFICIAL: 4,
   LEAN: 3,
 };
+
+// ── Rejection reason types ────────────────────────────────────────────────────
+
+export type RejectionReason =
+  | 'MISSING_ODDS'
+  | 'NEGATIVE_EV'
+  | 'BELOW_THRESHOLD'
+  | 'MAJOR_RED_FLAG'
+  | 'INSUFFICIENT_FACTORS'
+  | 'BELOW_MIN_QUALIFY'
+  | 'LOW_TMS';
+
+export interface RejectedPlay {
+  pitcherName: string;
+  pitcherTeam: string;
+  opponentTeam: string;
+  propType: 'strikeouts' | 'walks';
+  line: number;
+  modelProbability: number;    // 0-1
+  requiredThreshold: number;   // 0-1 (official threshold for this line)
+  rejectionReasons: RejectionReason[];
+  rejectionSummary: string;    // human-readable e.g. "Below Official Threshold"
+  supportingFactors: number;
+  requiredFactors: number;
+  hasMarketData: boolean;
+  edge: number | null;
+}
 
 // ── Qualification Thresholds (global) ────────────────────────────────────────
 
@@ -285,6 +313,8 @@ export interface PitcherEdgeEngineResult {
   hasOfficialPlays: boolean;
   /** Whether the board has any Lean picks */
   hasLeanPlays: boolean;
+  /** Rejected plays with diagnostic info — for transparency panel */
+  rejectedPlays: RejectedPlay[];
 }
 
 export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
@@ -294,6 +324,7 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
   ]);
 
   const allPicks: PitcherEdgePick[] = [];
+  const rejectedPlays: RejectedPlay[] = [];
   const pitcherQualifyingProps = new Map<string, { k: boolean; bb: boolean }>();
   const gameQualifyingPitchers = new Map<string, Set<string>>();
 
@@ -347,10 +378,40 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
       // ── Evaluate K lines ───────────────────────────────────────────────────
       const kLines = marketData?.altKLines ?? [];
 
-      for (const kLine of kLines) {
+      // If no market data, generate model-only lines for 4.5 and 5.5 K lines
+      const kLinesToEvaluate = kLines.length > 0 ? kLines : [
+        { line: 4.5, overOdds: 0, trueOverProb: 0 },
+        { line: 5.5, overOdds: 0, trueOverProb: 0 },
+      ];
+
+      for (const kLine of kLinesToEvaluate) {
         const expectedKs = estimateExpectedKs(opponentKRate, kTms, 0, pitchCountScore);
         const modelProb = poissonOverProb(expectedKs, kLine.line);
         const thresholds = getLineThresholds('strikeouts', kLine.line);
+        const hasMarketData = kLine.overOdds !== 0;
+
+        // Track rejections for diagnostics
+        if (modelProb < thresholds.minQualify || kTms < THRESHOLDS.MIN_TMS) {
+          const reasons: RejectionReason[] = [];
+          if (modelProb < thresholds.minQualify) reasons.push('BELOW_MIN_QUALIFY');
+          if (kTms < THRESHOLDS.MIN_TMS) reasons.push('LOW_TMS');
+          rejectedPlays.push({
+            pitcherName,
+            pitcherTeam: slot.pitcherTeam,
+            opponentTeam: slot.opponentTeam,
+            propType: 'strikeouts',
+            line: kLine.line,
+            modelProbability: modelProb,
+            requiredThreshold: thresholds.official,
+            rejectionReasons: reasons,
+            rejectionSummary: modelProb < thresholds.minQualify ? 'Below Minimum Threshold' : 'Low TMS Score',
+            supportingFactors: 0,
+            requiredFactors: FACTOR_REQUIREMENTS.OFFICIAL,
+            hasMarketData,
+            edge: null,
+          });
+          continue;
+        }
 
         // Skip anything below the minimum qualify threshold
         if (modelProb < thresholds.minQualify) continue;
@@ -411,14 +472,37 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           edge,
         });
 
-        const tier = classifyTier({
+        const tierResult = classifyTierWithRejection({
           modelProb,
           edge,
           supportingFactors,
           thresholds,
           bookOdds: kLine.overOdds,
           hasDisciplineEdge,
+          hasMarketData,
         });
+
+        // Track rejections for diagnostics
+        if (tierResult.rejected) {
+          rejectedPlays.push({
+            pitcherName,
+            pitcherTeam: slot.pitcherTeam,
+            opponentTeam: slot.opponentTeam,
+            propType: 'strikeouts',
+            line: kLine.line,
+            modelProbability: modelProb,
+            requiredThreshold: thresholds.official,
+            rejectionReasons: tierResult.rejectionReasons,
+            rejectionSummary: tierResult.rejectionSummary,
+            supportingFactors,
+            requiredFactors: FACTOR_REQUIREMENTS.OFFICIAL,
+            hasMarketData,
+            edge: edge || null,
+          });
+          continue;
+        }
+
+        const tier = tierResult.tier!;
 
         const pick: PitcherEdgePick = {
           pitcherName,
@@ -467,13 +551,53 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
       // ── Evaluate BB lines ──────────────────────────────────────────────────
       const bbLines = marketData?.walkLines ?? [];
 
-      for (const bbLine of bbLines) {
+      // If no market data, generate model-only line for 1.5 BBs
+      const bbLinesToEvaluate = bbLines.length > 0 ? bbLines : [
+        { line: 1.5, overOdds: 0, trueOverProb: 0 },
+      ];
+
+      for (const bbLine of bbLinesToEvaluate) {
         const expectedBBs = estimateExpectedBBs(opponentBBRate, bbTmsScore);
         const modelProb = poissonOverProb(expectedBBs, bbLine.line);
         const thresholds = getLineThresholds('walks', bbLine.line);
+        const hasMarketData = bbLine.overOdds !== 0;
 
-        if (modelProb < thresholds.minQualify) continue;
-        if (bbTmsScore < THRESHOLDS.MIN_TMS) continue;
+        if (modelProb < thresholds.minQualify) {
+          rejectedPlays.push({
+            pitcherName,
+            pitcherTeam: slot.pitcherTeam,
+            opponentTeam: slot.opponentTeam,
+            propType: 'walks',
+            line: bbLine.line,
+            modelProbability: modelProb,
+            requiredThreshold: thresholds.official,
+            rejectionReasons: ['BELOW_MIN_QUALIFY'],
+            rejectionSummary: 'Below Minimum Threshold',
+            supportingFactors: 0,
+            requiredFactors: FACTOR_REQUIREMENTS.OFFICIAL,
+            hasMarketData,
+            edge: null,
+          });
+          continue;
+        }
+        if (bbTmsScore < THRESHOLDS.MIN_TMS) {
+          rejectedPlays.push({
+            pitcherName,
+            pitcherTeam: slot.pitcherTeam,
+            opponentTeam: slot.opponentTeam,
+            propType: 'walks',
+            line: bbLine.line,
+            modelProbability: modelProb,
+            requiredThreshold: thresholds.official,
+            rejectionReasons: ['LOW_TMS'],
+            rejectionSummary: 'Low TMS Score',
+            supportingFactors: 0,
+            requiredFactors: FACTOR_REQUIREMENTS.OFFICIAL,
+            hasMarketData,
+            edge: null,
+          });
+          continue;
+        }
 
         const edge = bbLine.trueOverProb > 0 ? modelProb - bbLine.trueOverProb : 0;
 
@@ -528,14 +652,37 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           edge,
         });
 
-        const tier = classifyTier({
+        const bbHasMarketData = bbLine.overOdds !== 0;
+        const bbTierResult = classifyTierWithRejection({
           modelProb,
           edge,
           supportingFactors,
           thresholds,
           bookOdds: bbLine.overOdds,
           hasDisciplineEdge,
+          hasMarketData: bbHasMarketData,
         });
+
+        if (bbTierResult.rejected) {
+          rejectedPlays.push({
+            pitcherName,
+            pitcherTeam: slot.pitcherTeam,
+            opponentTeam: slot.opponentTeam,
+            propType: 'walks',
+            line: bbLine.line,
+            modelProbability: modelProb,
+            requiredThreshold: thresholds.official,
+            rejectionReasons: bbTierResult.rejectionReasons,
+            rejectionSummary: bbTierResult.rejectionSummary,
+            supportingFactors,
+            requiredFactors: FACTOR_REQUIREMENTS.OFFICIAL,
+            hasMarketData: bbHasMarketData,
+            edge: edge || null,
+          });
+          continue;
+        }
+
+        const bbTier = bbTierResult.tier!;
 
         const pick: PitcherEdgePick = {
           pitcherName,
@@ -552,7 +699,7 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           edge,
           pitcherEdgeScore,
           tms: bbTmsScore,
-          tier,
+          tier: bbTier,
           hasDisciplineEdge,
           isDualEdge: false,
           qualifyingReasons,
@@ -562,14 +709,14 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           opponentBBRate,
           historicalHitRate,
           sampleSize,
-          isOfficialPlay: isOfficialTier(tier),
-          isLeanPlay: isLeanTier(tier),
-          isProjectionOnly: isProjectionTier(tier),
+          isOfficialPlay: isOfficialTier(bbTier),
+          isLeanPlay: isLeanTier(bbTier),
+          isProjectionOnly: isProjectionTier(bbTier),
         };
 
         allPicks.push(pick);
 
-        if (!isProjectionTier(tier)) {
+        if (!isProjectionTier(bbTier)) {
           const existing = pitcherQualifyingProps.get(pitcherName) ?? { k: false, bb: false };
           existing.bb = true;
           pitcherQualifyingProps.set(pitcherName, existing);
@@ -642,11 +789,100 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
   const hasOfficialPlays = allPicks.some(p => p.isOfficialPlay);
   const hasLeanPlays = allPicks.some(p => p.isLeanPlay);
 
-  return { picks: allPicks, dualEdgePitchers, stackAlertGames, hasOfficialPlays, hasLeanPlays };
+  return { picks: allPicks, dualEdgePitchers, stackAlertGames, hasOfficialPlays, hasLeanPlays, rejectedPlays };
 }
 
-// ── Tier classification ───────────────────────────────────────────────────────
+// ── Tier classification with rejection tracking ───────────────────────────────
 
+interface TierResult {
+  tier?: PitcherPropTier;
+  rejected: boolean;
+  rejectionReasons: RejectionReason[];
+  rejectionSummary: string;
+}
+
+function classifyTierWithRejection(params: {
+  modelProb: number;
+  edge: number;
+  supportingFactors: number;
+  thresholds: { elite: number; official: number; lean: number; minQualify: number };
+  bookOdds: number;
+  hasDisciplineEdge: boolean;
+  hasMarketData: boolean;
+}): TierResult {
+  const { modelProb, edge, supportingFactors, thresholds, hasMarketData } = params;
+
+  // No major red flags check — edge must not be deeply negative
+  const noMajorRedFlags = edge >= -0.05 || !hasMarketData;
+
+  // 🏆 ELITE: line-adjusted prob, positive EV (or no market data), 5+ factors, no red flags
+  if (
+    modelProb >= thresholds.elite &&
+    (edge >= 0 || !hasMarketData) &&
+    supportingFactors >= FACTOR_REQUIREMENTS.ELITE &&
+    noMajorRedFlags
+  ) {
+    return { tier: 'ELITE', rejected: false, rejectionReasons: [], rejectionSummary: '' };
+  }
+
+  // 🔥 OFFICIAL: line-adjusted prob, positive EV (or no market data), 4+ factors, no red flags
+  if (
+    modelProb >= thresholds.official &&
+    (edge >= 0 || !hasMarketData) &&
+    supportingFactors >= FACTOR_REQUIREMENTS.OFFICIAL &&
+    noMajorRedFlags
+  ) {
+    return { tier: 'OFFICIAL', rejected: false, rejectionReasons: [], rejectionSummary: '' };
+  }
+
+  // 🛡 LEAN: line-adjusted prob, 3+ factors, no red flags
+  if (
+    modelProb >= thresholds.lean &&
+    supportingFactors >= FACTOR_REQUIREMENTS.LEAN &&
+    noMajorRedFlags
+  ) {
+    return { tier: 'LEAN', rejected: false, rejectionReasons: [], rejectionSummary: '' };
+  }
+
+  // 🧪 PROJECTION: passed minQualify but doesn't meet Lean
+  // These still show on the board as projection-only
+  if (modelProb >= thresholds.minQualify) {
+    return { tier: 'PROJECTION', rejected: false, rejectionReasons: [], rejectionSummary: '' };
+  }
+
+  // Rejected — build detailed rejection reasons
+  const reasons: RejectionReason[] = [];
+  const summaryParts: string[] = [];
+
+  if (!hasMarketData) {
+    reasons.push('MISSING_ODDS');
+    summaryParts.push('Missing Odds');
+  }
+  if (hasMarketData && edge < 0) {
+    reasons.push('NEGATIVE_EV');
+    summaryParts.push('Negative EV');
+  }
+  if (modelProb < thresholds.official) {
+    reasons.push('BELOW_THRESHOLD');
+    summaryParts.push('Below Official Threshold');
+  }
+  if (!noMajorRedFlags) {
+    reasons.push('MAJOR_RED_FLAG');
+    summaryParts.push('Major Red Flag');
+  }
+  if (supportingFactors < FACTOR_REQUIREMENTS.OFFICIAL) {
+    reasons.push('INSUFFICIENT_FACTORS');
+    summaryParts.push(`Insufficient Factors (${supportingFactors}/${FACTOR_REQUIREMENTS.OFFICIAL})`);
+  }
+
+  return {
+    rejected: true,
+    rejectionReasons: reasons.length > 0 ? reasons : ['BELOW_THRESHOLD'],
+    rejectionSummary: summaryParts.length > 0 ? summaryParts.join(', ') : 'Below Threshold',
+  };
+}
+
+/** Legacy wrapper — kept for compatibility */
 function classifyTier(params: {
   modelProb: number;
   edge: number;
@@ -655,42 +891,8 @@ function classifyTier(params: {
   bookOdds: number;
   hasDisciplineEdge: boolean;
 }): PitcherPropTier {
-  const { modelProb, edge, supportingFactors, thresholds, hasDisciplineEdge } = params;
-
-  // No major red flags check — edge must not be deeply negative
-  const noMajorRedFlags = edge >= -0.05;
-
-  // 🏆 ELITE: 75%+ prob (line-adjusted), positive EV, 5+ factors, no red flags
-  if (
-    modelProb >= thresholds.elite &&
-    edge >= 0 &&
-    supportingFactors >= FACTOR_REQUIREMENTS.ELITE &&
-    noMajorRedFlags
-  ) {
-    return 'ELITE';
-  }
-
-  // 🔥 OFFICIAL: 70%+ prob (line-adjusted), positive EV, 4+ factors, no red flags
-  if (
-    modelProb >= thresholds.official &&
-    edge >= 0 &&
-    supportingFactors >= FACTOR_REQUIREMENTS.OFFICIAL &&
-    noMajorRedFlags
-  ) {
-    return 'OFFICIAL';
-  }
-
-  // 🛡 LEAN: 65%+ prob (line-adjusted), 3+ factors, no red flags
-  if (
-    modelProb >= thresholds.lean &&
-    supportingFactors >= FACTOR_REQUIREMENTS.LEAN &&
-    noMajorRedFlags
-  ) {
-    return 'LEAN';
-  }
-
-  // 🧪 PROJECTION: anything that passed minQualify but doesn't meet Lean
-  return 'PROJECTION';
+  const result = classifyTierWithRejection({ ...params, hasMarketData: params.bookOdds !== 0 });
+  return result.tier ?? 'PROJECTION';
 }
 
 // ── Reason builders ───────────────────────────────────────────────────────────

@@ -134,6 +134,11 @@ interface MoneyPick {
   }>;
   bestLineVerdict?: string | null;
   bestLineReason?: string | null;
+  /** Best available over odds across all sportsbooks */
+  bestAvailableOdds?: number | null;
+  bestAvailableBook?: string | null;
+  /** Opening line odds (first seen today) */
+  openingOdds?: number | null;
   // Phase BY: Money Pick Alternatives (display-only)
   pickAlternatives?: Array<{
     tier: 'SAFER' | 'BETTER_VALUE' | 'CEILING' | 'NONE';
@@ -393,6 +398,23 @@ function MoneyPickCard({
                     {pick.edge > 0 ? '+' : ''}{pick.edge}%
                   </span>
                 </div>
+                {/* Best available odds across all books */}
+                {pick.bestAvailableOdds != null && pick.bestAvailableOdds !== (pick.bookOdds ? parseInt(String(pick.bookOdds)) : null) && (
+                  <div className="flex items-center gap-1 text-[8px] mt-0.5">
+                    <span className="text-[oklch(0.40_0.015_255)]">Best:</span>
+                    <span className="font-bold" style={{ color: 'oklch(0.82 0.17 85)' }}>
+                      {pick.bestAvailableOdds > 0 ? `+${pick.bestAvailableOdds}` : pick.bestAvailableOdds}
+                    </span>
+                    <span className="text-[oklch(0.40_0.015_255)] uppercase">
+                      @{(pick.bestAvailableBook ?? '').replace('_', '').slice(0, 4).toUpperCase()}
+                    </span>
+                    {pick.openingOdds != null && pick.openingOdds !== pick.bestAvailableOdds && (
+                      <span className="text-[oklch(0.35_0.015_255)] ml-1">
+                        Open: {pick.openingOdds > 0 ? `+${pick.openingOdds}` : pick.openingOdds}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               /* MODEL ESTIMATE: no live sportsbook data */
@@ -1426,6 +1448,10 @@ export function MoneyPicksTab() {
           lineEvaluations: (pick as any).lineEvaluations ?? null,
           bestLineVerdict: (pick as any).bestLineVerdict ?? null,
           bestLineReason: (pick as any).bestLineReason ?? null,
+          // Multi-book comparison
+          bestAvailableOdds: (pick as any).bestAvailableOdds ?? null,
+          bestAvailableBook: (pick as any).bestAvailableBook ?? null,
+          openingOdds: (pick as any).openingOdds ?? null,
         } as MoneyPick;
       })
       .filter((p: MoneyPick | null): p is MoneyPick => p !== null)

@@ -261,10 +261,26 @@ export const disciplineRouter = router({
         hasOfficialPlays: result.hasOfficialPlays,
         hasLeanPlays: result.hasLeanPlays,
         generatedAt: new Date().toISOString(),
+        /** Rejected plays with diagnostic data — for transparency panel */
+        rejectedPlays: result.rejectedPlays.map(r => ({
+          pitcherName: r.pitcherName,
+          pitcherTeam: r.pitcherTeam,
+          opponentTeam: r.opponentTeam,
+          propType: r.propType,
+          line: r.line,
+          modelProbability: Math.round(r.modelProbability * 1000) / 10,  // as %
+          requiredThreshold: Math.round(r.requiredThreshold * 1000) / 10,  // as %
+          rejectionReasons: r.rejectionReasons,
+          rejectionSummary: r.rejectionSummary,
+          supportingFactors: r.supportingFactors,
+          requiredFactors: r.requiredFactors,
+          hasMarketData: r.hasMarketData,
+          edge: r.edge !== null ? Math.round(r.edge * 1000) / 10 : null,
+        })),
       };
     } catch (e) {
       console.warn("[Discipline] getPitcherEdgePicks failed:", e);
-      return { picks: [], dualEdgePitchers: [], stackAlertGames: [], hasOfficialPlays: false, hasLeanPlays: false, generatedAt: new Date().toISOString() };
+      return { picks: [], dualEdgePitchers: [], stackAlertGames: [], hasOfficialPlays: false, hasLeanPlays: false, generatedAt: new Date().toISOString(), rejectedPlays: [] };
     }
   }),
 });

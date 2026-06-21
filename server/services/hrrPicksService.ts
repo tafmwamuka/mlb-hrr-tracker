@@ -248,6 +248,11 @@ export interface EnrichedMoneyPick {
   bookOdds: string | null;
   bookOddsProvider: string | null;
   bookImpliedProb: number | null;
+  /** Best available over odds across all sportsbooks */
+  bestAvailableOdds?: number | null;
+  bestAvailableBook?: string | null;
+  /** Opening line odds (first seen today) */
+  openingOdds?: number | null;
   overProbability: number;
   edge: number;
   pickQuality: string;
@@ -715,6 +720,17 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
           } else if (featuredOverOdds !== null) {
             pick.bookOdds = featuredOverOdds > 0 ? `+${featuredOverOdds}` : `${featuredOverOdds}`;
             pick.bookOddsProvider = oddsData.bookmaker;
+          }
+          // Pass through best available odds across all books
+          if (oddsData.bestOverOdds) {
+            pick.bestAvailableOdds = oddsData.bestOverOdds.odds;
+            pick.bestAvailableBook = oddsData.bestOverOdds.bookmaker;
+          }
+          // Opening odds: use the featured odds from the first book in allFeaturedBooks
+          // (the first entry is the earliest-seen book, proxy for opening line)
+          if (oddsData.allFeaturedBooks && oddsData.allFeaturedBooks.length > 0) {
+            const firstBook = oddsData.allFeaturedBooks[0];
+            if (!pick.openingOdds) pick.openingOdds = firstBook.overOdds;
           }
           // Phase BK fix: merge sportsbook alternateLines onto pick so selectBestLine
           // can evaluate ALL available lines with real book odds (not just the featured line)

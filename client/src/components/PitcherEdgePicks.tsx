@@ -35,6 +35,22 @@ type PitcherPropTier =
   | "DUAL_EDGE"
   | "STACK_ALERT";
 
+interface RejectedPlay {
+  pitcherName: string;
+  pitcherTeam: string;
+  opponentTeam: string;
+  propType: "strikeouts" | "walks";
+  line: number;
+  modelProbability: number;   // as %
+  requiredThreshold: number;  // as %
+  rejectionReasons: string[];
+  rejectionSummary: string;
+  supportingFactors: string[];
+  requiredFactors: number;
+  hasMarketData: boolean;
+  edge: number | null;
+}
+
 interface PitcherEdgePick {
   pitcherName: string;
   pitcherTeam: string;
@@ -416,12 +432,14 @@ function CollapsibleSection({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function PitcherEdgePicks() {
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const { data, isLoading, refetch, isFetching } = trpc.discipline.getPitcherEdgePicks.useQuery(
     undefined,
     { staleTime: 10 * 60 * 1000 }
   );
 
   const picks = data?.picks ?? [];
+  const rejectedPlays: RejectedPlay[] = (data as any)?.rejectedPlays ?? [];
   const dualEdgePitchers = data?.dualEdgePitchers ?? [];
   const stackAlertGames = data?.stackAlertGames ?? [];
   const hasOfficialPlays = data?.hasOfficialPlays ?? false;
@@ -548,6 +566,104 @@ export function PitcherEdgePicks() {
           defaultOpen={false}
           idPrefix="proj"
         />
+      )}
+
+      {/* ── Rejected Play Diagnostics Panel ──────────────────────────────── */}
+      {rejectedPlays.length > 0 && (
+        <div className="mt-4">
+          <button
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[oklch(0.14_0.02_255)] border border-[oklch(1_0_0/6%)] text-left"
+            onClick={() => setShowDiagnostics(v => !v)}
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={12} className="text-[oklch(0.65_0.18_60)]" />
+              <span className="text-[oklch(0.55_0.015_255)] text-xs font-medium">
+                {rejectedPlays.length} Rejected Play{rejectedPlays.length !== 1 ? "s" : ""} — Diagnostics
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-[oklch(0.40_0.015_255)]">
+              <span className="text-[10px]">Why were these excluded?</span>
+              {showDiagnostics ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </div>
+          </button>
+
+          {showDiagnostics && (
+            <div className="mt-2 space-y-2">
+              {rejectedPlays.map((r, i) => (
+                <div
+                  key={`rejected-${i}`}
+                  className="rounded-xl bg-[oklch(0.13_0.018_255)] border border-[oklch(1_0_0/5%)] p-3"
+                >
+                  {/* Header */}
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <div className="text-white font-semibold text-sm">{r.pitcherName}</div>
+                      <div className="text-[oklch(0.45_0.015_255)] text-xs">
+                        {r.pitcherTeam} vs {r.opponentTeam} · {r.propType === "strikeouts" ? "K" : "BB"} O{r.line}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[oklch(0.65_0.18_25)/15%] text-[oklch(0.65_0.18_25)]">
+                        REJECTED
+                      </span>
+                      {!r.hasMarketData && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] bg-[oklch(0.55_0.015_255)/10%] text-[oklch(0.50_0.015_255)]">
+                          No Market Data
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="text-[oklch(0.65_0.18_25)] text-xs mb-2 font-medium">{r.rejectionSummary}</div>
+
+                  {/* Probability vs threshold */}
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="flex-1 bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
+                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">Model Prob</div>
+                      <div className="text-white font-bold text-sm">{r.modelProbability.toFixed(1)}%</div>
+                    </div>
+                    <div className="text-[oklch(0.40_0.015_255)] text-xs">vs</div>
+                    <div className="flex-1 bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
+                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">Required</div>
+                      <div className="text-[oklch(0.65_0.18_25)] font-bold text-sm">{r.requiredThreshold.toFixed(1)}%</div>
+                    </div>
+                    {r.edge !== null && (
+                      <div className="flex-1 bg-[oklch(0.18_0.02_255)] rounded-lg p-2">
+                        <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-0.5">Edge</div>
+                        <div className={`font-bold text-sm ${r.edge > 0 ? 'text-[oklch(0.72_0.18_165)]' : 'text-[oklch(0.65_0.18_25)]'}`}>
+                          {r.edge > 0 ? '+' : ''}{r.edge.toFixed(1)}%
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rejection reasons */}
+                  <div className="space-y-1">
+                    {r.rejectionReasons.map((reason, j) => (
+                      <div key={j} className="flex items-start gap-1.5">
+                        <span className="text-[oklch(0.65_0.18_25)] text-xs mt-0.5">✗</span>
+                        <span className="text-[oklch(0.55_0.015_255)] text-xs">{reason}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Supporting factors (what it did have) */}
+                  {r.supportingFactors.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-[oklch(1_0_0/5%)]">
+                      <div className="text-[oklch(0.40_0.015_255)] text-[10px] mb-1">Supporting factors ({r.supportingFactors.length}/{r.requiredFactors} required):</div>
+                      <div className="flex flex-wrap gap-1">
+                        {r.supportingFactors.map((f, j) => (
+                          <span key={j} className="px-1.5 py-0.5 rounded text-[10px] bg-[oklch(0.72_0.18_165)/10%] text-[oklch(0.72_0.18_165)]">{f}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Generated at */}

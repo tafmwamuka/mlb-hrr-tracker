@@ -255,10 +255,13 @@ export const pickSnapshots = mysqlTable("pick_snapshots", {
   recommendedLine: text("recommendedLine").notNull(), // e.g. "O2.5"
   confirmedOdds: int("confirmedOdds"), // American odds at confirmation e.g. -145
   currentOdds: int("currentOdds"),    // Latest odds (updated but pick stays)
+  openingOdds: int("openingOdds"),    // First-seen odds (opening line)
+  bestAvailableOdds: int("bestAvailableOdds"), // Best odds across all books at confirmation
+  bestAvailableBook: varchar("bestAvailableBook", { length: 64 }), // Which book had best odds
   edge: int("edge"),                  // Model edge % at confirmation
   matrixScore: int("matrixScore"),    // Matrix score at confirmation
   probability: int("probability"),    // Model probability 0-100
-  tier: varchar("tier", { length: 8 }), // Elite, Strong, A, Lean
+  tier: varchar("tier", { length: 8 }), // Elite, Official, Lean, Projection
   boardPhase: varchar("boardPhase", { length: 32 }).notNull(), // PRELIMINARY, MIDDAY_CONFIRMED, EVENING_CONFIRMED, EARLY_LOCKED, LATER_QUALIFIER
   pickStatus: mysqlEnum("pickStatus", ["preliminary", "confirmed", "evening_confirmed", "early_locked", "later_qualifier", "voided"]).notNull(),
   confirmedAt: timestamp("confirmedAt"), // when pick was locked

@@ -74,6 +74,13 @@ export interface PlayerPropLine {
   impliedProbability: number; // Derived from odds
 }
 
+export interface HRRBookEntry {
+  bookmaker: string;
+  overOdds: number;
+  underOdds: number;
+  trueOverProb: number;
+}
+
 export interface HRRMarketData {
   playerName: string;
   featuredLine: number | null;       // Main sportsbook HRR line
@@ -84,11 +91,19 @@ export interface HRRMarketData {
     overOdds: number;
     underOdds: number;
     impliedOverProb: number;
+    allBooks?: HRRBookEntry[];
   }[];
   hitsLine: number | null;
   runsLine: number | null;
   rbiLine: number | null;
   bookmaker: string;
+  /** Best available over odds across all books for the featured line */
+  bestOverOdds?: { bookmaker: string; odds: number } | null;
+  /** All books for the featured line */
+  allFeaturedBooks?: HRRBookEntry[];
+  /** Opening line (first seen) — populated by enrichmentCache */
+  openingLine?: number | null;
+  openingOverOdds?: number | null;
 }
 
 /**
@@ -128,6 +143,13 @@ export interface PitcherPropLine {
   bookmaker: string;
 }
 
+export interface BookOddsEntry {
+  bookmaker: string;
+  overOdds: number;
+  underOdds: number;
+  trueOverProb: number;
+}
+
 export interface PitcherMarketData {
   pitcherName: string;
   /** Main K line (e.g. 5.5 K) */
@@ -135,10 +157,14 @@ export interface PitcherMarketData {
   mainKOverOdds: number | null;
   mainKUnderOdds: number | null;
   /** Alternate K lines sorted ascending: 3.5, 4.5, 5.5, 6.5, 7.5 */
-  altKLines: Array<{ line: number; overOdds: number; underOdds: number; trueOverProb: number }>;
+  altKLines: Array<{ line: number; overOdds: number; underOdds: number; trueOverProb: number; allBooks?: BookOddsEntry[] }>;
   /** Walk lines */
-  walkLines: Array<{ line: number; overOdds: number; underOdds: number; trueOverProb: number }>;
+  walkLines: Array<{ line: number; overOdds: number; underOdds: number; trueOverProb: number; allBooks?: BookOddsEntry[] }>;
   bookmaker: string;
+  /** Best available over odds across all books for the main K line */
+  bestKOverOdds?: { bookmaker: string; odds: number; line: number } | null;
+  /** Best available over odds across all books for the main walk line */
+  bestWalkOverOdds?: { bookmaker: string; odds: number; line: number } | null;
 }
 
 // In-memory cache for pitcher props — 15-minute TTL
@@ -182,6 +208,10 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
     return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
   });
 
+  // First pass: collect all books' data per pitcher per line
+  // Structure: pitcherName → market_key → line → BookOddsEntry[]
+  const allBooksMap = new Map<string, Map<string, Map<number, BookOddsEntry[]>>>();
+
   for (const bookmaker of sortedBookmakers) {
     for (const market of bookmaker.markets) {
       const outcomes = market.outcomes || [];
@@ -220,6 +250,15 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
         const underImplied = americanToImpliedProbability(underOdds);
         const { trueOver } = removeVig(overImplied, underImplied);
 
+        // Track all books for this line
+        if (!allBooksMap.has(pitcherName)) allBooksMap.set(pitcherName, new Map());
+        const pitcherBooks = allBooksMap.get(pitcherName)!;
+        if (!pitcherBooks.has(market.key)) pitcherBooks.set(market.key, new Map());
+        const lineBooks = pitcherBooks.get(market.key)!;
+        const existing = lineBooks.get(line) || [];
+        existing.push({ bookmaker: bookmaker.title, overOdds, underOdds, trueOverProb: trueOver });
+        lineBooks.set(line, existing);
+
         if (market.key === 'pitcher_strikeouts' && pd.mainKLine === null) {
           pd.mainKLine = line;
           pd.mainKOverOdds = overOdds;
@@ -241,10 +280,44 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
     }
   }
 
-  // Sort all line arrays ascending
-  pitcherMap.forEach(pd => {
+  // Second pass: attach allBooks arrays and compute best available odds
+  pitcherMap.forEach((pd, pitcherName) => {
     pd.altKLines.sort((a, b) => a.line - b.line);
     pd.walkLines.sort((a, b) => a.line - b.line);
+
+    const pitcherBooks = allBooksMap.get(pitcherName);
+    if (!pitcherBooks) return;
+
+    // Attach allBooks to each K line
+    for (const kLine of pd.altKLines) {
+      const mainBooks = pitcherBooks.get('pitcher_strikeouts')?.get(kLine.line) || [];
+      const altBooks = pitcherBooks.get('pitcher_strikeouts_alternate')?.get(kLine.line) || [];
+      kLine.allBooks = [...mainBooks, ...altBooks];
+    }
+
+    // Attach allBooks to each walk line
+    for (const wLine of pd.walkLines) {
+      wLine.allBooks = pitcherBooks.get('pitcher_walks')?.get(wLine.line) || [];
+    }
+
+    // Compute best available over odds for main K line (highest over odds = best for bettor)
+    if (pd.mainKLine !== null) {
+      const mainKBooks = pd.altKLines.find(l => l.line === pd.mainKLine)?.allBooks || [];
+      if (mainKBooks.length > 0) {
+        const best = mainKBooks.reduce((a, b) => a.overOdds > b.overOdds ? a : b);
+        pd.bestKOverOdds = { bookmaker: best.bookmaker, odds: best.overOdds, line: pd.mainKLine };
+      }
+    }
+
+    // Compute best available over odds for main walk line
+    if (pd.walkLines.length > 0) {
+      const mainWalkLine = pd.walkLines[0];
+      const walkBooks = mainWalkLine.allBooks || [];
+      if (walkBooks.length > 0) {
+        const best = walkBooks.reduce((a, b) => a.overOdds > b.overOdds ? a : b);
+        pd.bestWalkOverOdds = { bookmaker: best.bookmaker, odds: best.overOdds, line: mainWalkLine.line };
+      }
+    }
   });
 
   return pitcherMap;
@@ -347,6 +420,9 @@ async function fetchPlayerProps(apiKey: string, eventId: string): Promise<Bookma
  */
 function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
   const playerMap = new Map<string, HRRMarketData>();
+  // Multi-book tracking: allFeaturedBooks[playerName] and allAltBooks[playerName][line]
+  const allFeaturedBooksMap = new Map<string, HRRBookEntry[]>();
+  const allAltBooksMap = new Map<string, Map<number, HRRBookEntry[]>>();
 
   // Prefer these bookmakers in order
   const preferredBooks = ["fanduel", "draftkings", "bet365", "betmgm", "pointsbet"];
@@ -387,14 +463,24 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
         const playerData = playerMap.get(playerName)!;
 
         // Parse based on market type
-        if (market.key === "batter_hits_runs_rbis" && playerData.featuredLine === null) {
+        if (market.key === "batter_hits_runs_rbis") {
           const over = pOutcomes.find((o: OddsOutcome) => o.description === "Over");
           const under = pOutcomes.find((o: OddsOutcome) => o.description === "Under");
           if (over) {
-            playerData.featuredLine = over.point;
-            playerData.featuredOverOdds = over.price;
-            playerData.featuredUnderOdds = under?.price || 0;
-            playerData.bookmaker = bookmaker.title;
+            // Set featured line from first (preferred) book only
+            if (playerData.featuredLine === null) {
+              playerData.featuredLine = over.point;
+              playerData.featuredOverOdds = over.price;
+              playerData.featuredUnderOdds = under?.price || 0;
+              playerData.bookmaker = bookmaker.title;
+            }
+            // Collect all books for this featured line
+            const overProb = americanToImpliedProbability(over.price);
+            const underProb = under ? americanToImpliedProbability(under.price) : 1 - overProb;
+            const { trueOver } = removeVig(overProb, underProb);
+            const existing = allFeaturedBooksMap.get(playerName) || [];
+            existing.push({ bookmaker: bookmaker.key, overOdds: over.price, underOdds: under?.price || 0, trueOverProb: trueOver });
+            allFeaturedBooksMap.set(playerName, existing);
           }
         }
 
@@ -409,7 +495,7 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
             const underProb = matchingUnder ? americanToImpliedProbability(matchingUnder.price) : 1 - overProb;
             const { trueOver } = removeVig(overProb, underProb);
             
-            // Only add if not already present
+            // Only add primary entry from first (preferred) book
             if (!playerData.alternateLines.some((l: { line: number }) => l.line === over.point)) {
               playerData.alternateLines.push({
                 line: over.point,
@@ -418,6 +504,12 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
                 impliedOverProb: trueOver,
               });
             }
+            // Collect all books per alt line
+            if (!allAltBooksMap.has(playerName)) allAltBooksMap.set(playerName, new Map());
+            const lineBooks = allAltBooksMap.get(playerName)!;
+            const lineBooksArr = lineBooks.get(over.point) || [];
+            lineBooksArr.push({ bookmaker: bookmaker.key, overOdds: over.price, underOdds: matchingUnder?.price || 0, trueOverProb: trueOver });
+            lineBooks.set(over.point, lineBooksArr);
           }
         }
 
@@ -441,7 +533,7 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
 
   // Ensure the featured line is also present in alternateLines so selectBestLine
   // can evaluate ALL available lines together (not just the alternate market lines).
-  playerMap.forEach((playerData) => {
+  playerMap.forEach((playerData, playerName) => {
     if (
       playerData.featuredLine !== null &&
       playerData.featuredOverOdds !== null &&
@@ -461,6 +553,23 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
     }
     // Sort ascending: 0.5, 1.5, 2.5, 3.5 ...
     playerData.alternateLines.sort((a: { line: number }, b: { line: number }) => a.line - b.line);
+
+    // Attach allBooks to each alt line entry
+    const altBooksForPlayer = allAltBooksMap.get(playerName);
+    if (altBooksForPlayer) {
+      for (const al of playerData.alternateLines) {
+        const books = altBooksForPlayer.get(al.line);
+        if (books) al.allBooks = books;
+      }
+    }
+
+    // Compute bestOverOdds and allFeaturedBooks for the featured line
+    const featuredBooks = allFeaturedBooksMap.get(playerName) || [];
+    playerData.allFeaturedBooks = featuredBooks;
+    if (featuredBooks.length > 0) {
+      const best = featuredBooks.reduce((a, b) => a.overOdds > b.overOdds ? a : b);
+      playerData.bestOverOdds = { bookmaker: best.bookmaker, odds: best.overOdds };
+    }
   });
 
   return playerMap;
