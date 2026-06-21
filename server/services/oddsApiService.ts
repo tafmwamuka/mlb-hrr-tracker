@@ -8,7 +8,6 @@
  * - batter_runs_scored: Individual runs line
  * - batter_rbis: Individual RBI line
  */
-
 import fs from 'fs';
 import path from 'path';
 
@@ -17,24 +16,28 @@ const SPORT = "baseball_mlb";
 
 /**
  * Resolve the Odds API key.
- * Priority: process.env.ODDS_API_KEY → .project-config.json secrets.ODDS_API_KEY
- * This fallback handles the case where the local .env has a stale key but
- * .project-config.json has already been updated with the new key.
+ * Priority: .project-config.json (always up-to-date) → process.env.ODDS_API_KEY (production fallback)
+ * In production, the key is injected via webdev_request_secrets as process.env.ODDS_API_KEY.
+ * In local dev, the sandbox .env file cannot be updated, so .project-config.json takes priority.
  */
 function getOddsApiKey(override?: string): string {
   if (override) return override;
-  // Always prefer .project-config.json — it is updated by webdev_request_secrets
-  // before the .env file is regenerated, so it reflects the latest key immediately.
+  // Prefer .project-config.json — always up-to-date (updated by webdev_request_secrets).
+  // This takes priority over process.env so that a key update via webdev_request_secrets
+  // takes effect immediately without a server restart.
   try {
     const configPath = path.resolve(process.cwd(), '.project-config.json');
     if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8')) as { secrets?: { ODDS_API_KEY?: string } };
       const configKey = config?.secrets?.ODDS_API_KEY || '';
-      if (configKey) return configKey;
+      if (configKey) {
+        return configKey;
+      }
     }
   } catch {
-    // ignore — fall through to env
+    // ignore — fall through to process.env
   }
+  // Production fallback: injected by webdev_request_secrets as process.env.ODDS_API_KEY
   return process.env.ODDS_API_KEY || '';
 }
 

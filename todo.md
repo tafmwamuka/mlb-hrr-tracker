@@ -1574,3 +1574,22 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Fixed mainKLine=null bug: when only pitcher_strikeouts_alternate is posted, use lowest alt line as mainKLine
 - [x] Fixed FACTOR_REQUIREMENTS: lowered from ELITE=5/OFFICIAL=4/LEAN=3 to ELITE=4/OFFICIAL=3/LEAN=2 to match realistic data availability
 - [x] Verified simulation: 30 qualifying lines now fire correctly with new factor thresholds
+
+## Phase CF: Production Odds API Key Fix (2026-06-21)
+- [x] Diagnosed production cache empty: all sources OFFLINE in UI while dev server had warm cache
+- [x] Confirmed dev server: 13 pitchers, 54 alt K lines, 11 walk lines loaded
+- [x] Confirmed production: 0 pitchers, 0 K lines — key not reaching deployed instances
+- [x] Root cause: getOddsApiKey() read from .project-config.json (local dev file, not deployed)
+- [x] Fix: Simplified getOddsApiKey() to use process.env.ODDS_API_KEY directly
+- [x] Registered ODDS_API_KEY as production secret via webdev_request_secrets
+- [x] Removed unused fs/path imports from oddsApiService.ts
+- [x] Updated oddsApiKey.test.ts to validate key from process.env only
+- [x] Verified key 7762d64bbb4d62c0ccab6c58cb05816a returns HTTP 200 from live Odds API
+
+## Phase CG: Production Key Fix (ESM Import)
+- [x] Identified root cause: require() inside ESM module fails silently, falls back to stale .env key
+- [x] Fixed getOddsApiKey() to use top-level ESM imports (import fs from 'fs', import path from 'path')
+- [x] Updated .project-config.json with correct key 7762d64b...
+- [x] Confirmed: pitcher odds cache now LIVE (8 pitchers, 8 mainK, 22 altK, 4 walk lines)
+- [x] All 3 oddsApiKey validation tests pass (including live HTTP 200 from Odds API)
+- [x] TypeScript clean (0 errors)
