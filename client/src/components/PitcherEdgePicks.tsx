@@ -220,13 +220,15 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
             <span
               className="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
               style={{
-                background: pick.pricingPenaltyTier === 'HEAVY' || pick.pricingPenaltyTier === 'ULTRA_JUICED'
+                // ULTRA_JUICED (worse than -600): red — Research Only
+                // SMALL (-401 to -600): yellow — Acceptable Juiced
+                background: pick.pricingPenaltyTier === 'ULTRA_JUICED' || pick.pricingPenaltyTier === 'HEAVY' || pick.pricingPenaltyTier === 'MODERATE'
                   ? 'oklch(0.68 0.22 25 / 15%)'
                   : 'oklch(0.82 0.17 85 / 12%)',
-                color: pick.pricingPenaltyTier === 'HEAVY' || pick.pricingPenaltyTier === 'ULTRA_JUICED'
+                color: pick.pricingPenaltyTier === 'ULTRA_JUICED' || pick.pricingPenaltyTier === 'HEAVY' || pick.pricingPenaltyTier === 'MODERATE'
                   ? 'oklch(0.68 0.22 25)'
                   : 'oklch(0.82 0.17 85)',
-                borderColor: pick.pricingPenaltyTier === 'HEAVY' || pick.pricingPenaltyTier === 'ULTRA_JUICED'
+                borderColor: pick.pricingPenaltyTier === 'ULTRA_JUICED' || pick.pricingPenaltyTier === 'HEAVY' || pick.pricingPenaltyTier === 'MODERATE'
                   ? 'oklch(0.68 0.22 25 / 30%)'
                   : 'oklch(0.82 0.17 85 / 25%)',
               }}

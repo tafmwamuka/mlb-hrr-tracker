@@ -71,7 +71,28 @@ interface UltraJuicedPlay {
   source: 'pitcher' | 'hitter';
 }
 
+interface BestSingleValuePlayData {
+  playerName: string;
+  team: string;
+  propType: string;
+  line: number;
+  bookOdds: number;
+  fairOdds: number;
+  modelProbability: number;
+  edgePct: number;
+  ev: number;
+  compositeScore: number;
+  isValueZoneTarget: boolean;
+  pricingZone: 'VALUE' | 'ACCEPTABLE' | 'RESEARCH_ONLY';
+  qualificationReasons: string[];
+  confidenceLabel: string;
+  confidenceScore: number;
+  source: 'pitcher' | 'hitter';
+  gameTime?: string;
+}
+
 interface SmartLabParlays {
+  bestSingleValuePlay: BestSingleValuePlayData | null;
   safestParlay: BuiltParlay | null;
   bestValueParlay: BuiltParlay | null;
   plusMoneyParlay: BuiltParlay | null;
@@ -823,6 +844,113 @@ function NewParlayCard({ parlay, index }: { parlay: BuiltParlay; index: number }
   );
 }
 
+function BestSingleValueCard({ play }: { play: BestSingleValuePlayData }) {
+  const propLabel = play.propType === 'strikeouts' ? `${play.line}+ Ks`
+    : play.propType === 'walks' ? `${play.line}+ BBs`
+    : `O${play.line} HRR`;
+
+  const confidenceColor = play.confidenceLabel === 'High'
+    ? 'oklch(0.72 0.18 165)'
+    : play.confidenceLabel === 'Medium'
+    ? 'oklch(0.82 0.17 85)'
+    : 'oklch(0.55 0.015 255)';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      className="rounded-2xl border overflow-hidden"
+      style={{ borderColor: 'oklch(0.82 0.17 85 / 35%)', background: 'linear-gradient(135deg, oklch(0.14 0.025 85 / 60%) 0%, oklch(0.12 0.020 255 / 80%) 100%)' }}
+    >
+      {/* Header */}
+      <div className="px-4 pt-3 pb-2 flex items-center justify-between border-b" style={{ borderColor: 'oklch(0.82 0.17 85 / 20%)' }}>
+        <div className="flex items-center gap-2">
+          <span className="text-base">💎</span>
+          <div>
+            <div className="text-xs font-extrabold text-white tracking-wide">BEST SINGLE VALUE PLAY</div>
+            <div className="text-[10px]" style={{ color: 'oklch(0.82 0.17 85)' }}>Straight Bet · Target +110 to -105</div>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <div className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${confidenceColor}20`, color: confidenceColor, border: `1px solid ${confidenceColor}40` }}>
+            {play.confidenceLabel.toUpperCase()} CONFIDENCE
+          </div>
+          <div className="text-[10px] text-[oklch(0.40_0.015_255)]">
+            Score: {play.compositeScore}/100
+          </div>
+        </div>
+      </div>
+
+      {/* Play details */}
+      <div className="px-4 py-3">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <span className="text-base font-extrabold text-white">{play.playerName}</span>
+              <span className="text-[10px] text-[oklch(0.45_0.015_255)]">{play.team}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: play.source === 'pitcher' ? 'oklch(0.68 0.22 25 / 20%)' : 'oklch(0.65 0.15 280 / 20%)', color: play.source === 'pitcher' ? 'oklch(0.68 0.22 25)' : 'oklch(0.65 0.15 280)' }}>
+                {play.source === 'pitcher' ? 'PITCHER' : 'HITTER'}
+              </span>
+            </div>
+            <div className="text-sm font-bold mt-0.5" style={{ color: 'oklch(0.82 0.17 85)' }}>{propLabel}</div>
+            {play.gameTime && (
+              <div className="text-[10px] text-[oklch(0.40_0.015_255)] mt-0.5">{play.gameTime}</div>
+            )}
+          </div>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <div className="text-xl font-extrabold" style={{ color: 'oklch(0.82 0.17 85)' }}>
+              {play.bookOdds >= 0 ? `+${play.bookOdds}` : play.bookOdds}
+            </div>
+            {play.isValueZoneTarget && (
+              <div className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: 'oklch(0.72 0.18 165 / 15%)', color: 'oklch(0.72 0.18 165)', border: '1px solid oklch(0.72 0.18 165 / 30%)' }}>
+                VALUE ZONE
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          <div className="text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)]">MODEL PROB</div>
+            <div className="text-xs font-bold text-white">{play.modelProbability.toFixed(1)}%</div>
+          </div>
+          <div className="text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)]">EDGE</div>
+            <div className="text-xs font-bold" style={{ color: play.edgePct > 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.55 0.015 255)' }}>
+              {play.edgePct > 0 ? '+' : ''}{play.edgePct.toFixed(1)}%
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)]">EV</div>
+            <div className="text-xs font-bold" style={{ color: play.ev > 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)' }}>
+              {play.ev > 0 ? '+' : ''}${play.ev.toFixed(1)}
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)]">FAIR</div>
+            <div className="text-xs font-bold text-white">{play.fairOdds >= 0 ? `+${play.fairOdds}` : play.fairOdds}</div>
+          </div>
+        </div>
+
+        {/* Qualification reasons */}
+        {play.qualificationReasons.length > 0 && (
+          <div className="rounded-lg p-2.5 space-y-1" style={{ background: 'oklch(1 0 0 / 4%)' }}>
+            <div className="text-[9px] font-bold text-[oklch(0.45_0.015_255)] mb-1.5">WHY THIS QUALIFIES</div>
+            {play.qualificationReasons.map((reason, i) => (
+              <div key={i} className="flex items-start gap-1.5">
+                <div className="w-1 h-1 rounded-full mt-1.5 shrink-0" style={{ background: 'oklch(0.82 0.17 85)' }} />
+                <span className="text-[10px] text-[oklch(0.60_0.015_255)] leading-relaxed">{reason}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 function UltraJuicedSection({ plays }: { plays: UltraJuicedPlay[] }) {
   const [expanded, setExpanded] = useState(false);
   if (plays.length === 0) return null;
@@ -855,7 +983,7 @@ function UltraJuicedSection({ plays }: { plays: UltraJuicedPlay[] }) {
               <div className="flex items-start gap-2">
                 <AlertTriangle size={12} className="text-amber-400 mt-0.5 shrink-0" />
                 <p className="text-[11px] text-[oklch(0.55_0.015_255)] leading-relaxed">
-                  These plays are priced worse than -1000. They are tracked for research and diagnostics but are <strong>not recommended</strong> as parlay pieces or official plays due to poor betting value.
+                  These plays are priced worse than -600. They are tracked for research and diagnostics but are <strong>not recommended</strong> as parlay pieces, Best Single Value plays, or official plays due to poor long-term betting value.
                 </p>
               </div>
             </div>
@@ -920,7 +1048,7 @@ function DiamondParlayBuilder() {
       {/* Value-first explanation */}
       <div className="rounded-xl p-3 border border-[oklch(0.82_0.17_85/15%)] bg-[oklch(0.82_0.17_85/5%)]">
         <p className="text-[11px] text-[oklch(0.55_0.015_255)] leading-relaxed">
-          Plays ranked by <strong className="text-white">EV + Edge% + Model Probability + Sportsbook Pricing</strong>. Ultra-juiced plays (-1000+) are excluded from parlays. Target: +100 to +300 combined odds.
+          Plays ranked by <strong className="text-white">EV + Edge% + Model Probability + Sportsbook Pricing</strong>. Plays worse than -600 are Research Only. Parlay legs target -150 to -400 · Final odds target +100 to +300.
         </p>
       </div>
 
@@ -945,6 +1073,11 @@ function DiamondParlayBuilder() {
         </div>
       ) : (
         <div className="space-y-4">
+          {/* Best Single Value Play */}
+          {parlays.bestSingleValuePlay && (
+            <BestSingleValueCard play={parlays.bestSingleValuePlay} />
+          )}
+
           {/* Three parlay categories */}
           {[parlays.safestParlay, parlays.bestValueParlay, parlays.plusMoneyParlay].filter(Boolean).map((parlay, i) => (
             <NewParlayCard key={parlay!.category} parlay={parlay!} index={i} />

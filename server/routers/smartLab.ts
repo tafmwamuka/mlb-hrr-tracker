@@ -769,10 +769,11 @@ ${slateContext}`;
    * pitcher and hitter plays using multi-factor scoring (EV, Edge%, pricing).
    *
    * Returns:
+   *   bestSingleValuePlay — best straight-bet value play (+110 to -105 target)
    *   safestParlay    — highest hit probability, target +100 minimum
    *   bestValueParlay — highest positive EV, target +100 to +250
-   *   plusMoneyParlay — must finish at plus odds, target +150 to +400
-   *   ultraJuicedPlays — plays worse than -1000 (research only)
+   *   plusMoneyParlay — must finish at plus odds, target +150 to +300
+   *   ultraJuicedPlays — plays worse than -600 (research only)
    */
   getSmartLabParlays: publicProcedure.query(async () => {
     // Fetch pitcher edge picks and hitter picks in parallel
@@ -816,9 +817,28 @@ ${slateContext}`;
 
     const allPlays = [...pitcherPlays, ...hitterPlays];
 
-    const { safestParlay, bestValueParlay, plusMoneyParlay, ultraJuicedPlays } = buildParlays(allPlays);
+    const { safestParlay, bestValueParlay, plusMoneyParlay, ultraJuicedPlays, bestSingleValuePlay } = buildParlays(allPlays);
 
     return {
+      bestSingleValuePlay: bestSingleValuePlay ? {
+        playerName: bestSingleValuePlay.play.playerName,
+        team: bestSingleValuePlay.play.team,
+        propType: bestSingleValuePlay.play.propType,
+        line: bestSingleValuePlay.play.line,
+        bookOdds: bestSingleValuePlay.play.bookOdds,
+        fairOdds: bestSingleValuePlay.play.fairOdds,
+        modelProbability: Math.round(bestSingleValuePlay.play.modelProbability * 1000) / 10,
+        edgePct: bestSingleValuePlay.play.edgePct,
+        ev: bestSingleValuePlay.play.ev,
+        compositeScore: bestSingleValuePlay.play.compositeScore,
+        isValueZoneTarget: bestSingleValuePlay.play.isValueZoneTarget,
+        pricingZone: bestSingleValuePlay.play.pricingPenalty.zone,
+        qualificationReasons: bestSingleValuePlay.qualificationReasons,
+        confidenceLabel: bestSingleValuePlay.confidenceLabel,
+        confidenceScore: bestSingleValuePlay.confidenceScore,
+        source: bestSingleValuePlay.play.source,
+        gameTime: bestSingleValuePlay.play.gameTime,
+      } : null,
       safestParlay,
       bestValueParlay,
       plusMoneyParlay,

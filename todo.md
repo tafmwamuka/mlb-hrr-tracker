@@ -1632,3 +1632,21 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Fix Parlay Builder empty state: show 'Projection Only' message with market hours context
 - [x] Ensure all three UIs (Pitchers, Smart Lab, Parlay Builder) read from same odds cache
 - [x] Walk props pipeline confirmed correct - same code path as K props, blocked only by time window
+
+## Phase CK: Diamond Edge Pricing Optimization (COMPLETE)
+
+- [x] Update pricing penalty tiers: NONE (+110 to -400), SMALL (-401 to -600), RESEARCH_ONLY (worse than -600)
+- [x] Lower Ultra-Juiced threshold from -1000 to -600
+- [x] Add VALUE_ZONE flag (+110 to -105) for Best Single Value Play targeting
+- [x] Add isPreferredParlayLeg flag (-150 to -400) for standard parlay legs
+- [x] Update parlay leg selection: prefer -150 to -400 range, avoid worse than -600
+- [x] Add bestSingleValuePlay to getSmartLabParlays procedure output
+- [x] Best Single Value Play: target +110 to -105, positive EV, strong model edge, live odds required
+- [x] Add explanation text to Best Single Value Play (why it qualifies)
+- [x] Update parlay builder to target +100 to +300 final odds with -150 to -400 legs
+- [x] Update Smart Lab UI: add 💎 Best Single Value Play card as first section
+- [x] Update Smart Lab UI: show explanation text on Best Single Value Play card
+- [x] Update Ultra-Juiced threshold in UI from -1000 to -600
+- [x] Update Pitcher Edge Lab pricing penalty badge colors/labels for new tiers
+- [x] Update parlayBuilder.test.ts tests for new tier thresholds (43 tests, all passing)
+- [x] TypeScript check: 0 errors

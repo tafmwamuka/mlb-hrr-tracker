@@ -3,13 +3,24 @@
  *
  * Provides:
  *   1. Parlay math utilities (odds conversion, combined odds, EV)
- *   2. Sportsbook pricing penalty tiers
+ *   2. Sportsbook pricing penalty tiers (updated thresholds)
  *   3. Multi-factor play scorer (modelProb + edge + EV + pricing + fairOddsDiff)
- *   4. Three parlay category builders:
+ *   4. Best Single Value Play finder (target +110 to -105)
+ *   5. Three parlay category builders:
  *      🏆 SAFEST    — highest hit probability, target +100 minimum
  *      💎 BEST VALUE — highest positive EV, largest model vs book gap, target +100–+250
  *      🚀 PLUS MONEY — must finish at plus odds, target +150–+400, positive EV required
- *   5. Ultra-Juiced filter: plays worse than -1000 → research-only
+ *   6. Ultra-Juiced filter: plays worse than -600 → research-only
+ *
+ * PRICING TIERS (updated):
+ *   VALUE ZONE:        +110 to -400   → No penalty (preferred)
+ *   ACCEPTABLE JUICED: -401 to -600   → Small penalty
+ *   RESEARCH ONLY:     worse than -600 → Ultra-Juiced, excluded from recommendations
+ *
+ * PARLAY LEG TARGETS:
+ *   Preferred leg range: -150 to -400
+ *   Preferred final odds: +100 to +300
+ *   Avoid: worse than -600
  */
 
 // ─── Odds Math ────────────────────────────────────────────────────────────────
@@ -34,10 +45,7 @@ export function impliedProbFromAmerican(american: number): number {
 
 /** Vig-free implied probability (removes overround from a single side) */
 export function vigFreeProb(american: number): number {
-  // Approximate vig removal: assume ~5% overround for favorites
   const raw = impliedProbFromAmerican(american);
-  // For heavy favorites the vig is smaller as a fraction; use raw as approximation
-  // A more precise approach would require both sides, but we only have the over side
   return Math.min(0.99, Math.max(0.01, raw * 0.95));
 }
 
@@ -74,43 +82,84 @@ export function parlayEV(probs: number[], americanOdds: number[]): number {
 
 // ─── Sportsbook Pricing Penalty ───────────────────────────────────────────────
 
+/**
+ * UPDATED TIERS:
+ *   NONE        — +110 to -400  (Value Zone, preferred)
+ *   SMALL       — -401 to -600  (Acceptable Juiced)
+ *   ULTRA_JUICED — worse than -600 (Research Only, excluded from recommendations)
+ */
 export type PricingPenaltyTier =
-  | 'NONE'        // -110 to -400: no penalty
-  | 'SMALL'       // -401 to -600: small penalty
-  | 'MODERATE'    // -601 to -1000: moderate penalty
-  | 'HEAVY'       // worse than -1000: heavy penalty
-  | 'ULTRA_JUICED'; // worse than -1000: research only (same threshold, different label)
+  | 'NONE'         // +110 to -400: Value Zone, no penalty
+  | 'SMALL'        // -401 to -600: Acceptable Juiced, small penalty
+  | 'ULTRA_JUICED'; // worse than -600: Research Only, excluded from all recommendations
 
 export interface PricingPenalty {
   tier: PricingPenaltyTier;
-  multiplier: number;   // 1.0 = no penalty, 0.5 = 50% score reduction
+  multiplier: number;   // 1.0 = no penalty, 0.0 = fully excluded
   label: string;
   isUltraJuiced: boolean;
+  zone: 'VALUE' | 'ACCEPTABLE' | 'RESEARCH_ONLY';
 }
 
 /**
  * Returns the pricing penalty for a given American odds value.
- * Penalties reduce the composite score to discourage stacking heavy favorites.
+ *
+ * Value Zone (+110 to -400):    No penalty — preferred for all recommendations
+ * Acceptable Juiced (-401 to -600): Small penalty — usable but not ideal
+ * Research Only (worse than -600): Ultra-Juiced — excluded from all recommendations
  */
 export function getPricingPenalty(american: number): PricingPenalty {
-  // Only applies to negative (favorite) odds
-  if (american >= 0) {
-    return { tier: 'NONE', multiplier: 1.0, label: 'No penalty', isUltraJuiced: false };
+  // Plus money or near-even odds — Value Zone
+  if (american >= -400) {
+    return {
+      tier: 'NONE',
+      multiplier: 1.0,
+      label: 'Value Zone (+110 to -400)',
+      isUltraJuiced: false,
+      zone: 'VALUE',
+    };
   }
 
   const abs = Math.abs(american);
 
-  if (abs <= 400) {
-    return { tier: 'NONE', multiplier: 1.0, label: 'No penalty', isUltraJuiced: false };
-  }
+  // -401 to -600: Acceptable Juiced
   if (abs <= 600) {
-    return { tier: 'SMALL', multiplier: 0.85, label: 'Small penalty (-401 to -600)', isUltraJuiced: false };
+    return {
+      tier: 'SMALL',
+      multiplier: 0.75,
+      label: 'Acceptable Juiced (-401 to -600)',
+      isUltraJuiced: false,
+      zone: 'ACCEPTABLE',
+    };
   }
-  if (abs <= 1000) {
-    return { tier: 'MODERATE', multiplier: 0.65, label: 'Moderate penalty (-601 to -1000)', isUltraJuiced: false };
+
+  // Worse than -600: Research Only
+  return {
+    tier: 'ULTRA_JUICED',
+    multiplier: 0.0,
+    label: 'Research Only (worse than -600)',
+    isUltraJuiced: true,
+    zone: 'RESEARCH_ONLY',
+  };
+}
+
+// ─── Value Zone Check ─────────────────────────────────────────────────────────
+
+/** Check if odds are in the Best Single Value Play target range (+110 to -105) */
+export function isValueZoneTarget(american: number): boolean {
+  // +110 to -105: near-even money, best single bet value zone
+  if (american >= 110) return true;  // +110 or better (plus money)
+  if (american < 0 && Math.abs(american) <= 105) return true;  // -105 or lighter
+  return false;
+}
+
+/** Check if odds are in the preferred parlay leg range (-150 to -400) */
+export function isPreferredParlayLeg(american: number): boolean {
+  if (american < 0) {
+    const abs = Math.abs(american);
+    return abs >= 150 && abs <= 400;
   }
-  // Worse than -1000
-  return { tier: 'ULTRA_JUICED', multiplier: 0.35, label: 'Heavy penalty (worse than -1000)', isUltraJuiced: true };
+  return false;
 }
 
 // ─── Multi-Factor Play Scorer ─────────────────────────────────────────────────
@@ -135,12 +184,13 @@ export interface ScoredPlay {
   pricingPenalty: PricingPenalty;
   isUltraJuiced: boolean;
 
+  // Zone flags
+  isValueZoneTarget: boolean;   // +110 to -105 (Best Single Value Play target)
+  inPreferredRange: boolean;    // -150 to -400 (preferred parlay leg)
+  inAvoidRange: boolean;        // worse than -600 (research only)
+
   // Composite score (0-100)
   compositeScore: number;
-
-  // Parlay eligibility
-  inPreferredRange: boolean;  // -150 to -250
-  inAvoidRange: boolean;      // worse than -500
 
   // Source metadata
   source: 'pitcher' | 'hitter';
@@ -151,12 +201,12 @@ export interface ScoredPlay {
 /**
  * Compute a composite score for a play using multi-factor weighting.
  *
- * Weights:
- *   - Model Probability:  35%
- *   - Edge %:             25%
- *   - Expected Value:     20%
- *   - Pricing (penalty):  10% (negative impact from heavy favorites)
- *   - Fair Odds Diff:     10%
+ * Priority order (per spec):
+ *   1. Positive EV:              25%
+ *   2. Reasonable sportsbook price: 20% (pricing penalty applied)
+ *   3. Strong model probability: 25%
+ *   4. Edge %:                   20%
+ *   5. Fair odds difference:     10%
  */
 export function computeCompositeScore(params: {
   modelProbability: number;
@@ -167,32 +217,31 @@ export function computeCompositeScore(params: {
 }): number {
   const { modelProbability, edge, ev, bookOdds, fairOdds } = params;
 
-  // 1. Model probability component (0-35)
-  const probScore = Math.min(35, modelProbability * 35);
+  // 1. EV component (0-25) — EV of +$25 per $100 = full 25 pts
+  const evScore = Math.min(25, Math.max(0, (ev / 25) * 25));
 
-  // 2. Edge component (0-25) — edge of 0.10 (10%) = full 25 pts
-  const edgeScore = Math.min(25, Math.max(0, edge * 250));
-
-  // 3. EV component (0-20) — EV of +$20 per $100 = full 20 pts
-  const evScore = Math.min(20, Math.max(0, (ev / 20) * 20));
-
-  // 4. Pricing penalty component (0-10) — no penalty = 10 pts, ultra-juiced = 0
+  // 2. Pricing component (0-20) — Value Zone = 20 pts, Acceptable = 15 pts, Research = 0
   const penalty = getPricingPenalty(bookOdds);
-  const pricingScore = 10 * penalty.multiplier;
+  const pricingScore = 20 * penalty.multiplier;
+
+  // 3. Model probability component (0-25)
+  const probScore = Math.min(25, modelProbability * 25);
+
+  // 4. Edge component (0-20) — edge of 0.10 (10%) = full 20 pts
+  const edgeScore = Math.min(20, Math.max(0, edge * 200));
 
   // 5. Fair odds difference component (0-10)
-  // Positive = model thinks it's worth more than book is pricing
   const fairDecimal = americanToDecimal(fairOdds);
   const bookDecimal = americanToDecimal(bookOdds);
   const fairDiff = fairDecimal - bookDecimal;
   const fairScore = Math.min(10, Math.max(0, fairDiff * 20));
 
-  const raw = probScore + edgeScore + evScore + pricingScore + fairScore;
+  const raw = evScore + pricingScore + probScore + edgeScore + fairScore;
   return Math.round(Math.min(100, Math.max(0, raw)));
 }
 
 /**
- * Convert a PitcherEdgePick or EnrichedMoneyPick into a ScoredPlay.
+ * Convert a PitcherEdgePick into a ScoredPlay.
  */
 export function scorePitcherPlay(pick: {
   pitcherName: string;
@@ -234,10 +283,11 @@ export function scorePitcherPlay(pick: {
     ev,
     pricingPenalty: penalty,
     isUltraJuiced: penalty.isUltraJuiced,
-    compositeScore,
-    inPreferredRange: pick.bookOdds < 0 && absOdds >= 150 && absOdds <= 250,
-    inAvoidRange: pick.bookOdds < 0 && absOdds > 500,
+    isValueZoneTarget: isValueZoneTarget(pick.bookOdds),
+    inPreferredRange: pick.bookOdds < 0 && absOdds >= 150 && absOdds <= 400,
+    inAvoidRange: penalty.isUltraJuiced,
     source: 'pitcher',
+    compositeScore,
     gameTime: pick.gameTime,
   };
 }
@@ -282,12 +332,103 @@ export function scoreHitterPlay(pick: {
     ev,
     pricingPenalty: penalty,
     isUltraJuiced: penalty.isUltraJuiced,
-    compositeScore,
-    inPreferredRange: pick.bookOdds < 0 && absOdds >= 150 && absOdds <= 250,
-    inAvoidRange: pick.bookOdds < 0 && absOdds > 500,
+    isValueZoneTarget: isValueZoneTarget(pick.bookOdds),
+    inPreferredRange: pick.bookOdds < 0 && absOdds >= 150 && absOdds <= 400,
+    inAvoidRange: penalty.isUltraJuiced,
     source: 'hitter',
     pitcherName: pick.pitcher,
+    compositeScore,
     gameTime: pick.gameTime,
+  };
+}
+
+// ─── Best Single Value Play ───────────────────────────────────────────────────
+
+export interface BestSingleValuePlay {
+  play: ScoredPlay;
+  qualificationReasons: string[];
+  confidenceLabel: string;   // "High", "Medium", "Low"
+  confidenceScore: number;   // 0-100
+}
+
+/**
+ * Find the best single straight-bet value play.
+ *
+ * Target: +110 to -105 odds (near-even money)
+ * Requirements:
+ *   - Positive EV
+ *   - Strong model edge (>= 3%)
+ *   - Live sportsbook odds (bookOdds !== 0)
+ *   - Not ultra-juiced
+ *   - No major red flags
+ *
+ * Falls back to best positive-EV play in Value Zone if no near-even plays exist.
+ */
+export function findBestSingleValuePlay(plays: ScoredPlay[]): BestSingleValuePlay | null {
+  const eligible = plays.filter(p =>
+    !p.isUltraJuiced &&
+    p.bookOdds !== 0 &&
+    p.ev > 0 &&
+    p.edge >= 0.03  // minimum 3% edge
+  );
+
+  if (eligible.length === 0) return null;
+
+  // First priority: plays in the value zone target (+110 to -105)
+  const valueZonePlays = eligible.filter(p => p.isValueZoneTarget);
+
+  // Second priority: best positive-EV play in the full Value Zone (+110 to -400)
+  const valueZoneFallback = eligible.filter(p => !p.isUltraJuiced && p.pricingPenalty.zone === 'VALUE');
+
+  // Pick the best candidate
+  const candidates = valueZonePlays.length > 0 ? valueZonePlays : valueZoneFallback;
+  if (candidates.length === 0) return null;
+
+  // Sort by composite score desc
+  const sorted = [...candidates].sort((a, b) => b.compositeScore - a.compositeScore);
+  const best = sorted[0];
+
+  // Build qualification reasons
+  const reasons: string[] = [];
+
+  if (best.ev > 0) {
+    reasons.push(`Positive EV: +$${best.ev.toFixed(1)} per $100`);
+  }
+  if (best.edgePct >= 5) {
+    reasons.push(`Strong model edge: ${best.edgePct.toFixed(1)}% over sportsbook`);
+  } else if (best.edgePct >= 3) {
+    reasons.push(`Model edge: ${best.edgePct.toFixed(1)}% over sportsbook`);
+  }
+  if (best.isValueZoneTarget) {
+    reasons.push(`Near-even money pricing (${formatOdds(best.bookOdds)}) — optimal value zone`);
+  } else {
+    reasons.push(`Value Zone pricing (${formatOdds(best.bookOdds)}) — reasonable sportsbook price`);
+  }
+  if (best.modelProbability >= 0.65) {
+    reasons.push(`High model confidence: ${Math.round(best.modelProbability * 100)}% probability`);
+  } else if (best.modelProbability >= 0.55) {
+    reasons.push(`Solid model confidence: ${Math.round(best.modelProbability * 100)}% probability`);
+  }
+
+  // Confidence label
+  let confidenceLabel: string;
+  let confidenceScore: number;
+  if (best.compositeScore >= 70 && best.ev >= 10 && best.isValueZoneTarget) {
+    confidenceLabel = 'High';
+    confidenceScore = best.compositeScore;
+  } else if (best.compositeScore >= 50 && best.ev > 0) {
+    confidenceLabel = 'Medium';
+    confidenceScore = best.compositeScore;
+  } else {
+    confidenceLabel = 'Low';
+    confidenceScore = best.compositeScore;
+  }
+
+  return {
+    play: best,
+    qualificationReasons: reasons,
+    confidenceLabel,
+    confidenceScore,
   };
 }
 
@@ -333,39 +474,41 @@ function formatOdds(american: number): string {
 /**
  * Build the three recommended parlays from a pool of scored plays.
  *
- * Rules:
- * - Prefer legs from different games (different pitcherTeam/team)
- * - Preferred odds range per leg: -150 to -250
- * - Avoid -500 or worse unless no comparable value plays exist
- * - Ultra-juiced plays (-1000+) are excluded from all parlays
+ * UPDATED RULES:
+ * - Preferred leg range: -150 to -400
+ * - Preferred final parlay odds: +100 to +300
+ * - Avoid: worse than -600 (ultra-juiced, research only)
+ * - Ultra-juiced plays (-600+) are excluded from all parlays
  *
- * SAFEST:    Highest combined hit probability. Can use stronger favorites.
- *            Target: +100 minimum combined.
+ * SAFEST:     Highest combined hit probability. Prefer -150 to -400 legs.
+ *             Target: +100 minimum combined.
  * BEST VALUE: Highest positive EV. Largest model vs book gap.
- *            Target: +100 to +250 combined.
+ *             Target: +100 to +250 combined.
  * PLUS MONEY: Must finish at plus odds. Positive EV required.
- *            Target: +150 to +400 combined.
+ *             Target: +150 to +300 combined.
  */
 export function buildParlays(plays: ScoredPlay[]): {
   safestParlay: BuiltParlay | null;
   bestValueParlay: BuiltParlay | null;
   plusMoneyParlay: BuiltParlay | null;
   ultraJuicedPlays: ScoredPlay[];
+  bestSingleValuePlay: BestSingleValuePlay | null;
 } {
-  // Separate ultra-juiced plays
+  // Separate ultra-juiced plays (worse than -600)
   const ultraJuiced = plays.filter(p => p.isUltraJuiced);
   const eligible = plays.filter(p => !p.isUltraJuiced && p.bookOdds !== 0);
+
+  // Find best single value play from all eligible plays
+  const bestSingleValuePlay = findBestSingleValuePlay(eligible);
 
   // Filter to plays with positive EV for value/plus-money parlays
   const positiveEVPlays = eligible.filter(p => p.ev > 0);
 
   // ── SAFEST PARLAY ─────────────────────────────────────────────────────────
-  // Rank by modelProbability desc, then compositeScore desc
-  // Prefer plays in -150 to -400 range (not too light, not too heavy)
+  // Rank by modelProbability desc, prefer -150 to -400 range
   const safestCandidates = [...eligible].sort((a, b) => {
-    // Prefer preferred range
-    const aPreferred = Math.abs(a.bookOdds) >= 150 && Math.abs(a.bookOdds) <= 400;
-    const bPreferred = Math.abs(b.bookOdds) >= 150 && Math.abs(b.bookOdds) <= 400;
+    const aPreferred = a.inPreferredRange;
+    const bPreferred = b.inPreferredRange;
     if (aPreferred && !bPreferred) return -1;
     if (!aPreferred && bPreferred) return 1;
     return b.modelProbability - a.modelProbability;
@@ -377,8 +520,7 @@ export function buildParlays(plays: ScoredPlay[]): {
     : null;
 
   // ── BEST VALUE PARLAY ─────────────────────────────────────────────────────
-  // Rank by EV desc, then edge desc
-  // Prefer plays in -150 to -250 range
+  // Rank by EV desc, then edge desc, prefer -150 to -400 range
   const valueCandidates = [...positiveEVPlays].sort((a, b) => {
     const aPreferred = a.inPreferredRange;
     const bPreferred = b.inPreferredRange;
@@ -394,28 +536,24 @@ export function buildParlays(plays: ScoredPlay[]): {
     : null;
 
   // ── PLUS MONEY PARLAY ─────────────────────────────────────────────────────
-  // Must finish at plus odds (+150 to +400)
+  // Must finish at plus odds (+150 to +300)
   // Positive EV required per leg
-  // Prefer lighter lines that contribute to plus-money combined odds
-  // Target legs around -175 to -225 each
+  // Prefer lighter lines (-150 to -250) to achieve plus-money combined
   const plusMoneyCandidates = [...positiveEVPlays].sort((a, b) => {
-    // Prefer legs that will produce plus-money combined odds
-    // Lighter odds = better for plus-money target
     const aAbs = Math.abs(a.bookOdds);
     const bAbs = Math.abs(b.bookOdds);
-    // Prefer range -150 to -225 for plus-money construction
-    const aIdeal = aAbs >= 150 && aAbs <= 225;
-    const bIdeal = bAbs >= 150 && bAbs <= 225;
+    // Prefer -150 to -225 for plus-money construction
+    const aIdeal = a.bookOdds < 0 ? (aAbs >= 150 && aAbs <= 225) : true;
+    const bIdeal = b.bookOdds < 0 ? (bAbs >= 150 && bAbs <= 225) : true;
     if (aIdeal && !bIdeal) return -1;
     if (!aIdeal && bIdeal) return 1;
-    // Among equals, prefer higher EV
     return b.ev - a.ev;
   });
 
-  // Try to find 2 legs that produce +150 to +400 combined
+  // Try to find 2 legs that produce +150 to +300 combined
   const plusMoneyLegs = pickPlusMoneyLegs(plusMoneyCandidates);
   const plusMoneyParlay = plusMoneyLegs.length >= 2
-    ? buildParlayResult('PLUS_MONEY', '🚀 Plus Money Parlay', '🚀', plusMoneyLegs, '+150 to +400')
+    ? buildParlayResult('PLUS_MONEY', '🚀 Plus Money Parlay', '🚀', plusMoneyLegs, '+150 to +300')
     : null;
 
   return {
@@ -423,6 +561,7 @@ export function buildParlays(plays: ScoredPlay[]): {
     bestValueParlay,
     plusMoneyParlay,
     ultraJuicedPlays: ultraJuiced,
+    bestSingleValuePlay,
   };
 }
 
@@ -433,7 +572,6 @@ function pickDiverseLegs(candidates: ScoredPlay[], count: number): ScoredPlay[] 
 
   for (const play of candidates) {
     if (selected.length >= count) break;
-    // Avoid same team in both legs
     if (usedTeams.has(play.team)) continue;
     selected.push(play);
     usedTeams.add(play.team);
@@ -450,9 +588,8 @@ function pickDiverseLegs(candidates: ScoredPlay[], count: number): ScoredPlay[] 
   return selected;
 }
 
-/** Pick 2 legs that produce combined odds of +150 to +400 */
+/** Pick 2 legs that produce combined odds of +150 to +300 */
 function pickPlusMoneyLegs(candidates: ScoredPlay[]): ScoredPlay[] {
-  // Try all pairs from top 10 candidates
   const pool = candidates.slice(0, 10);
 
   let bestPair: ScoredPlay[] = [];
@@ -463,7 +600,6 @@ function pickPlusMoneyLegs(candidates: ScoredPlay[]): ScoredPlay[] {
       const a = pool[i];
       const b = pool[j];
 
-      // Avoid same team
       if (a.team === b.team) continue;
 
       const combined = parlayAmericanOdds([a.bookOdds, b.bookOdds]);
@@ -471,14 +607,13 @@ function pickPlusMoneyLegs(candidates: ScoredPlay[]): ScoredPlay[] {
       // Must be plus money
       if (combined < 100) continue;
 
-      // Prefer +150 to +400 range
-      const inTarget = combined >= 150 && combined <= 400;
+      // Prefer +150 to +300 range (tightened from +400)
+      const inTarget = combined >= 150 && combined <= 300;
       const combinedEV = parlayEV(
         [a.modelProbability, b.modelProbability],
         [a.bookOdds, b.bookOdds]
       );
 
-      // Score this pair: prefer in-target + positive EV + high composite
       const pairScore = (inTarget ? 50 : 0) + (combinedEV > 0 ? 30 : 0) + (a.compositeScore + b.compositeScore) / 2;
 
       if (pairScore > bestScore) {
