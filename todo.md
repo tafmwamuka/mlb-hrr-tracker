@@ -1601,3 +1601,19 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Updated smartLab.dataStatus.test.ts mock and assertions for oddsApiKeyStatus
 - [x] TypeScript: 0 errors
 - [x] All 4 dataStatus tests pass, all 3 oddsApiKey tests pass
+
+## Phase CI: Parlay Builder Framework & Smart Lab Optimization
+
+- [x] Build parlay math utilities: americanToDecimal, decimalToAmerican, parlayOdds, impliedProb, EV calculation
+- [x] Build multi-factor play scorer: weights for modelProb, edgePct, EV, pricingPenalty, fairOddsDiff
+- [x] Add sportsbook pricing penalty tiers: -110 to -400 none, -401 to -600 small, -601 to -1000 moderate, worse heavy
+- [x] Add Ultra-Juiced filter: plays worse than -1000 moved to research-only section
+- [x] Add getSmartLabParlays tRPC procedure returning safestParlay, bestValueParlay, plusMoneyParlay
+- [x] Safest Parlay: highest hit probability, can use strong favorites, target +100 minimum
+- [x] Best Value Parlay: highest positive EV, largest model vs book gap, target +100 to +250
+- [x] Plus Money Parlay: must finish at plus odds, target +150 to +400, positive EV required
+- [x] Update Pitcher Edge Lab scoring to apply pricing penalties to composite score
+- [x] Update Smart Lab UI with three parlay recommendation cards (trophy/diamond/rocket icons)
+- [x] Display parlay combined odds, individual leg odds, EV, and hit probability per parlay
+- [x] Update Pitcher Edge Lab UI with pricing penalty badge and Ultra-Juiced section
+- [x] Write vitest tests for parlay math and multi-factor scorer (25 tests, all passing)

@@ -23,6 +23,14 @@ import { invokeLLM } from "../_core/llm";
 import { fetchTodaysGames } from "../services/mlbLineupService";
 import { computeTeamMatchupScore, getTeamDiscipline } from "../services/teamDisciplineService";
 import { fetchPitcherMarketData, getPitcherOddsStatus, getHRROddsStatus, getOddsApiKeyStatus } from "../services/oddsApiService";
+import { runPitcherEdgeEngine } from "../services/pitcherEdgeEngine";
+import {
+  scorePitcherPlay,
+  scoreHitterPlay,
+  buildParlays,
+  getPricingPenalty,
+  type ScoredPlay,
+} from "../services/parlayBuilder";
 import { isEnrichmentWarm } from "../services/enrichmentCache";
 import { getGameTotalsStatus } from "../services/gameTotalsService";
 
@@ -757,9 +765,82 @@ ${slateContext}`;
     }),
 
   /**
-   * getDataStatus — returns connection status for each data source
-   * Used by the Smart Lab data status panel to show green/yellow/red indicators.
+   * getSmartLabParlays — builds three recommended 2-leg parlays from today's
+   * pitcher and hitter plays using multi-factor scoring (EV, Edge%, pricing).
+   *
+   * Returns:
+   *   safestParlay    — highest hit probability, target +100 minimum
+   *   bestValueParlay — highest positive EV, target +100 to +250
+   *   plusMoneyParlay — must finish at plus odds, target +150 to +400
+   *   ultraJuicedPlays — plays worse than -1000 (research only)
    */
+  getSmartLabParlays: publicProcedure.query(async () => {
+    // Fetch pitcher edge picks and hitter picks in parallel
+    const [pitcherResult, hitterResult] = await Promise.all([
+      runPitcherEdgeEngine().catch(() => ({ picks: [], dualEdgePitchers: [], stackAlertGames: [], hasOfficialPlays: false, hasLeanPlays: false, rejectedPlays: [] })),
+      getEnrichedMoneyPicks().catch(() => ({ moneyPicks: [], topCandidates: [], dataDate: '', lineupsPending: false, hasOddsData: false, isStaleSlate: false, emptySlateReasons: [] })),
+    ]);
+
+    // Score pitcher plays (only ELITE + OFFICIAL + LEAN with market data)
+    const pitcherPlays: ScoredPlay[] = pitcherResult.picks
+      .filter(p => p.hasMarketData && p.bookOdds !== 0)
+      .map(p => scorePitcherPlay({
+        pitcherName: p.pitcherName,
+        pitcherTeam: p.pitcherTeam,
+        opponentTeam: p.opponentTeam,
+        propType: p.propType,
+        line: p.line,
+        bookOdds: p.bookOdds,
+        fairOdds: p.fairOdds,
+        modelProbability: p.modelProbability,
+        impliedProbability: p.impliedProbability,
+        edge: p.edge,
+        gameTime: p.gameTime,
+      }));
+
+    // Score hitter plays (only plays with live book odds)
+    const hitterPlays: ScoredPlay[] = (hitterResult.moneyPicks ?? [])
+      .filter((p: any) => p.bookOdds != null && p.bookOdds !== 0)
+      .map((p: any) => scoreHitterPlay({
+        playerName: p.playerName,
+        team: p.team,
+        pitcher: p.pitcher,
+        propType: p.recommendedLine ? 'hits' : 'hits',
+        line: p.recommendedLine ?? 1.5,
+        bookOdds: p.bookOdds,
+        fairLine: p.fairLine ?? p.bookOdds,
+        modelProbability: (p.recommendedProb ?? 65) / 100,
+        edge: p.edge != null ? p.edge / 100 : 0,
+        gameTime: undefined,
+      }));
+
+    const allPlays = [...pitcherPlays, ...hitterPlays];
+
+    const { safestParlay, bestValueParlay, plusMoneyParlay, ultraJuicedPlays } = buildParlays(allPlays);
+
+    return {
+      safestParlay,
+      bestValueParlay,
+      plusMoneyParlay,
+      ultraJuicedPlays: ultraJuicedPlays.map(p => ({
+        playerName: p.playerName,
+        team: p.team,
+        propType: p.propType,
+        line: p.line,
+        bookOdds: p.bookOdds,
+        modelProbability: Math.round(p.modelProbability * 1000) / 10,
+        edgePct: p.edgePct,
+        ev: p.ev,
+        pricingPenaltyLabel: p.pricingPenalty.label,
+        source: p.source,
+      })),
+      totalEligiblePlays: allPlays.filter(p => !p.isUltraJuiced).length,
+      hasPitcherData: pitcherPlays.length > 0,
+      hasHitterData: hitterPlays.length > 0,
+      generatedAt: new Date().toISOString(),
+    };
+  }),
+
   getDataStatus: publicProcedure.query(async () => {
     const pitcherOdds = getPitcherOddsStatus();
     const hrrOdds = getHRROddsStatus();

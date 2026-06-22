@@ -19,10 +19,70 @@ import { AIChatBox, type Message } from "@/components/AIChatBox";
 import {
   Sparkles, Shield, Zap, TrendingUp, AlertTriangle, Info,
   RefreshCw, ChevronDown, Layers, Target, BarChart3, MessageSquare,
-  FlaskConical, Star, Activity, CheckCircle2, Clock, XCircle
+  FlaskConical, Star, Activity, CheckCircle2, Clock, XCircle,
+  Trophy, Gem, Rocket, FlaskRound, TrendingDown
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+// ── New Parlay Builder types (from getSmartLabParlays) ────────────────────────
+
+interface NewParlayLeg {
+  playerName: string;
+  team: string;
+  propType: string;
+  line: number;
+  bookOdds: number;
+  fairOdds: number;
+  modelProbability: number;
+  edgePct: number;
+  ev: number;
+  source: 'pitcher' | 'hitter';
+  pitcherName?: string;
+  gameTime?: string;
+}
+
+interface BuiltParlay {
+  category: 'SAFEST' | 'BEST_VALUE' | 'PLUS_MONEY';
+  categoryLabel: string;
+  categoryIcon: string;
+  legs: NewParlayLeg[];
+  combinedOdds: number;
+  combinedOddsDisplay: string;
+  hitProbability: number;
+  hitProbabilityPct: number;
+  combinedEV: number;
+  isPositiveEV: boolean;
+  meetsOddsTarget: boolean;
+  oddsTarget: string;
+  legCount: number;
+}
+
+interface UltraJuicedPlay {
+  playerName: string;
+  team: string;
+  propType: string;
+  line: number;
+  bookOdds: number;
+  modelProbability: number;
+  edgePct: number;
+  ev: number;
+  pricingPenaltyLabel: string;
+  source: 'pitcher' | 'hitter';
+}
+
+interface SmartLabParlays {
+  safestParlay: BuiltParlay | null;
+  bestValueParlay: BuiltParlay | null;
+  plusMoneyParlay: BuiltParlay | null;
+  ultraJuicedPlays: UltraJuicedPlay[];
+  totalEligiblePlays: number;
+  hasPitcherData: boolean;
+  hasHitterData: boolean;
+  generatedAt: string;
+}
+
+// ── Legacy parlay types (for AI analyzeSlate) ─────────────────────────────────
 
 interface ParlayLeg {
   playerName: string;
@@ -553,12 +613,365 @@ function DataStatusPanel() {
   );
 }
 
+// ─── Diamond Parlay Builder Components ──────────────────────────────────────
+
+function formatOdds(american: number): string {
+  return american >= 0 ? `+${american}` : `${american}`;
+}
+
+function EVBadge({ ev, isPositive }: { ev: number; isPositive: boolean }) {
+  const color = isPositive ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)';
+  return (
+    <span
+      className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+      style={{ background: `${color}15`, color, borderColor: `${color}30` }}
+    >
+      EV {isPositive ? '+' : ''}{ev.toFixed(1)}%
+    </span>
+  );
+}
+
+function OddsTargetBadge({ meets, display }: { meets: boolean; display: string }) {
+  const color = meets ? 'oklch(0.82 0.17 85)' : 'oklch(0.55 0.015 255)';
+  return (
+    <span
+      className="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
+      style={{ background: `${color}10`, color, borderColor: `${color}25` }}
+    >
+      Target: {display}
+    </span>
+  );
+}
+
+function NewParlayCard({ parlay, index }: { parlay: BuiltParlay; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const categoryColors: Record<string, { accent: string; bg: string; border: string }> = {
+    SAFEST:     { accent: 'oklch(0.72 0.18 165)', bg: 'oklch(0.14 0.03 165 / 40%)', border: 'oklch(0.72 0.18 165 / 25%)' },
+    BEST_VALUE: { accent: 'oklch(0.82 0.17 85)',  bg: 'oklch(0.13 0.03 85 / 40%)',  border: 'oklch(0.82 0.17 85 / 25%)' },
+    PLUS_MONEY: { accent: 'oklch(0.68 0.22 25)',  bg: 'oklch(0.14 0.04 25 / 40%)',  border: 'oklch(0.68 0.22 25 / 25%)' },
+  };
+  const c = categoryColors[parlay.category] ?? categoryColors.SAFEST;
+
+  const isPlus = parlay.combinedOdds >= 0;
+  const oddsColor = isPlus ? 'oklch(0.72 0.18 165)' : 'oklch(0.82 0.17 85)';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.08, duration: 0.4 }}
+      className="rounded-xl overflow-hidden border"
+      style={{ background: c.bg, borderColor: c.border }}
+    >
+      {/* Top accent bar */}
+      <div className="h-0.5 w-full" style={{ background: `linear-gradient(90deg, ${c.accent}, ${c.accent}30)` }} />
+
+      <button onClick={() => setExpanded(!expanded)} className="w-full text-left p-4">
+        {/* Header row */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">{parlay.categoryIcon}</span>
+            <span className="text-xs font-bold text-white">{parlay.categoryLabel.replace(/^[^ ]+ /, '')}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <EVBadge ev={parlay.combinedEV} isPositive={parlay.isPositiveEV} />
+            <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+              <ChevronDown size={14} className="text-[oklch(0.40_0.015_255)]" />
+            </motion.div>
+          </div>
+        </div>
+
+        {/* Combined odds + hit probability */}
+        <div className="flex items-center gap-3 mb-3">
+          <div className="flex-1 rounded-lg p-2.5 bg-[oklch(1_0_0/5%)] border border-[oklch(1_0_0/10%)] text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)] mb-0.5">PARLAY ODDS</div>
+            <div className="text-xl font-extrabold" style={{ color: oddsColor }}>{parlay.combinedOddsDisplay}</div>
+          </div>
+          <div className="flex-1 rounded-lg p-2.5 bg-[oklch(1_0_0/5%)] border border-[oklch(1_0_0/10%)] text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)] mb-0.5">HIT PROB</div>
+            <div className="text-xl font-extrabold text-white">{parlay.hitProbabilityPct.toFixed(0)}%</div>
+          </div>
+          <div className="flex-1 rounded-lg p-2.5 bg-[oklch(1_0_0/5%)] border border-[oklch(1_0_0/10%)] text-center">
+            <div className="text-[9px] text-[oklch(0.40_0.015_255)] mb-0.5">LEGS</div>
+            <div className="text-xl font-extrabold text-white">{parlay.legCount}</div>
+          </div>
+        </div>
+
+        {/* Odds target badge */}
+        <div className="flex items-center gap-2 mb-3">
+          <OddsTargetBadge meets={parlay.meetsOddsTarget} display={parlay.oddsTarget} />
+          {parlay.meetsOddsTarget && (
+            <span className="text-[10px] text-[oklch(0.72_0.18_165)] font-semibold">✓ Target met</span>
+          )}
+        </div>
+
+        {/* Legs preview */}
+        <div className="space-y-2">
+          {parlay.legs.map((leg, i) => {
+            const propLabel = leg.propType === 'strikeouts' ? `${leg.line}+ Ks`
+              : leg.propType === 'walks' ? `${leg.line}+ BBs`
+              : `O${leg.line} HRR`;
+            const hasOdds = leg.bookOdds !== 0;
+            return (
+              <div key={i} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-[oklch(1_0_0/3%)] border border-[oklch(1_0_0/6%)]">
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold"
+                  style={{ background: `${c.accent}20`, color: c.accent }}
+                >
+                  {i + 1}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-sm font-semibold text-white truncate">{leg.playerName}</span>
+                    <span className="text-[10px] text-[oklch(0.45_0.015_255)]">{leg.team}</span>
+                  </div>
+                  {leg.pitcherName && leg.pitcherName !== leg.playerName && (
+                    <div className="text-[10px] text-[oklch(0.40_0.015_255)]">P: {leg.pitcherName}</div>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-0.5 shrink-0">
+                  <div className="px-2 py-0.5 rounded-md text-[11px] font-bold" style={{ background: `${c.accent}15`, color: c.accent }}>
+                    {propLabel}
+                  </div>
+                  {hasOdds && (
+                    <div className="text-[10px] text-[oklch(0.50_0.015_255)]">{formatOdds(leg.bookOdds)}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </button>
+
+      {/* Expanded details */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 space-y-3">
+              {/* Per-leg details */}
+              {parlay.legs.map((leg, i) => {
+                const propLabel = leg.propType === 'strikeouts' ? `${leg.line}+ Ks`
+                  : leg.propType === 'walks' ? `${leg.line}+ BBs`
+                  : `O${leg.line} HRR`;
+                const hasOdds = leg.bookOdds !== 0;
+                return (
+                  <div key={i} className="rounded-lg border border-[oklch(1_0_0/8%)] bg-[oklch(1_0_0/2%)] p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-bold text-white">{leg.playerName}</span>
+                      <span className="text-[9px] text-[oklch(0.45_0.015_255)]">({leg.team})</span>
+                      <span className="ml-auto text-[10px] font-bold" style={{ color: c.accent }}>{propLabel}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="text-center">
+                        <div className="text-[9px] text-[oklch(0.40_0.015_255)]">BOOK</div>
+                        <div className="text-xs font-bold" style={{ color: hasOdds ? c.accent : 'oklch(0.45 0.015 255)' }}>
+                          {hasOdds ? formatOdds(leg.bookOdds) : '—'}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-[9px] text-[oklch(0.40_0.015_255)]">FAIR</div>
+                        <div className="text-xs font-bold text-white">{formatOdds(leg.fairOdds)}</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-[9px] text-[oklch(0.40_0.015_255)]">EDGE</div>
+                        <div className="text-xs font-bold" style={{ color: leg.edgePct > 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.55 0.015 255)' }}>
+                          {leg.edgePct > 0 ? '+' : ''}{leg.edgePct.toFixed(1)}%
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="text-[9px] text-[oklch(0.40_0.015_255)]">MODEL PROB:</div>
+                      <div className="text-[10px] font-bold text-white">{(leg.modelProbability * 100).toFixed(1)}%</div>
+                      <div className="text-[9px] text-[oklch(0.40_0.015_255)] ml-2">EV:</div>
+                      <div className="text-[10px] font-bold" style={{ color: leg.ev > 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)' }}>
+                        {leg.ev > 0 ? '+' : ''}{leg.ev.toFixed(1)}%
+                      </div>
+                      <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded" style={{ background: leg.source === 'pitcher' ? 'oklch(0.68 0.22 25 / 20%)' : 'oklch(0.65 0.15 280 / 20%)', color: leg.source === 'pitcher' ? 'oklch(0.68 0.22 25)' : 'oklch(0.65 0.15 280)' }}>
+                        {leg.source === 'pitcher' ? 'PITCHER' : 'HITTER'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function UltraJuicedSection({ plays }: { plays: UltraJuicedPlay[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (plays.length === 0) return null;
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center gap-2 mb-3 group"
+      >
+        <FlaskRound size={14} style={{ color: 'oklch(0.65 0.15 280)' }} />
+        <h3 className="text-sm font-bold text-white">Ultra-Juiced Plays</h3>
+        <span className="text-[10px] px-2 py-0.5 rounded-full border font-semibold" style={{ background: 'oklch(0.65 0.15 280 / 10%)', color: 'oklch(0.65 0.15 280)', borderColor: 'oklch(0.65 0.15 280 / 30%)' }}>
+          RESEARCH ONLY
+        </span>
+        <span className="text-[10px] text-[oklch(0.45_0.015_255)] ml-auto">{plays.length} plays</span>
+        <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <ChevronDown size={14} className="text-[oklch(0.40_0.015_255)]" />
+        </motion.div>
+      </button>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="rounded-xl border border-[oklch(0.65_0.15_280/20%)] bg-[oklch(0.65_0.15_280/5%)] p-3 mb-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={12} className="text-amber-400 mt-0.5 shrink-0" />
+                <p className="text-[11px] text-[oklch(0.55_0.015_255)] leading-relaxed">
+                  These plays are priced worse than -1000. They are tracked for research and diagnostics but are <strong>not recommended</strong> as parlay pieces or official plays due to poor betting value.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {plays.map((play, i) => {
+                const propLabel = play.propType === 'strikeouts' ? `${play.line}+ Ks`
+                  : play.propType === 'walks' ? `${play.line}+ BBs`
+                  : `O${play.line} HRR`;
+                return (
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-[oklch(1_0_0/3%)] border border-[oklch(1_0_0/6%)]">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-sm font-semibold text-white truncate">{play.playerName}</span>
+                        <span className="text-[10px] text-[oklch(0.45_0.015_255)]">{play.team}</span>
+                      </div>
+                      <div className="text-[10px] text-[oklch(0.40_0.015_255)] mt-0.5">{play.pricingPenaltyLabel}</div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <div className="text-xs font-bold" style={{ color: 'oklch(0.65 0.15 280)' }}>{propLabel}</div>
+                      <div className="text-[10px] text-[oklch(0.55_0.015_255)]">{formatOdds(play.bookOdds)}</div>
+                      <div className="text-[10px]" style={{ color: play.edgePct > 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.55 0.015 255)' }}>
+                        Edge: {play.edgePct > 0 ? '+' : ''}{play.edgePct.toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function DiamondParlayBuilder() {
+  const { data: parlayData, isLoading, refetch, isFetching } = trpc.smartLab.getSmartLabParlays.useQuery(undefined, {
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  const parlays = parlayData as SmartLabParlays | undefined;
+
+  return (
+    <div className="space-y-4">
+      {/* Section header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Gem size={16} style={{ color: 'oklch(0.82 0.17 85)' }} />
+          <h2 className="text-sm font-extrabold text-white tracking-wide">DIAMOND PARLAY BUILDER</h2>
+          <span className="text-[10px] px-2 py-0.5 rounded-full border font-bold" style={{ background: 'oklch(0.82 0.17 85 / 12%)', color: 'oklch(0.82 0.17 85)', borderColor: 'oklch(0.82 0.17 85 / 30%)' }}>VALUE-FIRST</span>
+        </div>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold text-[oklch(0.50_0.015_255)] hover:text-white hover:bg-white/5 transition-all disabled:opacity-50"
+        >
+          <RefreshCw size={10} className={isFetching ? 'animate-spin' : ''} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Value-first explanation */}
+      <div className="rounded-xl p-3 border border-[oklch(0.82_0.17_85/15%)] bg-[oklch(0.82_0.17_85/5%)]">
+        <p className="text-[11px] text-[oklch(0.55_0.015_255)] leading-relaxed">
+          Plays ranked by <strong className="text-white">EV + Edge% + Model Probability + Sportsbook Pricing</strong>. Ultra-juiced plays (-1000+) are excluded from parlays. Target: +100 to +300 combined odds.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <motion.div
+            className="w-8 h-8 rounded-full border-2 border-transparent"
+            style={{ borderTopColor: 'oklch(0.82 0.17 85)' }}
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+          />
+        </div>
+      ) : !parlays || parlays.totalEligiblePlays === 0 ? (
+        <div className="text-center py-8">
+          <Gem size={24} className="text-[oklch(0.35_0.015_255)] mx-auto mb-3" />
+          <p className="text-sm text-[oklch(0.50_0.015_255)]">No eligible plays available for parlay building.</p>
+          <p className="text-xs text-[oklch(0.40_0.015_255)] mt-1">Plays require live sportsbook odds and positive model probability.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Three parlay categories */}
+          {[parlays.safestParlay, parlays.bestValueParlay, parlays.plusMoneyParlay].filter(Boolean).map((parlay, i) => (
+            <NewParlayCard key={parlay!.category} parlay={parlay!} index={i} />
+          ))}
+
+          {/* No parlays built */}
+          {!parlays.safestParlay && !parlays.bestValueParlay && !parlays.plusMoneyParlay && (
+            <div className="text-center py-6">
+              <TrendingDown size={20} className="text-[oklch(0.40_0.015_255)] mx-auto mb-2" />
+              <p className="text-sm text-[oklch(0.50_0.015_255)]">Not enough plays with live odds to build parlays.</p>
+              <p className="text-xs text-[oklch(0.40_0.015_255)] mt-1">{parlays.totalEligiblePlays} eligible plays found — need 2+ with sportsbook lines.</p>
+            </div>
+          )}
+
+          {/* Ultra-juiced section */}
+          {parlays.ultraJuicedPlays && parlays.ultraJuicedPlays.length > 0 && (
+            <div className="border-t border-[oklch(1_0_0/8%)] pt-4">
+              <UltraJuicedSection plays={parlays.ultraJuicedPlays} />
+            </div>
+          )}
+
+          {/* Data source info */}
+          <div className="flex items-center gap-3 pt-1">
+            <div className="text-[10px] text-[oklch(0.35_0.015_255)]">
+              {parlays.totalEligiblePlays} eligible plays
+              {parlays.hasPitcherData && ' · Pitcher K/BB'}
+              {parlays.hasHitterData && ' · HRR'}
+            </div>
+            {parlays.generatedAt && (
+              <div className="ml-auto text-[10px] text-[oklch(0.35_0.015_255)]">
+                {new Date(parlays.generatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function DiamondSmartLab() {
   const [analysis, setAnalysis] = useState<SmartLabAnalysis | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
-  const [activeSection, setActiveSection] = useState<"analysis" | "chat">("analysis");
+  const [activeSection, setActiveSection] = useState<"analysis" | "parlays" | "chat">("parlays");
 
   const { data: slateData, isLoading: slateLoading } = trpc.smartLab.getSlateData.useQuery(undefined, {
     refetchInterval: 5 * 60 * 1000, // refresh every 5 min
@@ -649,7 +1062,7 @@ export function DiamondSmartLab() {
         ].map(({ key, label, icon: Icon }) => (
           <button
             key={key}
-            onClick={() => setActiveSection(key as "analysis" | "chat")}
+            onClick={() => setActiveSection(key as "analysis" | "parlays" | "chat")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeSection === key
                 ? "bg-white/10 text-white border border-white/20"
@@ -663,6 +1076,21 @@ export function DiamondSmartLab() {
       </div>
       {/* ── Data Status Panel ──────────────────────────────────────────────────── */}
       <DataStatusPanel />
+
+      {/* ── Parlay Builder Section ───────────────────────────────────────────────────────────────── */}
+      {activeSection === "parlays" && (
+        <div className="space-y-5">
+          <div className="rounded-xl p-3 border border-amber-500/20 bg-amber-500/5">
+            <div className="flex items-start gap-2">
+              <Info size={13} className="text-amber-400 mt-0.5 shrink-0" />
+              <p className="text-[11px] text-[oklch(0.60_0.015_255)] leading-relaxed">
+                <span className="text-amber-300 font-semibold">Bankroll Management:</span> Never exceed your limits. Treat this as entertainment, not income. Never chase losses.
+              </p>
+            </div>
+          </div>
+          <DiamondParlayBuilder />
+        </div>
+      )}
 
       {/* ── Analysis Section ─────────────────────────────────────────────────── */}
       {activeSection === "analysis" && (

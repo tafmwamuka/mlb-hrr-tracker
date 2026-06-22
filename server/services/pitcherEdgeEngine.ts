@@ -30,6 +30,7 @@
  */
 
 import { fetchPitcherMarketData, type PitcherMarketData, americanToImpliedProbability, removeVig } from './oddsApiService';
+import { getPricingPenalty, type PricingPenaltyTier } from './parlayBuilder';
 import { detectDisciplineEdge, type PitcherPropInput } from './disciplineEdgeDetector';
 import { getTeamDiscipline, computeTeamMatchupScore } from './teamDisciplineService';
 import { fetchTodaysGames } from './mlbLineupService';
@@ -190,6 +191,12 @@ export interface PitcherEdgePick {
   isLeanPlay: boolean;       // LEAN — shown but not official
   isProjectionOnly: boolean; // PROJECTION — research only
   hasMarketData: boolean;    // false = model-only, no live odds
+
+  // Pricing penalty (new)
+  pricingPenaltyTier: PricingPenaltyTier;  // NONE | SMALL | MODERATE | HEAVY | ULTRA_JUICED
+  pricingPenaltyLabel: string;             // Human-readable penalty description
+  isUltraJuiced: boolean;                  // true = worse than -1000, research only
+  adjustedEdgeScore: number;               // pitcherEdgeScore after pricing penalty applied
 }
 
 // ── Pitch count / leash projection ───────────────────────────────────────────
@@ -472,6 +479,10 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           pitchCountScore,
         });
 
+        // Apply pricing penalty to composite score
+        const kPricingPenalty = getPricingPenalty(kLine.overOdds);
+        const adjustedKEdgeScore = Math.round(pitcherEdgeScore * kPricingPenalty.multiplier);
+
         const supportingFactors = countSupportingFactors({
           opponentKRate,
           disciplineGrade,
@@ -553,10 +564,14 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           opponentBBRate,
           historicalHitRate,
           sampleSize,
-                    isOfficialPlay: isOfficialTier(tier),
+          isOfficialPlay: isOfficialTier(tier),
           isLeanPlay: isLeanTier(tier),
           isProjectionOnly: isProjectionTier(tier),
           hasMarketData,
+          pricingPenaltyTier: kPricingPenalty.tier,
+          pricingPenaltyLabel: kPricingPenalty.label,
+          isUltraJuiced: kPricingPenalty.isUltraJuiced,
+          adjustedEdgeScore: adjustedKEdgeScore,
         };
         allPicks.push(pick);
         // Track for Dual Edge (only official/lean picks)
@@ -652,6 +667,10 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           pitchCountScore,
         });
 
+        // Apply pricing penalty to composite score
+        const bbPricingPenalty = getPricingPenalty(bbLine.overOdds);
+        const adjustedBBEdgeScore = Math.round(pitcherEdgeScore * bbPricingPenalty.multiplier);
+
         const supportingFactors = countSupportingFactors({
           opponentBBRate,
           disciplineGrade,
@@ -732,10 +751,14 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           opponentBBRate,
           historicalHitRate,
           sampleSize,
-                    isOfficialPlay: isOfficialTier(bbTier),
+          isOfficialPlay: isOfficialTier(bbTier),
           isLeanPlay: isLeanTier(bbTier),
           isProjectionOnly: isProjectionTier(bbTier),
           hasMarketData: bbHasMarketData,
+          pricingPenaltyTier: bbPricingPenalty.tier,
+          pricingPenaltyLabel: bbPricingPenalty.label,
+          isUltraJuiced: bbPricingPenalty.isUltraJuiced,
+          adjustedEdgeScore: adjustedBBEdgeScore,
         };
         allPicks.push(pick);
         if (!isProjectionTier(bbTier)) {

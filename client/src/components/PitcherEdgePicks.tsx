@@ -80,6 +80,11 @@ interface PitcherEdgePick {
   isLeanPlay: boolean;
   isProjectionOnly: boolean;
   hasMarketData: boolean;
+  // Pricing penalty (optional — new fields)
+  pricingPenaltyTier?: string;
+  pricingPenaltyLabel?: string;
+  isUltraJuiced?: boolean;
+  adjustedEdgeScore?: number;
 }
 
 // ── Tier config ───────────────────────────────────────────────────────────────
@@ -208,6 +213,25 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
           {pick.isProjectionOnly && (
             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[oklch(0.20_0.02_255)] text-[oklch(0.50_0.04_255)]">
               {pick.hasMarketData ? "Research only" : "Awaiting Market Data"}
+            </span>
+          )}
+          {/* Pricing penalty badge */}
+          {pick.pricingPenaltyTier && pick.pricingPenaltyTier !== 'NONE' && (
+            <span
+              className="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
+              style={{
+                background: pick.pricingPenaltyTier === 'HEAVY' || pick.pricingPenaltyTier === 'ULTRA_JUICED'
+                  ? 'oklch(0.68 0.22 25 / 15%)'
+                  : 'oklch(0.82 0.17 85 / 12%)',
+                color: pick.pricingPenaltyTier === 'HEAVY' || pick.pricingPenaltyTier === 'ULTRA_JUICED'
+                  ? 'oklch(0.68 0.22 25)'
+                  : 'oklch(0.82 0.17 85)',
+                borderColor: pick.pricingPenaltyTier === 'HEAVY' || pick.pricingPenaltyTier === 'ULTRA_JUICED'
+                  ? 'oklch(0.68 0.22 25 / 30%)'
+                  : 'oklch(0.82 0.17 85 / 25%)',
+              }}
+            >
+              {pick.pricingPenaltyLabel}
             </span>
           )}
         </div>
