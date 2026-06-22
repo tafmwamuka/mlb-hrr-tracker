@@ -450,12 +450,13 @@ function SectionHeader({ icon: Icon, title, badge, color = "oklch(0.72 0.18 165)
 
 // ─── Data Status Panel ───────────────────────────────────────────────────────
 
-type SourceStatus = 'ok' | 'partial' | 'offline' | 'loading';
+type SourceStatus = 'ok' | 'partial' | 'offline' | 'loading' | 'awaiting';
 
 function SourceStatusDot({ status }: { status: SourceStatus }) {
   if (status === 'ok') return <CheckCircle2 size={10} style={{ color: 'oklch(0.72 0.18 165)' }} />;
   if (status === 'partial') return <AlertTriangle size={10} style={{ color: 'oklch(0.82 0.17 85)' }} />;
   if (status === 'loading') return <Clock size={10} style={{ color: 'oklch(0.65 0.15 280)' }} />;
+  if (status === 'awaiting') return <Clock size={10} style={{ color: 'oklch(0.65 0.15 280)' }} />;
   return <XCircle size={10} style={{ color: 'oklch(0.68 0.22 25)' }} />;
 }
 
@@ -463,6 +464,7 @@ function SourceStatusLabel({ status }: { status: SourceStatus }) {
   if (status === 'ok') return <span style={{ color: 'oklch(0.72 0.18 165)' }} className="text-[9px] font-bold">LIVE</span>;
   if (status === 'partial') return <span style={{ color: 'oklch(0.82 0.17 85)' }} className="text-[9px] font-bold">PARTIAL</span>;
   if (status === 'loading') return <span style={{ color: 'oklch(0.65 0.15 280)' }} className="text-[9px] font-bold">LOADING</span>;
+  if (status === 'awaiting') return <span style={{ color: 'oklch(0.65 0.15 280)' }} className="text-[9px] font-bold">AWAITING</span>;
   return <span style={{ color: 'oklch(0.68 0.22 25)' }} className="text-[9px] font-bold">OFFLINE</span>;
 }
 
@@ -487,31 +489,35 @@ function DataStatusPanel() {
   const hasAltK = (pitcherOdds.altKLineCount ?? 0) > 0;
   const hasWalk = (pitcherOdds.walkLineCount ?? 0) > 0;
 
+  // withinActiveWindow: true = market hours (9 AM–11:30 PM ET), false = overnight
+  const hrrWithinWindow = (status.moneyPickOdds as any).withinActiveWindow !== false;
+  const pitcherWithinWindow = (pitcherOdds as any).withinActiveWindow !== false;
+
   const sources: Array<{ label: string; status: SourceStatus; detail?: string }> = [
     {
       label: 'Money Pick Odds',
-      status: status.moneyPickOdds.connected ? 'ok' : 'offline',
-      detail: status.moneyPickOdds.connected ? `${status.moneyPickOdds.playerCount} players` : 'No data',
+      status: status.moneyPickOdds.connected ? 'ok' : hrrWithinWindow ? 'offline' : 'awaiting',
+      detail: status.moneyPickOdds.connected ? `${status.moneyPickOdds.playerCount} players` : hrrWithinWindow ? 'No data' : 'Market hours 9AM–11:30PM ET',
     },
     {
       label: 'Pitcher K/BB Odds',
-      status: pitcherOdds.connected ? 'ok' : 'offline',
-      detail: pitcherOdds.connected ? `${pitcherOdds.pitcherCount} pitchers` : 'No data',
+      status: pitcherOdds.connected ? 'ok' : pitcherWithinWindow ? 'offline' : 'awaiting',
+      detail: pitcherOdds.connected ? `${pitcherOdds.pitcherCount} pitchers` : pitcherWithinWindow ? 'No data' : 'Market hours 9AM–11:30PM ET',
     },
     {
       label: 'Main K Lines',
-      status: hasMainK ? 'ok' : pitcherOdds.connected ? 'partial' : 'offline',
-      detail: hasMainK ? `${pitcherOdds.mainKCount} pitchers` : pitcherOdds.connected ? 'None loaded' : 'Offline',
+      status: hasMainK ? 'ok' : pitcherOdds.connected ? 'partial' : pitcherWithinWindow ? 'offline' : 'awaiting',
+      detail: hasMainK ? `${pitcherOdds.mainKCount} pitchers` : pitcherOdds.connected ? 'None loaded' : pitcherWithinWindow ? 'Offline' : 'Awaiting market hours',
     },
     {
       label: 'Alt K Lines',
-      status: hasAltK ? 'ok' : pitcherOdds.connected ? 'partial' : 'offline',
-      detail: hasAltK ? `${pitcherOdds.altKLineCount} lines` : pitcherOdds.connected ? 'None loaded' : 'Offline',
+      status: hasAltK ? 'ok' : pitcherOdds.connected ? 'partial' : pitcherWithinWindow ? 'offline' : 'awaiting',
+      detail: hasAltK ? `${pitcherOdds.altKLineCount} lines` : pitcherOdds.connected ? 'None loaded' : pitcherWithinWindow ? 'Offline' : 'Awaiting market hours',
     },
     {
       label: 'Walk Lines',
-      status: hasWalk ? 'ok' : pitcherOdds.connected ? 'partial' : 'offline',
-      detail: hasWalk ? `${pitcherOdds.walkLineCount} lines` : pitcherOdds.connected ? 'None loaded' : 'Offline',
+      status: hasWalk ? 'ok' : pitcherOdds.connected ? 'partial' : pitcherWithinWindow ? 'offline' : 'awaiting',
+      detail: hasWalk ? `${pitcherOdds.walkLineCount} lines` : pitcherOdds.connected ? 'None loaded' : pitcherWithinWindow ? 'Offline' : 'Awaiting market hours',
     },
     {
       label: 'Game Totals',
@@ -536,8 +542,9 @@ function DataStatusPanel() {
   ];
 
   const offlineCount = sources.filter(s => s.status === 'offline').length;
+  const awaitingCount = sources.filter(s => s.status === 'awaiting').length;
   const partialCount = sources.filter(s => s.status === 'partial' || s.status === 'loading').length;
-  const allOk = offlineCount === 0 && partialCount === 0;
+  const allOk = offlineCount === 0 && partialCount === 0 && awaitingCount === 0;
 
   const lastUpdatedStr = (() => {
     if (!status.lastUpdated) return null;
@@ -550,9 +557,17 @@ function DataStatusPanel() {
     } catch { return null; }
   })();
 
-  const overallColor = allOk ? 'oklch(0.72 0.18 165)' : offlineCount > 0 ? 'oklch(0.68 0.22 25)' : 'oklch(0.82 0.17 85)';
-  const overallBg = allOk ? 'oklch(0.14 0.03 165 / 0.4)' : offlineCount > 0 ? 'oklch(0.14 0.04 25 / 0.35)' : 'oklch(0.14 0.04 60 / 0.35)';
-  const overallBorder = allOk ? 'oklch(0.72 0.18 165 / 25%)' : offlineCount > 0 ? 'oklch(0.68 0.22 25 / 30%)' : 'oklch(0.82 0.17 85 / 30%)';
+  const overallColor = allOk ? 'oklch(0.72 0.18 165)' : offlineCount > 0 ? 'oklch(0.68 0.22 25)' : awaitingCount > 0 ? 'oklch(0.65 0.15 280)' : 'oklch(0.82 0.17 85)';
+  const overallBg = allOk ? 'oklch(0.14 0.03 165 / 0.4)' : offlineCount > 0 ? 'oklch(0.14 0.04 25 / 0.35)' : awaitingCount > 0 ? 'oklch(0.14 0.03 280 / 0.35)' : 'oklch(0.14 0.04 60 / 0.35)';
+  const overallBorder = allOk ? 'oklch(0.72 0.18 165 / 25%)' : offlineCount > 0 ? 'oklch(0.68 0.22 25 / 30%)' : awaitingCount > 0 ? 'oklch(0.65 0.15 280 / 30%)' : 'oklch(0.82 0.17 85 / 30%)';
+
+  const summaryLabel = allOk
+    ? 'All Data Sources Live'
+    : offlineCount > 0
+    ? `${offlineCount} Source${offlineCount > 1 ? 's' : ''} Offline`
+    : awaitingCount > 0
+    ? `Awaiting Market Hours (9AM–11:30PM ET)`
+    : `${partialCount} Source${partialCount > 1 ? 's' : ''} Loading`;
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: overallBg, border: `1px solid ${overallBorder}` }}>
@@ -563,7 +578,7 @@ function DataStatusPanel() {
         <div className="flex items-center gap-2">
           <Activity size={11} style={{ color: overallColor }} />
           <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: overallColor }}>
-            {allOk ? 'All Data Sources Live' : offlineCount > 0 ? `${offlineCount} Source${offlineCount > 1 ? 's' : ''} Offline` : `${partialCount} Source${partialCount > 1 ? 's' : ''} Loading`}
+            {summaryLabel}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -921,8 +936,12 @@ function DiamondParlayBuilder() {
       ) : !parlays || parlays.totalEligiblePlays === 0 ? (
         <div className="text-center py-8">
           <Gem size={24} className="text-[oklch(0.35_0.015_255)] mx-auto mb-3" />
-          <p className="text-sm text-[oklch(0.50_0.015_255)]">No eligible plays available for parlay building.</p>
-          <p className="text-xs text-[oklch(0.40_0.015_255)] mt-1">Plays require live sportsbook odds and positive model probability.</p>
+          <p className="text-sm text-[oklch(0.50_0.015_255)]">Parlay Builder — Projection Only</p>
+          <p className="text-xs text-[oklch(0.40_0.015_255)] mt-1 leading-relaxed">
+            No live sportsbook odds available. Parlay Builder requires real book odds to calculate EV and combined odds.
+            <br />
+            <span className="text-[oklch(0.50_0.015_255)]">Sportsbook lines are available during market hours (9AM–11:30PM ET).</span>
+          </p>
         </div>
       ) : (
         <div className="space-y-4">

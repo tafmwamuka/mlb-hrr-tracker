@@ -186,8 +186,10 @@ export function getPitcherOddsStatus(): {
   altKLineCount: number;   // total alt K lines across all pitchers
   walkLineCount: number;   // total walk lines across all pitchers
   mainKCount: number;      // pitchers with a main K line
+  withinActiveWindow: boolean;
 } {
-  if (!pitcherOddsCache) return { loaded: false, pitcherCount: 0, lastUpdated: null, altKLineCount: 0, walkLineCount: 0, mainKCount: 0 };
+  const withinActiveWindow = isWithinActiveWindow();
+  if (!pitcherOddsCache) return { loaded: false, pitcherCount: 0, lastUpdated: null, altKLineCount: 0, walkLineCount: 0, mainKCount: 0, withinActiveWindow };
   let altKLineCount = 0;
   let walkLineCount = 0;
   let mainKCount = 0;
@@ -203,6 +205,7 @@ export function getPitcherOddsStatus(): {
     altKLineCount,
     walkLineCount,
     mainKCount,
+    withinActiveWindow,
   };
 }
 
@@ -391,19 +394,21 @@ function parsePitcherData(bookmakers: BookmakerData[]): Map<string, PitcherMarke
  * Returns a map of pitcher name → PitcherMarketData
  * Uses a shared 15-minute in-memory cache.
  */
-export async function fetchPitcherMarketData(apiKey?: string): Promise<Map<string, PitcherMarketData>> {
+export async function fetchPitcherMarketData(apiKey?: string, forceRefresh = false): Promise<Map<string, PitcherMarketData>> {
   const key = getOddsApiKey(apiKey);
   if (!key) {
     console.warn('[OddsAPI] No API key — skipping pitcher props fetch');
     return new Map();
   }
 
-  if (pitcherOddsCache && Date.now() - pitcherOddsCache.ts < ODDS_CACHE_TTL) {
+  // Return cached data if fresh (unless forceRefresh bypasses the TTL check)
+  if (!forceRefresh && pitcherOddsCache && Date.now() - pitcherOddsCache.ts < ODDS_CACHE_TTL) {
     console.log(`[OddsAPI] Returning cached pitcher odds (${pitcherOddsCache.data.size} pitchers)`);
     return pitcherOddsCache.data;
   }
 
-  if (!isWithinActiveWindow()) {
+  // Active window gate: skip outside 9AM–11:30PM ET unless forceRefresh (e.g. startup warm-up)
+  if (!forceRefresh && !isWithinActiveWindow()) {
     console.log('[OddsAPI] Outside active window — skipping pitcher props fetch');
     return pitcherOddsCache?.data ?? new Map();
   }
@@ -647,12 +652,14 @@ function parseHRRData(bookmakers: BookmakerData[]): Map<string, HRRMarketData> {
 let oddsCache: { data: Map<string, HRRMarketData>; ts: number } | null = null;
 const ODDS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 /** Return status of the HRR odds in-memory cache */
-export function getHRROddsStatus(): { loaded: boolean; playerCount: number; lastUpdated: Date | null } {
-  if (!oddsCache) return { loaded: false, playerCount: 0, lastUpdated: null };
+export function getHRROddsStatus(): { loaded: boolean; playerCount: number; lastUpdated: Date | null; withinActiveWindow: boolean } {
+  const withinActiveWindow = isWithinActiveWindow();
+  if (!oddsCache) return { loaded: false, playerCount: 0, lastUpdated: null, withinActiveWindow };
   return {
     loaded: oddsCache.data.size > 0,
     playerCount: oddsCache.data.size,
     lastUpdated: new Date(oddsCache.ts),
+    withinActiveWindow,
   };
 }
 
@@ -696,21 +703,21 @@ function isWithinActiveWindow(): boolean {
  * Returns a map of player name → HRR market data
  * Uses 15-minute in-memory cache and 11AM-11:30PM ET time-window gate.
  */
-export async function fetchHRRMarketData(apiKey?: string): Promise<Map<string, HRRMarketData>> {
+export async function fetchHRRMarketData(apiKey?: string, forceRefresh = false): Promise<Map<string, HRRMarketData>> {
   const key = getOddsApiKey(apiKey);
   if (!key) {
     console.warn('[OddsAPI] No API key available — skipping live odds fetch');
     return new Map();
   }
 
-  // Return cached data if fresh
-  if (oddsCache && Date.now() - oddsCache.ts < ODDS_CACHE_TTL) {
+  // Return cached data if fresh (unless forceRefresh bypasses the TTL check)
+  if (!forceRefresh && oddsCache && Date.now() - oddsCache.ts < ODDS_CACHE_TTL) {
     console.log(`[OddsAPI] Returning cached odds (${oddsCache.data.size} players)`);
     return oddsCache.data;
   }
 
-  // Time-window gate: only call API between 11 AM – 11:30 PM ET
-  if (!isWithinActiveWindow()) {
+  // Active window gate: skip outside 9AM–11:30PM ET unless forceRefresh (e.g. startup warm-up)
+  if (!forceRefresh && !isWithinActiveWindow()) {
     console.log('[OddsAPI] Outside active window (11AM-11:30PM ET) — skipping API call, using model odds');
     return oddsCache?.data ?? new Map();
   }

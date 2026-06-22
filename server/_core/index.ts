@@ -78,13 +78,15 @@ async function startServer() {
     // Warm pitcher odds and HRR odds caches on startup
     // Production instances start cold — pre-warming ensures Book odds and Edge are
     // available immediately on first user request without a cold-start delay.
+    // forceRefresh=true bypasses the active-window gate so the cache is always
+    // populated when the server boots, regardless of the current time of day.
     setTimeout(() => {
-      fetchPitcherMarketData().then(map => {
+      fetchPitcherMarketData(undefined, true).then(map => {
         console.log(`[Startup] Pitcher odds cache warmed: ${map.size} pitchers`);
       }).catch(err => {
         console.error('[Startup] Pitcher odds warm failed:', err);
       });
-      fetchHRRMarketData().then(map => {
+      fetchHRRMarketData(undefined, true).then(map => {
         console.log(`[Startup] HRR odds cache warmed: ${map.size} players`);
       }).catch(err => {
         console.error('[Startup] HRR odds warm failed:', err);

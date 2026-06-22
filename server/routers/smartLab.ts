@@ -863,6 +863,7 @@ ${slateContext}`;
         connected: hrrOdds.loaded,
         playerCount: hrrOdds.playerCount,
         lastUpdated: hrrOdds.lastUpdated,
+        withinActiveWindow: hrrOdds.withinActiveWindow,
       },
       pitcherStrikeoutOdds: {
         connected: pitcherOdds.loaded && pitcherOdds.pitcherCount > 0,
@@ -872,6 +873,7 @@ ${slateContext}`;
         mainKCount: pitcherOdds.mainKCount,
         altKLineCount: pitcherOdds.altKLineCount,
         walkLineCount: pitcherOdds.walkLineCount,
+        withinActiveWindow: pitcherOdds.withinActiveWindow,
       },
       gameTotals: {
         connected: gameTotals.loaded,

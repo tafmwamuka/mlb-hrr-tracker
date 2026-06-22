@@ -1617,3 +1617,18 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Display parlay combined odds, individual leg odds, EV, and hit probability per parlay
 - [x] Update Pitcher Edge Lab UI with pricing penalty badge and Ultra-Juiced section
 - [x] Write vitest tests for parlay math and multi-factor scorer (25 tests, all passing)
+
+## Phase CJ: Production Odds Pipeline Audit & Fix (COMPLETE)
+
+- [x] Audit oddsApiService: verified getPitcherOdds returns bookOdds/fairOdds for both K and BB markets
+- [x] Audit pitcherEdgeEngine: verified bookOdds/fairOdds/edge/EV fields are populated from odds cache
+- [x] Audit discipline router: verified serializer passes all odds fields to frontend
+- [x] Audit Smart Lab getDataStatus: verified it checks live cache not stale counts
+- [x] Root cause found: isWithinActiveWindow() blocked startup warm-up at 1 AM ET
+- [x] Fix startup warm-up: added forceRefresh=true to bypass active window gate on server boot
+- [x] Fix Smart Lab data status: added withinActiveWindow field to getPitcherOddsStatus and getHRROddsStatus
+- [x] Fix Smart Lab UI: show AWAITING (blue) instead of OFFLINE (red) when outside market hours
+- [x] Fix Smart Lab UI: show 'Awaiting Market Hours (9AM-11:30PM ET)' as summary label
+- [x] Fix Parlay Builder empty state: show 'Projection Only' message with market hours context
+- [x] Ensure all three UIs (Pitchers, Smart Lab, Parlay Builder) read from same odds cache
+- [x] Walk props pipeline confirmed correct - same code path as K props, blocked only by time window
