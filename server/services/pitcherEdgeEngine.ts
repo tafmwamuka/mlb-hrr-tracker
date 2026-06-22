@@ -30,7 +30,7 @@
  */
 
 import { fetchPitcherMarketData, type PitcherMarketData, americanToImpliedProbability, removeVig } from './oddsApiService';
-import { getPricingPenalty, type PricingPenaltyTier } from './parlayBuilder';
+import { getPricingPenalty, isValueZoneTarget, isPreferredParlayLeg, type PricingPenaltyTier } from './parlayBuilder';
 import { detectDisciplineEdge, type PitcherPropInput } from './disciplineEdgeDetector';
 import { getTeamDiscipline, computeTeamMatchupScore } from './teamDisciplineService';
 import { fetchTodaysGames } from './mlbLineupService';
@@ -126,6 +126,83 @@ const THRESHOLDS = {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Play category for default Pitchers tab view filtering.
+ *
+ * OFFICIAL_PLAY  — Official/Elite/DualEdge/StackAlert tier, live odds, not ultra-juiced
+ * VALUE_PLAY     — Lean tier or acceptable juiced, positive EV, live odds
+ * SINGLE_BET     — Near-even money (+110 to -150), positive EV, strong model edge
+ * PARLAY_LEG     — Preferred parlay range (-150 to -400), positive EV
+ * RESEARCH_ONLY  — Projection only, ultra-juiced (worse than -600), or missing odds
+ */
+export type PlayCategory =
+  | 'OFFICIAL_PLAY'
+  | 'VALUE_PLAY'
+  | 'SINGLE_BET'
+  | 'PARLAY_LEG'
+  | 'RESEARCH_ONLY';
+
+/**
+ * Compute actionability score (0-100) for default sort.
+ * Weights: model probability (30) + edge (25) + EV (25) + pricing (20)
+ */
+export function computeActionabilityScore(params: {
+  modelProbability: number;  // 0-1
+  edge: number;              // modelProb - impliedProb
+  bookOdds: number;
+  adjustedEdgeScore: number; // 0-100 after pricing penalty
+  hasMarketData: boolean;
+}): number {
+  const { modelProbability, edge, bookOdds, adjustedEdgeScore, hasMarketData } = params;
+  if (!hasMarketData) {
+    // No live odds: score based on model probability only (max 40)
+    return Math.round(modelProbability * 40);
+  }
+  // Model probability component (0-30)
+  const modelScore = Math.min(modelProbability * 30, 30);
+  // Edge component (0-25): edge of 10%+ = full 25
+  const edgeScore = Math.min(Math.max(edge * 250, 0), 25);
+  // Pricing component (0-20): adjustedEdgeScore already has penalty applied
+  const pricingScore = (adjustedEdgeScore / 100) * 20;
+  // Odds attractiveness bonus (0-25): near-even money gets highest bonus
+  let oddsBonus = 0;
+  if (bookOdds >= -105) oddsBonus = 25;        // Value Zone target
+  else if (bookOdds >= -150) oddsBonus = 20;   // Extended single bet range
+  else if (bookOdds >= -250) oddsBonus = 15;   // Good parlay leg
+  else if (bookOdds >= -400) oddsBonus = 10;   // Acceptable parlay leg
+  else if (bookOdds >= -600) oddsBonus = 3;    // Acceptable juiced
+  else oddsBonus = 0;                          // Research only
+  return Math.round(Math.min(modelScore + edgeScore + pricingScore + oddsBonus, 100));
+}
+
+/**
+ * Classify a pick into a play category for the Pitchers tab filter system.
+ */
+export function classifyPlayCategory(params: {
+  tier: PitcherPropTier;
+  bookOdds: number;
+  edge: number;
+  hasMarketData: boolean;
+  isUltraJuiced: boolean;
+  isProjectionOnly: boolean;
+}): PlayCategory {
+  const { tier, bookOdds, edge, hasMarketData, isUltraJuiced, isProjectionOnly } = params;
+  // Research Only: no live odds, ultra-juiced, or projection tier
+  if (!hasMarketData || isUltraJuiced || isProjectionOnly) return 'RESEARCH_ONLY';
+  // Research Only: odds worse than -600 (ultra-juiced threshold)
+  if (bookOdds !== 0 && Math.abs(bookOdds) > 600) return 'RESEARCH_ONLY';
+  // Official Play: official/elite/dual/stack tier with live odds
+  if (isOfficialTier(tier)) return 'OFFICIAL_PLAY';
+  // Single Bet: near-even money (+110 to -150), positive EV
+  if (bookOdds >= -150 && edge > 0) return 'SINGLE_BET';
+  // Parlay Leg: preferred parlay range (-150 to -400), positive EV
+  if (bookOdds < -150 && bookOdds >= -400 && edge > 0) return 'PARLAY_LEG';
+  // Value Play: lean tier with live odds, or acceptable juiced with positive EV
+  if (edge > 0) return 'VALUE_PLAY';
+  // Default: research
+  return 'RESEARCH_ONLY';
+}
+
 export type PitcherPropTier =
   | 'ELITE'
   | 'OFFICIAL'
@@ -193,10 +270,14 @@ export interface PitcherEdgePick {
   hasMarketData: boolean;    // false = model-only, no live odds
 
   // Pricing penalty (new)
-  pricingPenaltyTier: PricingPenaltyTier;  // NONE | SMALL | MODERATE | HEAVY | ULTRA_JUICED
+  pricingPenaltyTier: PricingPenaltyTier;  // NONE | SMALL | ULTRA_JUICED
   pricingPenaltyLabel: string;             // Human-readable penalty description
-  isUltraJuiced: boolean;                  // true = worse than -1000, research only
+  isUltraJuiced: boolean;                  // true = worse than -600, research only
   adjustedEdgeScore: number;               // pitcherEdgeScore after pricing penalty applied
+
+  // Actionability (new)
+  actionabilityScore: number;  // 0-100 composite for default sort
+  playCategory: PlayCategory;  // OFFICIAL_PLAY | VALUE_PLAY | SINGLE_BET | PARLAY_LEG | RESEARCH_ONLY
 }
 
 // ── Pitch count / leash projection ───────────────────────────────────────────
@@ -572,6 +653,21 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           pricingPenaltyLabel: kPricingPenalty.label,
           isUltraJuiced: kPricingPenalty.isUltraJuiced,
           adjustedEdgeScore: adjustedKEdgeScore,
+          actionabilityScore: computeActionabilityScore({
+            modelProbability: modelProb,
+            edge,
+            bookOdds: kLine.overOdds,
+            adjustedEdgeScore: adjustedKEdgeScore,
+            hasMarketData,
+          }),
+          playCategory: classifyPlayCategory({
+            tier,
+            bookOdds: kLine.overOdds,
+            edge,
+            hasMarketData,
+            isUltraJuiced: kPricingPenalty.isUltraJuiced,
+            isProjectionOnly: isProjectionTier(tier),
+          }),
         };
         allPicks.push(pick);
         // Track for Dual Edge (only official/lean picks)
@@ -759,6 +855,21 @@ export async function runPitcherEdgeEngine(): Promise<PitcherEdgeEngineResult> {
           pricingPenaltyLabel: bbPricingPenalty.label,
           isUltraJuiced: bbPricingPenalty.isUltraJuiced,
           adjustedEdgeScore: adjustedBBEdgeScore,
+          actionabilityScore: computeActionabilityScore({
+            modelProbability: modelProb,
+            edge,
+            bookOdds: bbLine.overOdds,
+            adjustedEdgeScore: adjustedBBEdgeScore,
+            hasMarketData: bbHasMarketData,
+          }),
+          playCategory: classifyPlayCategory({
+            tier: bbTier,
+            bookOdds: bbLine.overOdds,
+            edge,
+            hasMarketData: bbHasMarketData,
+            isUltraJuiced: bbPricingPenalty.isUltraJuiced,
+            isProjectionOnly: isProjectionTier(bbTier),
+          }),
         };
         allPicks.push(pick);
         if (!isProjectionTier(bbTier)) {

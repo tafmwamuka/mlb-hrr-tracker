@@ -260,6 +260,8 @@ export const disciplineRouter = router({
           pricingPenaltyLabel: p.pricingPenaltyLabel,
           isUltraJuiced: p.isUltraJuiced,
           adjustedEdgeScore: p.adjustedEdgeScore,
+          actionabilityScore: p.actionabilityScore,
+          playCategory: p.playCategory,
         })),
         dualEdgePitchers: result.dualEdgePitchers,
         stackAlertGames: result.stackAlertGames,

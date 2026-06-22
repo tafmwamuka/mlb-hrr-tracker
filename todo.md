@@ -1650,3 +1650,20 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Update Pitcher Edge Lab pricing penalty badge colors/labels for new tiers
 - [x] Update parlayBuilder.test.ts tests for new tier thresholds (43 tests, all passing)
 - [x] TypeScript check: 0 errors
+
+## Phase CL: Pitchers Tab Default Experience Rebuild (COMPLETE)
+- [x] Add actionabilityScore field to PitcherEdgePick (composite of EV + edge + pricing + model prob)
+- [x] Add playCategory field: OFFICIAL_PLAY | VALUE_PLAY | SINGLE_BET | PARLAY_LEG | RESEARCH_ONLY
+- [x] OFFICIAL_PLAY: tier is OFFICIAL, hasMarketData=true, bookOdds not worse than -600
+- [x] VALUE_PLAY: positive EV, hasMarketData=true, bookOdds -401 to -600 or better
+- [x] SINGLE_BET: positive EV, bookOdds +110 to -150 (extend to -150 if edge exceptional)
+- [x] PARLAY_LEG: positive EV, bookOdds -150 to -400, strong model edge
+- [x] RESEARCH_ONLY: projection only, odds worse than -600, diagnostic, missing odds
+- [x] Sort all picks by actionabilityScore descending before returning from discipline router
+- [x] Add filter buttons to PitcherEdgePicks UI: Official | Value | Single Bets | Parlays | Research | All
+- [x] Default active filters: Official + Value + Single Bets + Parlays (Research hidden by default)
+- [x] Add collapsible Research Archive section at bottom of Pitchers tab
+- [x] Research Archive contains: Projection Only + odds worse than -600 + diagnostic plays
+- [x] Main board shows only plays matching active filters
+- [x] Sort main board by actionabilityScore descending
+- [x] TypeScript: 0 errors, 43 parlayBuilder tests passing

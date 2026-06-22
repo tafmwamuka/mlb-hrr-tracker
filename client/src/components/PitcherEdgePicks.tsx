@@ -80,12 +80,22 @@ interface PitcherEdgePick {
   isLeanPlay: boolean;
   isProjectionOnly: boolean;
   hasMarketData: boolean;
-  // Pricing penalty (optional — new fields)
+  // Pricing penalty
   pricingPenaltyTier?: string;
   pricingPenaltyLabel?: string;
   isUltraJuiced?: boolean;
   adjustedEdgeScore?: number;
+  // Actionability
+  actionabilityScore?: number;
+  playCategory?: PlayCategory;
 }
+
+type PlayCategory =
+  | 'OFFICIAL_PLAY'
+  | 'VALUE_PLAY'
+  | 'SINGLE_BET'
+  | 'PARLAY_LEG'
+  | 'RESEARCH_ONLY';
 
 // ── Tier config ───────────────────────────────────────────────────────────────
 
@@ -456,10 +466,29 @@ function CollapsibleSection({
   );
 }
 
+// ── Filter config ─────────────────────────────────────────────────────────────
+
+type FilterKey = 'official' | 'value' | 'single' | 'parlay' | 'research' | 'all';
+
+const FILTER_CONFIG: Record<FilterKey, { label: string; categories: PlayCategory[] | 'all' }> = {
+  official:  { label: '🔥 Official',     categories: ['OFFICIAL_PLAY'] },
+  value:     { label: '💎 Value',         categories: ['VALUE_PLAY'] },
+  single:    { label: '🎯 Single Bets',   categories: ['SINGLE_BET'] },
+  parlay:    { label: '🔗 Parlay Plays',  categories: ['PARLAY_LEG'] },
+  research:  { label: '🧪 Research',      categories: ['RESEARCH_ONLY'] },
+  all:       { label: 'All',              categories: 'all' },
+};
+
+// Default active filters: Official + Value + Single Bets + Parlay
+const DEFAULT_ACTIVE_FILTERS: FilterKey[] = ['official', 'value', 'single', 'parlay'];
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function PitcherEdgePicks() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showResearchArchive, setShowResearchArchive] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<FilterKey[]>(DEFAULT_ACTIVE_FILTERS);
+
   const { data, isLoading, refetch, isFetching } = trpc.discipline.getPitcherEdgePicks.useQuery(
     undefined,
     { staleTime: 10 * 60 * 1000 }
@@ -469,21 +498,56 @@ export function PitcherEdgePicks() {
   const rejectedPlays: RejectedPlay[] = (data as any)?.rejectedPlays ?? [];
   const dualEdgePitchers = data?.dualEdgePitchers ?? [];
   const stackAlertGames = data?.stackAlertGames ?? [];
-  const hasOfficialPlays = data?.hasOfficialPlays ?? false;
 
-  // Group picks by tier
-  const elitePicks = picks.filter(p => p.tier === "ELITE");
-  const officialPicks = picks.filter(p => p.tier === "OFFICIAL");
-  const dualEdgePicks = picks.filter(p => p.tier === "DUAL_EDGE");
-  const stackAlertPicks = picks.filter(p => p.tier === "STACK_ALERT");
-  const leanPicks = picks.filter(p => p.tier === "LEAN");
-  const projectionPicks = picks.filter(p => p.tier === "PROJECTION");
+  // Sort all picks by actionabilityScore descending (falls back to pitcherEdgeScore)
+  const sortedPicks = [...picks].sort((a, b) =>
+    ((b.actionabilityScore ?? b.pitcherEdgeScore) - (a.actionabilityScore ?? a.pitcherEdgeScore))
+  );
 
-  // All official-tier picks (Elite + Official + Dual + Stack)
-  const officialTierPicks = [...elitePicks, ...dualEdgePicks, ...officialPicks, ...stackAlertPicks];
+  // Separate research-only picks
+  const mainPicks = sortedPicks.filter(p =>
+    p.playCategory !== 'RESEARCH_ONLY' && !p.isProjectionOnly && !p.isUltraJuiced
+  );
+  const researchPicks = sortedPicks.filter(p =>
+    p.playCategory === 'RESEARCH_ONLY' || p.isProjectionOnly || p.isUltraJuiced
+  );
 
-  // No-empty-board rule: if no official plays, show leans as primary
-  const showLeansAsPrimary = officialTierPicks.length === 0 && leanPicks.length > 0;
+  // Determine which categories are active for filtering
+  const isAllActive = activeFilters.includes('all');
+  const isResearchActive = activeFilters.includes('research');
+
+  // Filtered main picks based on active filters
+  const filteredMainPicks = isAllActive
+    ? mainPicks
+    : mainPicks.filter(p => {
+        const cat = p.playCategory ?? 'RESEARCH_ONLY';
+        return activeFilters.some(f => {
+          const cfg = FILTER_CONFIG[f];
+          return cfg.categories !== 'all' && cfg.categories.includes(cat as PlayCategory);
+        });
+      });
+
+  // Group filtered picks by category for section display
+  const officialFiltered = filteredMainPicks.filter(p => p.playCategory === 'OFFICIAL_PLAY');
+  const valueFiltered = filteredMainPicks.filter(p => p.playCategory === 'VALUE_PLAY');
+  const singleFiltered = filteredMainPicks.filter(p => p.playCategory === 'SINGLE_BET');
+  const parlayFiltered = filteredMainPicks.filter(p => p.playCategory === 'PARLAY_LEG');
+
+  // Toggle a filter button (multi-select, except 'all' is exclusive)
+  function toggleFilter(key: FilterKey) {
+    if (key === 'all') {
+      setActiveFilters(['all']);
+      return;
+    }
+    setActiveFilters(prev => {
+      const withoutAll = prev.filter(f => f !== 'all');
+      if (withoutAll.includes(key)) {
+        const next = withoutAll.filter(f => f !== key);
+        return next.length === 0 ? DEFAULT_ACTIVE_FILTERS : next;
+      }
+      return [...withoutAll, key];
+    });
+  }
 
   if (isLoading) {
     return (
@@ -525,11 +589,10 @@ export function PitcherEdgePicks() {
         <div>
           <div className="text-white font-bold text-base">Pitcher Edge Lab</div>
           <div className="text-[oklch(0.50_0.015_255)] text-xs">
-            {officialTierPicks.length > 0
-              ? `${officialTierPicks.length} official play${officialTierPicks.length !== 1 ? "s" : ""}`
-              : `${leanPicks.length} lean${leanPicks.length !== 1 ? "s" : ""} (no official plays today)`}
+            {mainPicks.length} actionable play{mainPicks.length !== 1 ? "s" : ""}
             {dualEdgePitchers.length > 0 && ` · ${dualEdgePitchers.length} dual-edge`}
             {stackAlertGames.length > 0 && ` · ${stackAlertGames.length} stack alert`}
+            {researchPicks.length > 0 && ` · ${researchPicks.length} in archive`}
           </div>
         </div>
         <button
@@ -542,60 +605,145 @@ export function PitcherEdgePicks() {
         </button>
       </div>
 
-      {/* ── Section 1: Elite Plays ─────────────────────────────────────────── */}
-      {elitePicks.length > 0 && (
-        <div className="mb-4">
-          <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
-            🏆 Elite Plays
+      {/* ── Filter Bar ────────────────────────────────────────────────────────── */}
+      <div className="flex gap-1.5 flex-wrap mb-4">
+        {(Object.keys(FILTER_CONFIG) as FilterKey[]).map(key => {
+          const isActive = activeFilters.includes(key) || (key === 'all' && activeFilters.includes('all'));
+          // Count picks for this filter
+          const cfg = FILTER_CONFIG[key];
+          let count = 0;
+          if (key === 'all') count = mainPicks.length;
+          else if (key === 'research') count = researchPicks.length;
+          else if (cfg.categories !== 'all') {
+            count = mainPicks.filter(p => cfg.categories.includes(p.playCategory as PlayCategory)).length;
+          }
+          return (
+            <button
+              key={key}
+              onClick={() => toggleFilter(key)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+                isActive
+                  ? 'bg-[oklch(0.55_0.25_280)] border-[oklch(0.55_0.25_280)] text-white'
+                  : 'bg-transparent border-[oklch(1_0_0/12%)] text-[oklch(0.55_0.015_255)] hover:border-[oklch(1_0_0/25%)]'
+              }`}
+            >
+              {cfg.label}
+              {count > 0 && (
+                <span className={`text-[10px] font-bold ${isActive ? 'text-white/80' : 'text-[oklch(0.45_0.015_255)]'}`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Main Board: sorted by Actionability Score ─────────────────────────── */}
+      {filteredMainPicks.length === 0 && !isResearchActive && (
+        <div className="py-6 text-center">
+          <div className="text-[oklch(0.45_0.015_255)] text-sm">
+            No plays match the selected filters.
           </div>
-          {elitePicks.map((pick, i) => (
-            <PitcherPickCard key={`elite-${i}`} pick={pick} />
-          ))}
+          <button
+            className="mt-2 text-[oklch(0.55_0.25_280)] text-xs font-medium"
+            onClick={() => setActiveFilters(DEFAULT_ACTIVE_FILTERS)}
+          >
+            Reset filters
+          </button>
         </div>
       )}
 
-      {/* ── Section 2: Official Plays (Dual Edge + Official + Stack Alert) ─── */}
-      {(dualEdgePicks.length > 0 || officialPicks.length > 0 || stackAlertPicks.length > 0) && (
+      {/* Official Plays section */}
+      {officialFiltered.length > 0 && (
         <div className="mb-4">
           <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
-            🔥 Official Pitcher Plays
+            🔥 Official Plays
             <span className="ml-2 text-[oklch(0.40_0.015_255)] normal-case">Tracked in Results & ROI</span>
           </div>
-          {dualEdgePicks.map((pick, i) => (
-            <PitcherPickCard key={`dual-${i}`} pick={pick} />
-          ))}
-          {officialPicks.map((pick, i) => (
+          {officialFiltered.map((pick, i) => (
             <PitcherPickCard key={`official-${i}`} pick={pick} />
-          ))}
-          {stackAlertPicks.map((pick, i) => (
-            <PitcherPickCard key={`stack-${i}`} pick={pick} />
           ))}
         </div>
       )}
 
-      {/* ── Section 3: Qualified Leans ────────────────────────────────────── */}
-      {leanPicks.length > 0 && (
-        <CollapsibleSection
-          title="🛡 Qualified Leans"
-          subtitle="Not in official results"
-          picks={leanPicks}
-          defaultOpen={showLeansAsPrimary}
-          idPrefix="lean"
-        />
+      {/* Value Plays section */}
+      {valueFiltered.length > 0 && (
+        <div className="mb-4">
+          <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
+            💎 Value Plays
+            <span className="ml-2 text-[oklch(0.40_0.015_255)] normal-case">Positive EV · Live odds</span>
+          </div>
+          {valueFiltered.map((pick, i) => (
+            <PitcherPickCard key={`value-${i}`} pick={pick} />
+          ))}
+        </div>
       )}
 
-      {/* ── Section 4: Projection Board (collapsed) ───────────────────────── */}
-      {projectionPicks.length > 0 && (
-        <CollapsibleSection
-          title="🧪 Projection Board"
-          subtitle="Research only — not recommended"
-          picks={projectionPicks}
-          defaultOpen={false}
-          idPrefix="proj"
-        />
+      {/* Best Single Bets section */}
+      {singleFiltered.length > 0 && (
+        <div className="mb-4">
+          <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
+            🎯 Best Single Bets
+            <span className="ml-2 text-[oklch(0.40_0.015_255)] normal-case">Near-even money · +110 to -150</span>
+          </div>
+          {singleFiltered.map((pick, i) => (
+            <PitcherPickCard key={`single-${i}`} pick={pick} />
+          ))}
+        </div>
       )}
 
-      {/* ── Rejected Play Diagnostics Panel ──────────────────────────────── */}
+      {/* Parlay Plays section */}
+      {parlayFiltered.length > 0 && (
+        <div className="mb-4">
+          <div className="text-[oklch(0.55_0.015_255)] text-[10px] uppercase tracking-wider mb-2">
+            🔗 Parlay Plays
+            <span className="ml-2 text-[oklch(0.40_0.015_255)] normal-case">-150 to -400 · Positive EV</span>
+          </div>
+          {parlayFiltered.map((pick, i) => (
+            <PitcherPickCard key={`parlay-${i}`} pick={pick} />
+          ))}
+        </div>
+      )}
+
+      {/* ── Research Archive (collapsed by default) ───────────────────────────── */}
+      {(researchPicks.length > 0 || isResearchActive) && (
+        <div className="mt-2 mb-4">
+          <button
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-[oklch(0.14_0.02_255)] border border-[oklch(1_0_0/8%)] text-left"
+            onClick={() => setShowResearchArchive(v => !v)}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sm">🧪</span>
+              <div>
+                <span className="text-[oklch(0.55_0.015_255)] text-xs font-semibold">Research Archive</span>
+                <span className="text-[oklch(0.38_0.015_255)] text-[10px] ml-2">
+                  Projection Only · Ultra-Juiced · Odds worse than -600
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 text-[oklch(0.40_0.015_255)]">
+              <span className="text-[10px]">{researchPicks.length}</span>
+              {showResearchArchive ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </div>
+          </button>
+
+          {showResearchArchive && researchPicks.length > 0 && (
+            <div className="mt-2">
+              <div className="px-3 py-2 mb-2 rounded-lg bg-[oklch(0.16_0.04_25)/30%] border border-[oklch(0.68_0.22_25)/20%]">
+                <p className="text-[oklch(0.65_0.18_25)] text-[10px] leading-relaxed">
+                  ⚠️ These plays are <strong>not recommended for betting</strong>. They are shown for research and transparency only.
+                  Plays worse than -600, projection-only plays, and ultra-juiced plays appear here.
+                </p>
+              </div>
+              {researchPicks.map((pick, i) => (
+                <PitcherPickCard key={`research-${i}`} pick={pick} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Rejected Play Diagnostics Panel ───────────────────────────────────── */}
       {rejectedPlays.length > 0 && (
         <div className="mt-4">
           <button
