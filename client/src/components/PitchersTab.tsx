@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PitcherEdgePicks } from "@/components/PitcherEdgePicks";
+import PitcherIntelTab from "@/components/PitcherIntelTab";
 import {
   FlaskConical,
   TrendingUp,
@@ -300,8 +301,11 @@ export default function PitchersTab() {
       {/* ── Pitcher Edge Picks (hero board) ─────────────────────────────── */}
       <PitcherEdgePicks />
 
-      <Tabs defaultValue="matchups" className="flex-1 flex flex-col">
-        <TabsList className="mx-4 mb-3 grid grid-cols-4 bg-white/6 rounded-xl h-8 shrink-0">
+      <Tabs defaultValue="intel" className="flex-1 flex flex-col">
+        <TabsList className="mx-4 mb-3 grid grid-cols-5 bg-white/6 rounded-xl h-8 shrink-0">
+          <TabsTrigger value="intel" className="text-[10px] rounded-lg data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-300">
+            ⚡ Intel
+          </TabsTrigger>
           <TabsTrigger value="matchups" className="text-[10px] rounded-lg data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300">
             Today
           </TabsTrigger>
@@ -315,6 +319,11 @@ export default function PitchersTab() {
             Edge Log
           </TabsTrigger>
         </TabsList>
+
+        {/* ── Pitcher Intel (ATTACK/NEUTRAL/AVOID profiles) ─────────────── */}
+        <TabsContent value="intel" className="flex-1 overflow-y-auto mt-0">
+          <PitcherIntelTab />
+        </TabsContent>
 
         {/* ── Today's Matchups ─────────────────────────────────────────────── */}
         <TabsContent value="matchups" className="flex-1 overflow-y-auto px-4 space-y-3 mt-0">

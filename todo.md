@@ -1667,3 +1667,14 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Main board shows only plays matching active filters
 - [x] Sort main board by actionabilityScore descending
 - [x] TypeScript: 0 errors, 43 parlayBuilder tests passing
+
+## Phase CM: Pitcher Intel Integration (ATTACK/NEUTRAL/AVOID) (COMPLETE)
+
+- [x] Copy mlbMatchupVSGate.ts to server/services/mlbMatchupVSGate.ts
+- [x] Copy pitcherEdgeEngine.ts to server/services/pitcherIntelEngine.ts (renamed to avoid conflict)
+- [x] Create server/routers/pitcherIntel.ts with getPitcherIntelData procedure
+- [x] Register pitcherIntel router in server/routers.ts
+- [x] Create client/src/components/PitcherIntelTab.tsx from uploaded PitchersTab.tsx
+- [x] Add Pitcher Intel as first sub-tab (⚡ Intel) in existing PitchersTab.tsx container
+- [x] TypeScript check: 0 errors
+- [x] parlayBuilder.test.ts: 43/43 passing
