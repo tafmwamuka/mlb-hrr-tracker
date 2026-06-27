@@ -103,8 +103,10 @@ export interface FilteredPicks {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_OFFICIAL_PICKS = 8;
+const MAX_PARLAY_PICKS = 8;                // cap parlay section too
 const FAIR_ODDS_OUTLIER_THRESHOLD = -500;  // fair worse than -500 = model is broken
-const PARLAY_ONLY_ODDS_THRESHOLD = -300;   // book worse than -300 = parlay only
+const BOOK_ODDS_HARD_EXCLUDE = -600;       // book worse than -600 = never show, ever (-3100 Cease)
+const PARLAY_ONLY_ODDS_THRESHOLD = -250;   // book worse than -250 = parlay only (tightened from -300)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -133,10 +135,19 @@ function isFairOddsOutlier(pick: RawPick): boolean {
 }
 
 /**
+ * Hard exclude — book odds so extreme they should never appear anywhere.
+ * e.g. Dylan Cease -3100. These are data errors or severe model miscalibration.
+ */
+function isHardExclude(pick: RawPick): boolean {
+  return pick.bookOdds < BOOK_ODDS_HARD_EXCLUDE;
+}
+
+/**
  * Check if book odds are too expensive for a single bet.
+ * -251 or worse = parlay only.
  */
 function isParlayOnly(pick: RawPick): boolean {
-  return pick.bookOdds < -PARLAY_ONLY_ODDS_THRESHOLD; // bookOdds is negative for favs
+  return pick.bookOdds < PARLAY_ONLY_ODDS_THRESHOLD;
 }
 
 // ─── Main filter ──────────────────────────────────────────────────────────────
@@ -146,11 +157,25 @@ export function filterPitcherPicks(
   rejectedPlays: RawRejectedPlay[] = []
 ): FilteredPicks {
 
-  // ── Step 1: Separate model outliers immediately ───────────────────────────
+  // ── Step 1: Hard exclude first (e.g. -3100 Cease) ────────────────────────
+  // These are data errors or extreme miscalibrations — never show anywhere
+  const hardExcluded: RawPick[] = [];
+  const afterHardExclude: RawPick[] = [];
+
+  for (const pick of rawPicks) {
+    if (isHardExclude(pick)) {
+      hardExcluded.push(pick);
+      console.log(`[PitcherFilter] Hard excluded ${pick.pitcherName}: bookOdds=${pick.bookOdds}`);
+    } else {
+      afterHardExclude.push(pick);
+    }
+  }
+
+  // ── Step 2: Separate model outliers ──────────────────────────────────────
   const outliers: RawPick[] = [];
   const sane: RawPick[] = [];
 
-  for (const pick of rawPicks) {
+  for (const pick of afterHardExclude) {
     if (isFairOddsOutlier(pick)) {
       outliers.push({
         ...pick,
@@ -186,9 +211,23 @@ export function filterPitcherPicks(
   const candidates: RawPick[] = [];
 
   for (const pick of dedupedPicks) {
-    // Leans go to their own bucket regardless of odds
+    // Leans go to their own bucket — but still apply odds checks
     if (pick.isLeanPlay && !pick.isOfficialPlay) {
-      leans.push(pick);
+      // Leans with extreme odds go to outliers
+      if (pick.bookOdds < BOOK_ODDS_HARD_EXCLUDE) continue; // silently drop
+      if (isParlayOnly(pick)) {
+        parlayOnly.push({
+          ...pick,
+          pricingPenaltyTier: 'PARLAY_ONLY',
+          pricingPenaltyLabel: 'Parlay Only (odds worse than -250)',
+          riskFlags: [
+            ...pick.riskFlags,
+            `Book odds ${pick.bookOdds} too expensive for single bet — use as parlay leg only`,
+          ],
+        });
+      } else {
+        leans.push(pick);
+      }
       continue;
     }
 
@@ -197,7 +236,7 @@ export function filterPitcherPicks(
       parlayOnly.push({
         ...pick,
         pricingPenaltyTier: 'PARLAY_ONLY',
-        pricingPenaltyLabel: 'Parlay Only (odds > -300)',
+        pricingPenaltyLabel: 'Parlay Only (odds worse than -250)',
         riskFlags: [
           ...pick.riskFlags,
           `Book odds ${pick.bookOdds} too expensive for single bet — use as parlay leg only`,
@@ -220,6 +259,9 @@ export function filterPitcherPicks(
   });
 
   const officialPicks = candidates.slice(0, MAX_OFFICIAL_PICKS);
+  // Sort parlay picks by model probability and cap
+  parlayOnly.sort((a, b) => b.modelProbability - a.modelProbability);
+  const parlayOnlyCapped = parlayOnly.slice(0, MAX_PARLAY_PICKS);
 
   // ── Step 5: Dual edge and stack alert detection ───────────────────────────
   // A pitcher is dual edge if they appear in BOTH K and BB categories
@@ -248,15 +290,15 @@ export function filterPitcherPicks(
   const counts = {
     official: officialPicks.length,
     lean: leans.length,
-    parlayOnly: parlayOnly.length,
-    outliers: outliers.length,
-    total: officialPicks.length + leans.length + parlayOnly.length,
+    parlayOnly: parlayOnlyCapped.length,
+    outliers: outliers.length + hardExcluded.length,
+    total: officialPicks.length + leans.length + parlayOnlyCapped.length,
   };
 
   return {
     officialPicks,
     leanPicks: leans,
-    parlayOnlyPicks: parlayOnly,
+    parlayOnlyPicks: parlayOnlyCapped,
     modelOutliers: outliers,
     dualEdgePitchers,
     stackAlertGames,

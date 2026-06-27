@@ -53,12 +53,14 @@ function formatOdds(odds: number): string {
 }
 
 function formatTime(iso: string): string {
-  if (!iso) return '';
+  if (!iso || iso === 'Invalid Date' || iso === 'null' || iso === 'undefined') return 'TBD';
   try {
-    return new Date(iso).toLocaleTimeString('en-US', {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'TBD';
+    return d.toLocaleTimeString('en-US', {
       hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York'
     }) + ' ET';
-  } catch { return ''; }
+  } catch { return 'TBD'; }
 }
 
 function probColor(prob: number): string {
@@ -383,7 +385,7 @@ export function PitcherEdgePicksClean() {
             onClick={() => setShowParlays(v => !v)}
           >
             <p className="text-[10px] text-yellow-500/70 uppercase tracking-widest">
-              🔗 Parlay Only ({parlayPicks.length}) · Odds &gt; -300
+              🔗 Parlay Only ({parlayPicks.length})
             </p>
             {showParlays ? <ChevronUp size={12} className="text-zinc-600" /> : <ChevronDown size={12} className="text-zinc-600" />}
           </button>
