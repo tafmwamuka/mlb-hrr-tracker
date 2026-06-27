@@ -510,10 +510,11 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     console.log(`[HRRPicks] Projected lineups — VS gate thresholds lowered (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD})`);
   }
 
-  // Phase BA fix: when vsGradeMap is empty OR all scores are neutral (5.0 fallback),
-  // skip the VS gate entirely so the quality gate + guaranteed minimum can still produce picks.
+  // Phase CN fix: stricter VS gate skip condition.
+  // Previously skipped when vsGradeMap was empty OR all neutral — meaning every player passed with no matchup filtering.
+  // Now: only skip if BOTH empty AND very few matchups (data truly unavailable).
   const allNeutral = vsGradeMap.size > 0 && Array.from(vsGradeMap.values()).every(v => v === 5.0);
-  const skipVsGate = vsGradeMap.size === 0 || allNeutral;
+  const skipVsGate = vsGradeMap.size === 0 && matchups.length < 5; // much stricter skip condition
 
   const gatedMatchups = skipVsGate
     ? matchups
@@ -662,9 +663,9 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   });
 
   // Phase AX: No pre-game gate — all picks kept regardless of game start time.
-  // ── Money Picks selection: pure relative ranking, NO probability thresholds ──
-  const MAX_MONEY_PICKS = 12;  // raised from 8 — show more picks when good ones exist
-  const MIN_MONEY_PICKS = 5;
+  // ── Money Picks selection: quality gate first, then cap ──
+  const MAX_MONEY_PICKS = 6;   // Phase CN: quality over quantity — max 6 official picks
+  const MIN_MONEY_PICKS = 0;   // Phase CN: NEVER force picks — 0 picks is valid
 
   // Phase BK: Use selectBestLine to pick the optimal line per player.
   // At this point we only have model-derived alternateLines (no sportsbook odds yet).
@@ -681,12 +682,13 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     return { ...pick, recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations };
   });
 
-  // Take top picks by score — between MIN and MAX, or all if fewer than MAX
-  const targetCount = Math.min(
-    Math.max(withRecommendedLine.length, MIN_MONEY_PICKS),
-    MAX_MONEY_PICKS
+  // Phase CN: Only take picks that pass the quality threshold — no forcing.
+  // Picks must score >=78 (Strong tier or above) to be shown as official picks.
+  const qualifiedPicks = withRecommendedLine.filter((p: any) =>
+    (p.overallScore ?? 0) >= 78  // must be Strong tier or above
   );
-  const moneyPicksRaw = withRecommendedLine.slice(0, targetCount);
+  const targetCount = Math.min(qualifiedPicks.length, MAX_MONEY_PICKS);
+  const moneyPicksRaw = qualifiedPicks.slice(0, targetCount);
 
   const moneyPicks: EnrichedMoneyPick[] = moneyPicksRaw.map((pick: any) => ({
     ...pick,

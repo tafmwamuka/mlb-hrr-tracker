@@ -187,17 +187,18 @@ function applyRecentFormAdjustment(
 
 /**
  * Calculate the HRR line from expected total
- * Sportsbooks set lines slightly below expected to create balanced action
- * Lines are always in 0.5 increments: 1.5, 2.5, 3.5, 4.5, 5.5, 6.5
+ * Phase CN fix: set line at 75% of expected total so OVER hits ~60% of the time.
+ * Previous formula (floor to nearest 0.5) set lines too close to expected,
+ * meaning players needed to exceed their average to hit — natural miss rate >50%.
  */
 export function calculateHRRLine(expectedTotal: number): number {
-  // Round down to nearest 0.5 (the "under" side of the expected value)
-  // This creates a slight edge for the OVER bettor when the model is accurate
-  const line = Math.floor(expectedTotal * 2) / 2;
-  
-  // Ensure minimum line of 1.5 (realistic sportsbook minimum for HRR)
-  // and maximum of 6.5 (even elite hitters rarely get lines above this)
-  return Math.max(1.5, Math.min(6.5, line));
+  // Set line at ~75% of expected total — player should clear ~60% of the time
+  // This mimics how sportsbooks set HRR lines for balanced action
+  const rawLine = expectedTotal * 0.75;
+  // Round to nearest 0.5
+  const rounded = Math.round(rawLine * 2) / 2;
+  // Bounds: minimum 0.5, maximum 5.5
+  return Math.max(0.5, Math.min(5.5, rounded));
 }
 
 /**

@@ -75,18 +75,19 @@ describe("HRR Service - Utility Functions", () => {
   });
 
   describe("calculateHRRLine", () => {
-    it("should return realistic lines between 1.5 and 6.5", () => {
+    it("should return realistic lines between 0.5 and 5.5 (Phase CN)", () => {
+      // Phase CN: line = 75% of expected, bounds [0.5, 5.5]
       // Low expected total
-      expect(calculateHRRLine(2.0)).toBeGreaterThanOrEqual(1.5);
-      expect(calculateHRRLine(2.0)).toBeLessThanOrEqual(6.5);
+      expect(calculateHRRLine(2.0)).toBeGreaterThanOrEqual(0.5);
+      expect(calculateHRRLine(2.0)).toBeLessThanOrEqual(5.5);
 
       // Medium expected total
-      expect(calculateHRRLine(3.5)).toBeGreaterThanOrEqual(1.5);
-      expect(calculateHRRLine(3.5)).toBeLessThanOrEqual(6.5);
+      expect(calculateHRRLine(3.5)).toBeGreaterThanOrEqual(0.5);
+      expect(calculateHRRLine(3.5)).toBeLessThanOrEqual(5.5);
 
       // High expected total
-      expect(calculateHRRLine(5.5)).toBeGreaterThanOrEqual(1.5);
-      expect(calculateHRRLine(5.5)).toBeLessThanOrEqual(6.5);
+      expect(calculateHRRLine(5.5)).toBeGreaterThanOrEqual(0.5);
+      expect(calculateHRRLine(5.5)).toBeLessThanOrEqual(5.5);
     });
 
     it("should be in 0.5 increments", () => {
@@ -94,14 +95,15 @@ describe("HRR Service - Utility Functions", () => {
       expect(line * 2).toBe(Math.floor(line * 2)); // Must be whole number when doubled
     });
 
-    it("should floor at 1.5 for very low projections", () => {
-      expect(calculateHRRLine(1.0)).toBe(1.5);
-      expect(calculateHRRLine(0.5)).toBe(1.5);
+        it("should return minimum 0.5 for very low projections (Phase CN)", () => {
+      // Phase CN: min is 0.5 — 75% of 0.5 = 0.375 → rounds to 0.5
+      expect(calculateHRRLine(0.5)).toBe(0.5);
+      expect(calculateHRRLine(1.0)).toBeGreaterThanOrEqual(0.5);
     });
-
-    it("should cap at 6.5 for very high projections", () => {
-      expect(calculateHRRLine(8.0)).toBe(6.5);
-      expect(calculateHRRLine(10.0)).toBe(6.5);
+    it("should cap at 5.5 for very high projections (Phase CN)", () => {
+      // Phase CN: max is 5.5 — 75% of 8.0 = 6.0 → capped at 5.5
+      expect(calculateHRRLine(8.0)).toBe(5.5);
+      expect(calculateHRRLine(10.0)).toBe(5.5);
     });
 
     it("should set line slightly below expected total", () => {
@@ -215,11 +217,11 @@ describe("HRR Service - generateHRRProjections", () => {
     expect(projections.length).toBe(3);
   });
 
-  it("should have HRR lines between 1.5 and 6.5", () => {
+  it("should have HRR lines between 0.5 and 5.5 (Phase CN)", () => {
     const projections = generateHRRProjections(mockMatchups, mockPlayers, mockParkFactors);
     for (const p of projections) {
-      expect(p.hrrLine).toBeGreaterThanOrEqual(1.5);
-      expect(p.hrrLine).toBeLessThanOrEqual(6.5);
+      expect(p.hrrLine).toBeGreaterThanOrEqual(0.5);
+      expect(p.hrrLine).toBeLessThanOrEqual(5.5);
     }
   });
 
@@ -402,9 +404,9 @@ describe("HRR Service - Integration with Router", () => {
     expect(judge.expectedTotal).toBeGreaterThan(3.5);
     expect(judge.expectedTotal).toBeLessThan(7.0);
     
-    // HRR line should be realistic
-    expect(judge.hrrLine).toBeGreaterThanOrEqual(3.5);
-    expect(judge.hrrLine).toBeLessThanOrEqual(6.5);
+    // HRR line should be realistic (Phase CN: max 5.5)
+    expect(judge.hrrLine).toBeGreaterThanOrEqual(2.5);
+    expect(judge.hrrLine).toBeLessThanOrEqual(5.5);
     
     // Confidence should be reasonable for elite hitter with hot streak + good park
     expect(judge.hrrConfidence).toBeGreaterThanOrEqual(60);
@@ -442,8 +444,8 @@ describe("HRR Service - Integration with Router", () => {
     expect(raleigh.expectedTotal).toBeLessThan(4.0);
     expect(raleigh.expectedTotal).toBeGreaterThan(1.5);
     
-    // Line should still be realistic
-    expect(raleigh.hrrLine).toBeGreaterThanOrEqual(1.5);
+    // Line should still be realistic (Phase CN: min 0.5)
+    expect(raleigh.hrrLine).toBeGreaterThanOrEqual(0.5);
     expect(raleigh.hrrLine).toBeLessThanOrEqual(4.0);
   });
 });

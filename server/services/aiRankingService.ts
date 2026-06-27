@@ -546,12 +546,12 @@ function calculateBPBoost(vsGrade: number | null): number {
 
 /**
  * Determine pick grade tier from final score
- * Phase W calibration: S=83+, A=74-82, B/Lean=68-73, hidden below 68
+ * Phase CN calibration: Elite=85+, Strong=78-84, Lean=72-77, hidden below 72
  */
 function getPickGrade(score: number): PickGrade {
-  if (score >= 83) return 'elite';
-  if (score >= 74) return 'strong';
-  if (score >= 68) return 'watchlist'; // Lean tier — shown but not official
+  if (score >= 85) return 'elite';    // raised from 83 — only truly exceptional picks
+  if (score >= 78) return 'strong';   // raised from 74 — meaningful quality signal
+  if (score >= 72) return 'watchlist'; // lean tier only
   return 'watchlist';
 }
 
@@ -831,12 +831,14 @@ export function rankAIPicks(
       const bestStat = Object.entries(statScores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as 'hits' | 'runs' | 'rbi';
 
       // ── Prop line ─────────────────────────────────────────────────────────
+      // Phase CN fix: set line at realistic level player can clear ~60% of the time.
+      // Never use 1.5 for players averaging <1.3/game — they'll miss >50% naturally.
       const perGameAvg = statScores[bestStat];
-      const line = perGameAvg >= 1.0 ? 1.5 : 0.5;
+      const line = perGameAvg >= 1.3 ? 1.5 : 0.5;
 
       // ── Pick grade ────────────────────────────────────────────────────
       const grade = getPickGrade(overallScore);
-      const leanTier = overallScore >= 68 && overallScore < 74;
+      const leanTier = overallScore >= 72 && overallScore < 78;
 
       // ── Prime position (legacy: 3+ of 4 factors favorable) ───────────────
       const platoonSplit = matchup.platoonSplit;
