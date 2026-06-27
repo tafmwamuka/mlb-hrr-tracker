@@ -18,6 +18,7 @@ import {
 import { detectDisciplineEdge } from "../services/disciplineEdgeDetector";
 import { getDisciplineEdgeHistory, getPitcherHistory } from "../services/pitcherLearningEngine";
 import { runPitcherEdgeEngine } from "../services/pitcherEdgeEngine";
+import { filterPitcherPicks } from "../services/pitcherPicksFilter";
 
 // ── Serializable discipline data (for tRPC transport) ─────────────────────────
 function serializeDisciplineData(d: TeamDisciplineData) {
@@ -224,59 +225,75 @@ export const disciplineRouter = router({
    * Best Value, Dual Edge, and Stack Alert tiers.
    */
   getPitcherEdgePicks: publicProcedure.query(async () => {
+    // Serializer — converts a raw pick to the shape the frontend expects
+    const serializePick = (p: any) => ({
+      pitcherName: p.pitcherName,
+      pitcherTeam: p.pitcherTeam,
+      opponentTeam: p.opponentTeam,
+      pitcherHand: p.pitcherHand,
+      gameTime: p.gameTime,
+      propType: p.propType,
+      line: p.line,
+      bookOdds: p.bookOdds,
+      fairOdds: p.fairOdds,
+      modelProbability: Math.round(p.modelProbability * 1000) / 10,
+      impliedProbability: Math.round(p.impliedProbability * 1000) / 10,
+      edge: Math.round(p.edge * 1000) / 10,
+      pitcherEdgeScore: p.pitcherEdgeScore,
+      tms: p.tms,
+      tier: p.tier,
+      hasDisciplineEdge: p.hasDisciplineEdge,
+      isDualEdge: p.isDualEdge,
+      qualifyingReasons: p.qualifyingReasons,
+      riskFlags: p.riskFlags,
+      disciplineGrade: p.disciplineGrade,
+      opponentKRate: p.opponentKRate !== null ? Math.round(p.opponentKRate * 1000) / 10 : null,
+      opponentBBRate: p.opponentBBRate !== null ? Math.round(p.opponentBBRate * 1000) / 10 : null,
+      historicalHitRate: p.historicalHitRate !== null ? Math.round(p.historicalHitRate) : null,
+      sampleSize: p.sampleSize,
+      isOfficialPlay: p.isOfficialPlay,
+      isLeanPlay: p.isLeanPlay,
+      isProjectionOnly: p.isProjectionOnly,
+      hasMarketData: p.hasMarketData,
+      pricingPenaltyTier: p.pricingPenaltyTier,
+      pricingPenaltyLabel: p.pricingPenaltyLabel,
+      isUltraJuiced: p.isUltraJuiced,
+      adjustedEdgeScore: p.adjustedEdgeScore,
+      actionabilityScore: p.actionabilityScore,
+      playCategory: p.playCategory,
+    });
     try {
       const result = await runPitcherEdgeEngine();
+      const filtered = filterPitcherPicks(result.picks, result.rejectedPlays);
       return {
-        picks: result.picks.map(p => ({
-          pitcherName: p.pitcherName,
-          pitcherTeam: p.pitcherTeam,
-          opponentTeam: p.opponentTeam,
-          pitcherHand: p.pitcherHand,
-          gameTime: p.gameTime,
-          propType: p.propType,
-          line: p.line,
-          bookOdds: p.bookOdds,
-          fairOdds: p.fairOdds,
-          modelProbability: Math.round(p.modelProbability * 1000) / 10,  // as %
-          impliedProbability: Math.round(p.impliedProbability * 1000) / 10,
-          edge: Math.round(p.edge * 1000) / 10,
-          pitcherEdgeScore: p.pitcherEdgeScore,
-          tms: p.tms,
-          tier: p.tier,
-          hasDisciplineEdge: p.hasDisciplineEdge,
-          isDualEdge: p.isDualEdge,
-          qualifyingReasons: p.qualifyingReasons,
-          riskFlags: p.riskFlags,
-          disciplineGrade: p.disciplineGrade,
-          opponentKRate: p.opponentKRate !== null ? Math.round(p.opponentKRate * 1000) / 10 : null,
-          opponentBBRate: p.opponentBBRate !== null ? Math.round(p.opponentBBRate * 1000) / 10 : null,
-          historicalHitRate: p.historicalHitRate !== null ? Math.round(p.historicalHitRate) : null,
-          sampleSize: p.sampleSize,
-          isOfficialPlay: p.isOfficialPlay,
-          isLeanPlay: p.isLeanPlay,
-          isProjectionOnly: p.isProjectionOnly,
-          hasMarketData: p.hasMarketData,
-          pricingPenaltyTier: p.pricingPenaltyTier,
-          pricingPenaltyLabel: p.pricingPenaltyLabel,
-          isUltraJuiced: p.isUltraJuiced,
-          adjustedEdgeScore: p.adjustedEdgeScore,
-          actionabilityScore: p.actionabilityScore,
-          playCategory: p.playCategory,
-        })),
-        dualEdgePitchers: result.dualEdgePitchers,
-        stackAlertGames: result.stackAlertGames,
-        hasOfficialPlays: result.hasOfficialPlays,
-        hasLeanPlays: result.hasLeanPlays,
+        // Main board — max 8 deduped official picks, no outliers
+        picks: filtered.officialPicks.map(serializePick),
+
+        // Parlay-only picks (expensive odds) — shown in separate section
+        parlayOnlyPicks: filtered.parlayOnlyPicks.map(serializePick),
+
+        // Lean picks — hidden by default, available on request
+        leanPicks: filtered.leanPicks.map(serializePick),
+
+        // Legacy fields — kept for backward compat
+        dualEdgePitchers: filtered.dualEdgePitchers,
+        stackAlertGames: filtered.stackAlertGames,
+        hasOfficialPlays: filtered.hasOfficialPlays,
+        hasLeanPlays: filtered.hasLeanPlays,
         generatedAt: new Date().toISOString(),
-        /** Rejected plays with diagnostic data — for transparency panel */
-        rejectedPlays: result.rejectedPlays.map(r => ({
+
+        // Counts for header display
+        counts: filtered.counts,
+
+        // Rejected plays (unchanged)
+        rejectedPlays: filtered.rejectedPlays.map(r => ({
           pitcherName: r.pitcherName,
           pitcherTeam: r.pitcherTeam,
           opponentTeam: r.opponentTeam,
           propType: r.propType,
           line: r.line,
-          modelProbability: Math.round(r.modelProbability * 1000) / 10,  // as %
-          requiredThreshold: Math.round(r.requiredThreshold * 1000) / 10,  // as %
+          modelProbability: Math.round(r.modelProbability * 1000) / 10,
+          requiredThreshold: Math.round(r.requiredThreshold * 1000) / 10,
           rejectionReasons: r.rejectionReasons,
           rejectionSummary: r.rejectionSummary,
           supportingFactors: r.supportingFactors,
@@ -287,7 +304,14 @@ export const disciplineRouter = router({
       };
     } catch (e) {
       console.warn("[Discipline] getPitcherEdgePicks failed:", e);
-      return { picks: [], dualEdgePitchers: [], stackAlertGames: [], hasOfficialPlays: false, hasLeanPlays: false, generatedAt: new Date().toISOString(), rejectedPlays: [] };
+      return {
+        picks: [], parlayOnlyPicks: [], leanPicks: [],
+        dualEdgePitchers: [], stackAlertGames: [],
+        hasOfficialPlays: false, hasLeanPlays: false,
+        generatedAt: new Date().toISOString(),
+        counts: { official: 0, lean: 0, parlayOnly: 0, outliers: 0, total: 0 },
+        rejectedPlays: [],
+      };
     }
   }),
 });

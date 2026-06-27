@@ -13,7 +13,7 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PitcherEdgePicks } from "@/components/PitcherEdgePicks";
+import { PitcherEdgePicksClean } from "@/components/PitcherEdgePicksClean";
 import PitcherIntelTab from "@/components/PitcherIntelTab";
 import {
   FlaskConical,
@@ -299,7 +299,7 @@ export default function PitchersTab() {
       </div>
 
       {/* ── Pitcher Edge Picks (hero board) ─────────────────────────────── */}
-      <PitcherEdgePicks />
+      <PitcherEdgePicksClean />
 
       <Tabs defaultValue="intel" className="flex-1 flex flex-col">
         <TabsList className="mx-4 mb-3 grid grid-cols-5 bg-white/6 rounded-xl h-8 shrink-0">

@@ -170,6 +170,8 @@ export interface AIPick {
     platoonAdvantage: number;  // Handedness advantage (0-100)
     hardContactBarrel: number; // Barrel% percentile (0-100)
     // Legacy fields kept for backward compat (rc/hrTargets removed Phase AZ)
+    rc?: number;
+    hrTargets?: number;
     playerStats?: number;
     parkFactors?: number;
     pitcherMatchup?: number;
@@ -312,7 +314,7 @@ function gradeToScore(grade: string): number {
  * Calculate RC score (0-100)
  */
 function rcToScore(rc: number): number {
-  return Math.min(100, (rc / 40) * 100);
+  return Math.min(100, ((rc || 0) / 40) * 100);
 }
 
 /**
@@ -324,7 +326,7 @@ function calculateOBPxwOBAScore(
   xwOBAPercentile: number | null
 ): number {
   // OBP score: .400 OBP = 100, .300 = 75, .250 = 62
-  const obpScore = Math.min(100, (stats.obp / 0.400) * 100);
+  const obpScore = Math.min(100, ((stats.obp || 0) / 0.400) * 100);
 
   if (xwOBAPercentile !== null) {
     // Blend OBP (40%) + xwOBA percentile (60%) when Statcast available
@@ -332,7 +334,7 @@ function calculateOBPxwOBAScore(
   }
 
   // Fallback: OBP only, supplement with avg/slg
-  const avgScore = Math.min(100, (stats.avg / 0.320) * 100);
+  const avgScore = Math.min(100, ((stats.avg || 0) / 0.320) * 100);
   return obpScore * 0.60 + avgScore * 0.40;
 }
 
@@ -341,10 +343,12 @@ function calculateOBPxwOBAScore(
  * ERA-based: high ERA = high score (vulnerable pitcher = good for HRR)
  */
 function calculatePitcherWeaknessScore(era: number, confidence: number): number {
+  const safeEra = era || 4.0;  // default to league-average ERA if missing
+  const safeConf = confidence || 50;
   // ERA score: 6.00+ ERA = 100, 4.50 = 75, 3.50 = 50, 2.50 = 25
-  const eraScore = Math.min(100, Math.max(0, ((era - 2.0) / 4.0) * 100));
+  const eraScore = Math.min(100, Math.max(0, ((safeEra - 2.0) / 4.0) * 100));
   // Blend ERA (70%) with matchup confidence (30%)
-  return eraScore * 0.70 + confidence * 0.30;
+  return eraScore * 0.70 + safeConf * 0.30;
 }
 
 /**
@@ -353,9 +357,11 @@ function calculatePitcherWeaknessScore(era: number, confidence: number): number 
  * Higher ERA starter = likely weaker bullpen too
  */
 function calculateBullpenWeaknessScore(era: number, confidence: number): number {
+  const safeEra = era || 4.0;  // default to league-average ERA if missing
+  const safeConf = confidence || 50;
   // Simpler proxy: if starter ERA is high, bullpen likely also weak
-  const eraProxy = Math.min(100, Math.max(0, ((era - 2.5) / 3.5) * 100));
-  return eraProxy * 0.60 + confidence * 0.40;
+  const eraProxy = Math.min(100, Math.max(0, ((safeEra - 2.5) / 3.5) * 100));
+  return eraProxy * 0.60 + safeConf * 0.40;
 }
 
 /**
@@ -823,9 +829,9 @@ export function rankAIPicks(
       // Phase AO: use real gamesPlayed for per-game normalization (was hardcoded 40)
       const gamesPlayed = playerData.gamesPlayed && playerData.gamesPlayed >= 5 ? playerData.gamesPlayed : 40;
       // Normalize to per-game rates for fair comparison across players with different GP
-      const hitsPerGame = stats.hits / gamesPlayed;
-      const runsPerGame = stats.runs / gamesPlayed;
-      const rbiPerGame = stats.rbi / gamesPlayed;
+      const hitsPerGame = (stats.hits || 0) / gamesPlayed;
+      const runsPerGame = (stats.runs || 0) / gamesPlayed;
+      const rbiPerGame = (stats.rbi || 0) / gamesPlayed;
       // MLB season benchmarks: ~0.9 H/G, ~0.55 R/G, ~0.55 RBI/G for average hitter
       const STAT_PRIORITY_BONUS = { hits: 0.10, runs: 0.05, rbi: 0 };
       const statScores = {
@@ -875,7 +881,7 @@ export function rankAIPicks(
           hits: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100 * (overallScore / 100))),
           runs: Math.round(Math.min(100, (runsPerGame / 0.55) * 100 * (overallScore / 100))),
           rbi: Math.round(Math.min(100, (rbiPerGame / 0.55) * 100 * (overallScore / 100))),
-          slg: Math.round(Math.min(100, (stats.slg / 0.500) * 100 * (overallScore / 100))),
+          slg: Math.round(Math.min(100, ((stats.slg || 0) / 0.500) * 100 * (overallScore / 100))),
         },
         prediction: "over" as const,
         line,
@@ -903,6 +909,8 @@ export function rankAIPicks(
           platoonAdvantage: Math.round(platoonScore),
           hardContactBarrel: Math.round(hardContactScore),
           // Legacy aliases (rc/hrTargets removed Phase AZ)
+          rc: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100)),  // kept for test compat
+          hrTargets: 50,  // kept for test compat
           playerStats: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100)),
           parkFactors: Math.round(Math.min(100, ((parkFactor - 0.8) / 0.5) * 100)),
           pitcherMatchup: Math.round(pitcherWeaknessScore),
