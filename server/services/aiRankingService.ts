@@ -1,12 +1,12 @@
 /**
  * AI Ranking Service — Phase R Redesign
  *
- * New 10-factor scoring model (total = 100%):
- *   Team Implied Runs   16%  — game O/U environment (high-scoring games = more HRR)
+ * 10-factor scoring model (Phase CN+1 weights, total = 100%):
+ *   Pitcher Weakness    17%  — ERA-based pitcher vulnerability (was 14%)
  *   Lineup Spot         15%  — batting order position (cleanup > leadoff for HRR)
  *   OBP / xwOBA         14%  — on-base + expected contact quality (Statcast xwOBA percentile)
- *   Pitcher Weakness    14%  — ERA-based pitcher vulnerability
- *   Recent Form         10%  — last 5-7 game hit/run/RBI rates (MLB game logs)
+ *   Recent Form         13%  — last 5-7 game hit/run/RBI rates (was 10%)
+ *   Team Implied Runs   10%  — game O/U environment (was 16%; TIR under-populated)
  *   Day/Night Split      8%  — player performance by game time slot
  *   Park + Weather       8%  — park factor + temperature/wind conditions
  *   Bullpen Weakness     6%  — proxy: pitcher ERA + confidence (no separate bullpen feed)
@@ -721,12 +721,14 @@ export function rankAIPicks(
       );
 
       // ── Weighted base score (0-100) ───────────────────────────────────────
+      // Phase CN+1: teamImpliedScore reduced 16%→10% (TIR under-populated, dragging scores).
+      // 6% redistributed: +3% pitcherWeakness (14%→17%), +3% recentForm (10%→13%).
       const baseScore =
-        teamImpliedScore   * 0.16 +   // Team Implied Runs
+        teamImpliedScore   * 0.10 +   // Team Implied Runs (was 16%)
         lineupSpotScore    * 0.15 +   // Lineup Spot
         obpXwOBAScore      * 0.14 +   // OBP / xwOBA
-        pitcherWeaknessScore * 0.14 + // Pitcher Weakness
-        recentFormScore    * 0.10 +   // Recent Form
+        pitcherWeaknessScore * 0.17 + // Pitcher Weakness (was 14%)
+        recentFormScore    * 0.13 +   // Recent Form (was 10%)
         dayNightScore      * 0.08 +   // Day/Night Split
         parkWeatherScore   * 0.08 +   // Park + Weather
         bullpenWeaknessScore * 0.06 + // Bullpen Weakness

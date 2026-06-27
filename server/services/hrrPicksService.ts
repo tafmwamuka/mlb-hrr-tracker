@@ -682,10 +682,11 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     return { ...pick, recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations };
   });
 
-  // Phase CN: Only take picks that pass the quality threshold — no forcing.
-  // Picks must score >=78 (Strong tier or above) to be shown as official picks.
+  // Phase CN+1: Only take picks that pass the quality threshold — no forcing.
+  // Picks must score >=68 (Lean tier or above) to be shown as official picks.
+  // Lowered from 78: TIR factor under-population was artificially depressing scores.
   const qualifiedPicks = withRecommendedLine.filter((p: any) =>
-    (p.overallScore ?? 0) >= 78  // must be Strong tier or above
+    (p.overallScore ?? 0) >= 68  // Lean tier or above
   );
   const targetCount = Math.min(qualifiedPicks.length, MAX_MONEY_PICKS);
   const moneyPicksRaw = qualifiedPicks.slice(0, targetCount);
