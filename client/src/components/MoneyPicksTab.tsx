@@ -1776,9 +1776,9 @@ export function MoneyPicksTab() {
       <div className="flex items-center gap-2 flex-wrap">
         {([
           { key: "all", label: "All Picks" },
-          { key: "s", label: isProjected ? "Strong (74+)" : "S Tier (83+)" },
-          { key: "a", label: isProjected ? "A Tier (66-74)" : "A Tier (74-82)" },
-          { key: "b", label: isProjected ? "Lean (60-66)" : "Lean (68-73)" },
+          { key: "s", label: isProjected ? "Official (60%+ prob)" : "Elite (80+)" },
+          { key: "a", label: isProjected ? "Strong (70%+ prob)" : "Strong (68-79)" },
+          { key: "b", label: isProjected ? "Lean (50-60%)" : "Lean (58-67)" },
         ] as { key: FilterTier; label: string }[]).map((filter) => (
           <button
             key={filter.key}

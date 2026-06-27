@@ -150,22 +150,33 @@ describe("Poisson Probability Model", () => {
   });
 
   describe("getPickQuality", () => {
-    it("should return strong for 8%+ edge", () => {
-      expect(getPickQuality(0.10)).toBe("strong");
-      expect(getPickQuality(0.08)).toBe("strong");
+    // Integration Patch: PQS system — quality requires BOTH edge AND probability.
+    it("should return strong for 70%+ prob with 4%+ edge", () => {
+      expect(getPickQuality(0.10, 0.75)).toBe("strong");  // 75% prob, 10% edge
+      expect(getPickQuality(0.04, 0.70)).toBe("strong");  // 70% prob, 4% edge
     });
 
-    it("should return moderate for 4-8% edge", () => {
-      expect(getPickQuality(0.06)).toBe("moderate");
-      expect(getPickQuality(0.04)).toBe("moderate");
+    it("should return moderate for 60%+ prob with 2%+ edge", () => {
+      expect(getPickQuality(0.06, 0.65)).toBe("moderate"); // 65% prob, 6% edge
+      expect(getPickQuality(0.02, 0.60)).toBe("moderate"); // 60% prob, 2% edge
     });
 
-    it("should return lean for 1-4% edge", () => {
-      expect(getPickQuality(0.03)).toBe("lean");
-      expect(getPickQuality(0.01)).toBe("lean");
+    it("should return lean for 50%+ prob with 1%+ edge", () => {
+      expect(getPickQuality(0.03, 0.55)).toBe("lean");  // 55% prob, 3% edge
+      expect(getPickQuality(0.01, 0.50)).toBe("lean");  // 50% prob, 1% edge
     });
 
-    it("should return avoid for <1% edge", () => {
+    it("should return lean for 60%+ prob even with negative edge", () => {
+      expect(getPickQuality(-0.02, 0.65)).toBe("lean"); // 65% prob, -2% edge
+    });
+
+    it("should return avoid when probability is too low", () => {
+      expect(getPickQuality(0.10, 0.45)).toBe("avoid"); // 45% prob — below 50% floor
+      expect(getPickQuality(-0.05, 0.40)).toBe("avoid"); // 40% prob, negative edge
+    });
+
+    it("should return avoid when no overProb supplied and edge is low", () => {
+      // No overProb: defaults to 50% — needs edge >= 0.01 to qualify as lean
       expect(getPickQuality(0.005)).toBe("avoid");
       expect(getPickQuality(-0.05)).toBe("avoid");
     });

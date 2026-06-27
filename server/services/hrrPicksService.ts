@@ -20,6 +20,7 @@ import { analyzeValue, calcEV, probToAmericanOdds, getValueTier } from './valueE
 // Phase AP: getMockSavantData removed — barrel threat check now uses real statcastCache
 import { generateHRRProjections } from './hrrService';
 import { poissonOverProbability, calculateAlternateLines, findFairLine, calculateEdge, getPickQuality } from './poissonModel';
+import { passesQualityGate, rankByPQS } from './playQualityScore';
 import { getAdaptedLineupData } from './lineupAdapter';
 import { getDataDate } from './mlbLineupService';
 import { getEnrichmentData, pollForWarmEnrichment } from './enrichmentCache';
@@ -578,7 +579,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     const modelOverProb = poissonOverProbability(activeLine, lambda);
     const bookImpliedProb = 0.5;
     const edge = calculateEdge(modelOverProb, bookImpliedProb);
-    const pickQuality = getPickQuality(edge);
+    const pickQuality = getPickQuality(edge, modelOverProb);
     const alternates = calculateAlternateLines(lambda, 5.5);
     const fairLine = findFairLine(lambda);
 
@@ -682,14 +683,25 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     return { ...pick, recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations };
   });
 
-  // Phase CN+1: Only take picks that pass the quality threshold — no forcing.
-  // Picks must score >=68 (Lean tier or above) to be shown as official picks.
-  // Lowered from 78: TIR factor under-population was artificially depressing scores.
+  // Integration Patch: PQS filter — only picks with probability >= 60% qualify.
+  // passesQualityGate checks Poisson prob + matrix score + optional odds/history.
   const qualifiedPicks = withRecommendedLine.filter((p: any) =>
-    (p.overallScore ?? 0) >= 68  // Lean tier or above
+    passesQualityGate(
+      p.overProbability ?? p.recommendedProb ?? 50,
+      p.overallScore ?? 60,
+      p.bookOdds ?? null,
+      p.historicalHitRate ?? null,
+      p.last5Games?.length ?? 0
+    )
   );
-  const targetCount = Math.min(qualifiedPicks.length, MAX_MONEY_PICKS);
-  const moneyPicksRaw = qualifiedPicks.slice(0, targetCount);
+
+  // If no picks qualify, show top 3 lean picks instead of forcing bad picks
+  const picksToShow = qualifiedPicks.length > 0
+    ? qualifiedPicks
+    : withRecommendedLine.filter((p: any) => (p.overProbability ?? 0) >= 50).slice(0, 3);
+
+  const targetCount = Math.min(picksToShow.length, MAX_MONEY_PICKS);
+  const moneyPicksRaw = picksToShow.slice(0, targetCount);
 
   const moneyPicks: EnrichedMoneyPick[] = moneyPicksRaw.map((pick: any) => ({
     ...pick,

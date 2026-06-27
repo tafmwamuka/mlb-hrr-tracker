@@ -101,11 +101,19 @@ export function calculateEdge(modelProb: number, bookImpliedProb: number): numbe
 }
 
 /**
- * Determine pick quality based on edge
+ * Determine pick quality based on edge and optional Poisson probability.
+ * Integration Patch: PQS system — quality based on probability, not just edge.
  */
-export function getPickQuality(edge: number): "strong" | "moderate" | "lean" | "avoid" {
-  if (edge >= 0.08) return "strong";   // 8%+ edge
-  if (edge >= 0.04) return "moderate"; // 4-8% edge
-  if (edge >= 0.01) return "lean";     // 1-4% edge
-  return "avoid";                       // No edge
+export function getPickQuality(
+  edge: number,
+  overProb?: number  // Poisson model probability (0-1 scale)
+): "strong" | "moderate" | "lean" | "avoid" {
+  const prob = (overProb ?? 0.5) * 100; // convert to 0-100
+
+  // Primary check: probability gate
+  if (prob >= 70 && edge >= 0.04) return "strong";
+  if (prob >= 60 && edge >= 0.02) return "moderate";
+  if (prob >= 50 && edge >= 0.01) return "lean";
+  if (prob >= 60 && edge < 0) return "lean";  // high prob but negative edge — still show
+  return "avoid";
 }

@@ -1,15 +1,15 @@
 /**
  * AI Ranking Service — Phase R Redesign
  *
- * 10-factor scoring model (Phase CN+1 weights, total = 100%):
- *   Pitcher Weakness    17%  — ERA-based pitcher vulnerability (was 14%)
- *   Lineup Spot         15%  — batting order position (cleanup > leadoff for HRR)
- *   OBP / xwOBA         14%  — on-base + expected contact quality (Statcast xwOBA percentile)
- *   Recent Form         13%  — last 5-7 game hit/run/RBI rates (was 10%)
- *   Team Implied Runs   10%  — game O/U environment (was 16%; TIR under-populated)
- *   Day/Night Split      8%  — player performance by game time slot
- *   Park + Weather       8%  — park factor + temperature/wind conditions
- *   Bullpen Weakness     6%  — proxy: pitcher ERA + confidence (no separate bullpen feed)
+ * 10-factor scoring model (Integration Patch weights, total = 100%):
+ *   OBP / xwOBA         18%  — on-base + expected contact quality (Statcast xwOBA percentile)
+ *   Pitcher Weakness    18%  — ERA-based pitcher vulnerability
+ *   Lineup Spot         16%  — batting order position (cleanup > leadoff for HRR)
+ *   Recent Form         12%  — last 5-7 game hit/run/RBI rates
+ *   Team Implied Runs    8%  — game O/U environment (REDUCED: TIR under-populated)
+ *   Day/Night Split      7%  — player performance by game time slot
+ *   Park + Weather       7%  — park factor + temperature/wind conditions
+ *   Bullpen Weakness     5%  — proxy: pitcher ERA + confidence (no separate bullpen feed)
  *   Platoon Advantage    5%  — batter vs pitcher handedness advantage
  *   Hard Contact/Barrel  4%  — Statcast barrel% percentile
  *
@@ -546,12 +546,13 @@ function calculateBPBoost(vsGrade: number | null): number {
 
 /**
  * Determine pick grade tier from final score
- * Phase CN calibration: Elite=85+, Strong=78-84, Lean=72-77, hidden below 72
+ * Integration Patch calibration: With TIR weight reduced, scores will be higher.
+ * Elite=80+, Strong=68+, Watchlist=58+
  */
 function getPickGrade(score: number): PickGrade {
-  if (score >= 85) return 'elite';    // raised from 83 — only truly exceptional picks
-  if (score >= 78) return 'strong';   // raised from 74 — meaningful quality signal
-  if (score >= 72) return 'watchlist'; // lean tier only
+  if (score >= 80) return 'elite';     // Integration Patch: recalibrated from 85
+  if (score >= 68) return 'strong';    // Integration Patch: recalibrated from 78
+  if (score >= 58) return 'watchlist'; // Integration Patch: recalibrated from 72
   return 'watchlist';
 }
 
@@ -721,19 +722,21 @@ export function rankAIPicks(
       );
 
       // ── Weighted base score (0-100) ───────────────────────────────────────
-      // Phase CN+1: teamImpliedScore reduced 16%→10% (TIR under-populated, dragging scores).
-      // 6% redistributed: +3% pitcherWeakness (14%→17%), +3% recentForm (10%→13%).
+      // Integration Patch: CRITICAL FIX — TIR was 16% and consistently scoring 25-50
+      // due to gameTotals API returning neutral data, dragging ALL scores below threshold.
+      // Redistributed 8% to more reliable factors. Total = 100%.
       const baseScore =
-        teamImpliedScore   * 0.10 +   // Team Implied Runs (was 16%)
-        lineupSpotScore    * 0.15 +   // Lineup Spot
-        obpXwOBAScore      * 0.14 +   // OBP / xwOBA
-        pitcherWeaknessScore * 0.17 + // Pitcher Weakness (was 14%)
-        recentFormScore    * 0.13 +   // Recent Form (was 10%)
-        dayNightScore      * 0.08 +   // Day/Night Split
-        parkWeatherScore   * 0.08 +   // Park + Weather
-        bullpenWeaknessScore * 0.06 + // Bullpen Weakness
+        teamImpliedScore   * 0.08 +   // Team Implied Runs — REDUCED from 16% to 8%
+        lineupSpotScore    * 0.16 +   // Lineup Spot — INCREASED from 15% to 16%
+        obpXwOBAScore      * 0.18 +   // OBP / xwOBA — INCREASED from 14% to 18%
+        pitcherWeaknessScore * 0.18 + // Pitcher Weakness — INCREASED from 14% to 18%
+        recentFormScore    * 0.12 +   // Recent Form — INCREASED from 10% to 12%
+        dayNightScore      * 0.07 +   // Day/Night Split
+        parkWeatherScore   * 0.07 +   // Park + Weather
+        bullpenWeaknessScore * 0.05 + // Bullpen Weakness
         platoonScore       * 0.05 +   // Platoon Advantage
         hardContactScore   * 0.04;    // Hard Contact/Barrel
+      // Total: 0.08+0.16+0.18+0.18+0.12+0.07+0.07+0.05+0.05+0.04 = 1.00 ✓
 
       // ── Matchup Grade boost/penalty (Diamond Edge VS gate) ─────────────
       const bpBoost = calculateBPBoost(vsGrade);
