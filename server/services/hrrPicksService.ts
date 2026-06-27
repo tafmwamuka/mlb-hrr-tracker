@@ -42,8 +42,8 @@ export interface LineEvaluation {
   ev: number | null;    // Expected value % (null if no book odds)
   consistencyScore: number | null; // 0-100: composite of model + history agreement
   riskGrade: 'LOW' | 'MEDIUM' | 'HIGH' | 'LONGSHOT'; // risk classification
-  lineType: 'SAFE LINE' | 'VALUE LINE' | 'AGGRESSIVE LINE' | 'LONGSHOT LINE';
-  verdict: 'BEST SAFE LINE' | 'GOOD VALUE' | 'HIGHER RISK' | 'LONGSHOT' | 'OVERPRICED' | 'NO ODDS' | 'BEST LINE';
+  lineType: 'SAFE LINE' | 'VALUE LINE' | 'AGGRESSIVE LINE' | 'LONGSHOT LINE' | 'PARLAY ONLY';
+  verdict: 'BEST SAFE LINE' | 'GOOD VALUE' | 'HIGHER RISK' | 'LONGSHOT' | 'OVERPRICED' | 'NO ODDS' | 'BEST LINE' | 'PARLAY ONLY';
   isRecommended: boolean; // true for the single best-line pick
 }
 
@@ -144,11 +144,17 @@ export function selectBestLine(
         effectiveProb >= 75 ? 'LOW' :
         effectiveProb >= 55 ? 'MEDIUM' :
         effectiveProb >= 35 ? 'HIGH' : 'LONGSHOT';
+      // Integration Patch: PARLAY ONLY rule — odds worse than -300 are not suitable
+      // as standalone single bets. Mark them as PARLAY ONLY regardless of edge/score.
+      const isParlayOnly = overOdds < -300;
+
       const lineType: LineEvaluation['lineType'] =
+        isParlayOnly ? 'PARLAY ONLY' :
         effectiveProb >= 75 ? 'SAFE LINE' :
         effectiveProb >= 55 ? 'VALUE LINE' :
         effectiveProb >= 35 ? 'AGGRESSIVE LINE' : 'LONGSHOT LINE';
       const verdict: LineEvaluation['verdict'] =
+        isParlayOnly ? 'PARLAY ONLY' :
         edge <= 0 ? 'OVERPRICED' :
         effectiveProb >= 75 ? 'BEST SAFE LINE' :
         effectiveProb >= 55 ? 'GOOD VALUE' :
@@ -179,7 +185,13 @@ export function selectBestLine(
     const consistScore = e.consistencyScore ?? 50;
     return modelScore * 0.40 + histScore * 0.30 + evNorm * 0.20 + consistScore * 0.10;
   }
-  const positiveEvLines = evaluations.filter(e => (e.edge ?? 0) > 0);
+  // Integration Patch: PARLAY ONLY lines (odds < -300) are excluded from single-bet
+  // recommendation entirely. Only lines with odds between -300 and +500 qualify.
+  const singleBetEligible = evaluations.filter(e =>
+    e.verdict !== 'PARLAY ONLY' &&
+    (e.bookOdds === null || (e.bookOdds >= -300 && e.bookOdds <= 500))
+  );
+  const positiveEvLines = singleBetEligible.filter(e => (e.edge ?? 0) > 0);
   let bestEval: LineEvaluation | null = null;
   if (positiveEvLines.length > 0) {
     // Sort by composite score desc; tiebreak: prefer lower line (safer)
@@ -189,14 +201,20 @@ export function selectBestLine(
       return a.line - b.line;
     });
     bestEval = positiveEvLines[0];
-  } else {
-    // No positive-EV lines - fall back to highest composite score
-    const sorted = [...evaluations].sort((a, b) => compositeScore(b) - compositeScore(a));
+  } else if (singleBetEligible.length > 0) {
+    // No positive-EV lines among eligible — fall back to highest composite score (eligible only)
+    const sorted = [...singleBetEligible].sort((a, b) => compositeScore(b) - compositeScore(a));
     bestEval = sorted[0] ?? null;
+  } else {
+    // All lines are PARLAY ONLY — no single-bet recommendation
+    bestEval = null;
   }
 
-  // Mark the recommended line and assign final verdicts
+  // Mark the recommended line and assign final verdicts.
+  // PARLAY ONLY lines can never be isRecommended (already excluded from bestEval).
   const finalEvaluations: LineEvaluation[] = evaluations.map(e => {
+    // PARLAY ONLY lines keep their verdict and are never recommended as single bets
+    if (e.verdict === 'PARLAY ONLY') return { ...e, isRecommended: false };
     const isRecommended = bestEval !== null && e.line === bestEval.line;
     const verdict: LineEvaluation['verdict'] =
       isRecommended ? 'BEST LINE' :
@@ -212,7 +230,9 @@ export function selectBestLine(
 
   // Build human-readable reason
   let bestLineReason = 'Highest probability line with positive value.';
-  if (bestEval) {
+  if (!bestEval) {
+    bestLineReason = 'All available lines are priced worse than -300 — suitable for parlays only.';
+  } else if (bestEval) {
     if ((bestEval.edge ?? 0) <= 0) {
       bestLineReason = 'No positive-value line available — showing safest option.';
     } else if (bestEval.riskGrade === 'LOW') {
@@ -224,7 +244,8 @@ export function selectBestLine(
     }
   }
 
-  const bestLineVerdict = bestEval?.verdict ?? 'NO ODDS';
+  // If bestEval is null, all lines were PARLAY ONLY
+  const bestLineVerdict = bestEval?.verdict ?? (singleBetEligible.length === 0 && evaluations.length > 0 ? 'PARLAY ONLY' : 'NO ODDS');
 
   return { recommendedLine, recommendedProb, bestLineVerdict, bestLineReason, lineEvaluations: finalEvaluations };
 }

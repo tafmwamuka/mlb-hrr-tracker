@@ -128,8 +128,8 @@ interface MoneyPick {
     ev: number | null;
     consistencyScore: number | null;      // model vs history agreement (0-100)
     riskGrade: 'LOW' | 'MEDIUM' | 'HIGH' | 'LONGSHOT';
-    lineType: 'SAFE LINE' | 'VALUE LINE' | 'AGGRESSIVE LINE' | 'LONGSHOT LINE';
-    verdict: 'BEST SAFE LINE' | 'GOOD VALUE' | 'HIGHER RISK' | 'LONGSHOT' | 'OVERPRICED' | 'NO ODDS' | 'BEST LINE';
+    lineType: 'SAFE LINE' | 'VALUE LINE' | 'AGGRESSIVE LINE' | 'LONGSHOT LINE' | 'PARLAY ONLY';
+    verdict: 'BEST SAFE LINE' | 'GOOD VALUE' | 'HIGHER RISK' | 'LONGSHOT' | 'OVERPRICED' | 'NO ODDS' | 'BEST LINE' | 'PARLAY ONLY';
     isRecommended: boolean;
   }>;
   bestLineVerdict?: string | null;
@@ -457,9 +457,17 @@ function MoneyPickCard({
               {pick.bestLineReason && pick.bestLineVerdict && pick.bestLineVerdict !== 'NO ODDS' && (
                 <div
                   className="px-2 py-0.5 rounded-md text-[9px] font-semibold"
-                  style={{ background: 'oklch(0.72 0.18 165 / 10%)', border: '1px solid oklch(0.72 0.18 165 / 25%)', color: 'oklch(0.72 0.18 165)' }}
+                  style={pick.bestLineVerdict === 'PARLAY ONLY' ? {
+                    background: 'oklch(0.72 0.10 220 / 10%)',
+                    border: '1px solid oklch(0.72 0.10 220 / 25%)',
+                    color: 'oklch(0.72 0.10 220)'
+                  } : {
+                    background: 'oklch(0.72 0.18 165 / 10%)',
+                    border: '1px solid oklch(0.72 0.18 165 / 25%)',
+                    color: 'oklch(0.72 0.18 165)'
+                  }}
                 >
-                  {pick.bestLineVerdict}
+                  {pick.bestLineVerdict === 'PARLAY ONLY' ? '🔗 PARLAY ONLY' : pick.bestLineVerdict}
                 </div>
               )}
             </div>
@@ -826,8 +834,19 @@ function MoneyPickCard({
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] font-semibold text-[oklch(0.45_0.015_255)] uppercase tracking-wider">Alt Line Analysis</span>
               {pick.bestLineVerdict && pick.bestLineVerdict !== 'NO ODDS' && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: 'oklch(0.72 0.18 165 / 15%)', color: 'oklch(0.72 0.18 165)', border: '1px solid oklch(0.72 0.18 165 / 40%)' }}>
-                  {pick.bestLineVerdict}
+                <span
+                  className="text-[9px] px-1.5 py-0.5 rounded font-bold"
+                  style={pick.bestLineVerdict === 'PARLAY ONLY' ? {
+                    background: 'oklch(0.72 0.10 220 / 15%)',
+                    color: 'oklch(0.72 0.10 220)',
+                    border: '1px solid oklch(0.72 0.10 220 / 40%)'
+                  } : {
+                    background: 'oklch(0.72 0.18 165 / 15%)',
+                    color: 'oklch(0.72 0.18 165)',
+                    border: '1px solid oklch(0.72 0.18 165 / 40%)'
+                  }}
+                >
+                  {pick.bestLineVerdict === 'PARLAY ONLY' ? '🔗 PARLAY ONLY' : pick.bestLineVerdict}
                 </span>
               )}
             </div>
@@ -852,6 +871,7 @@ function MoneyPickCard({
                   ev.verdict === 'GOOD VALUE' ? 'oklch(0.82 0.17 85)' :
                   ev.verdict === 'HIGHER RISK' ? 'oklch(0.68 0.22 25)' :
                   ev.verdict === 'LONGSHOT' ? 'oklch(0.55 0.15 255)' :
+                  ev.verdict === 'PARLAY ONLY' ? 'oklch(0.72 0.10 220)' :
                   'oklch(0.40 0.015 255)';
                 const edgeColor = (ev.edge ?? 0) > 0 ? 'oklch(0.72 0.18 165)' : 'oklch(0.68 0.22 25)';
                 // Phase BM: color the historical hit rate
@@ -890,7 +910,9 @@ function MoneyPickCard({
                       {ev.edge !== null ? (ev.edge > 0 ? `+${ev.edge}%` : `${ev.edge}%`) : '—'}
                     </span>
                     <span className="text-right font-bold text-[9px]" style={{ color: verdictColor }}>
-                      {ev.verdict === 'BEST LINE' ? '★ BEST' : ev.verdict.replace('_', ' ')}
+                      {ev.verdict === 'BEST LINE' ? '★ BEST' :
+                       ev.verdict === 'PARLAY ONLY' ? '🔗 PARLAY' :
+                       ev.verdict.replace('_', ' ')}
                     </span>
                   </div>
                 );
