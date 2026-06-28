@@ -9,6 +9,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import scheduledBackfillRouter from "../routes/scheduledBackfill";
+import picksSummaryRouter from "../routes/picksSummary";
 import { warmEnrichmentCacheOnStartup } from "../services/enrichmentCache";
 import { fetchPitcherMarketData, fetchHRRMarketData } from "../services/oddsApiService";
 import { startAutoGradeJob } from "../jobs/autoGradeResults";
@@ -43,6 +44,8 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Scheduled task REST endpoints
   app.use("/api/scheduled", scheduledBackfillRouter);
+  // Public picks summary endpoint (no auth required)
+  app.use("/api/picks-summary", picksSummaryRouter);
   // tRPC API
   app.use(
     "/api/trpc",
