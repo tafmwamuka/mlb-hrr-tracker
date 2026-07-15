@@ -1678,3 +1678,21 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Add Pitcher Intel as first sub-tab (⚡ Intel) in existing PitchersTab.tsx container
 - [x] TypeScript check: 0 errors
 - [x] parlayBuilder.test.ts: 43/43 passing
+
+## Phase LOCK+TRACK: Pick Lock Service & Progressive Tracking (Jul 2025)
+- [x] Add pickLockService.ts — per-game lock stages (PRELIMINARY/LOCKING_SOON/LOCKED/FINAL/VOID/POSTPONED)
+- [x] Add progressiveTrackingService.ts — saveLockedPick, verifyResultsForDate, getCumulativeRecord
+- [x] Add picks_history table to drizzle/schema.ts (Option B — separate table, no factorBreakdown column)
+- [x] Run pnpm db:push to apply schema migration
+- [x] Fix duplicate factorBreakdown type fields in aiRankingService.ts (pitcherWeakness/lineupSpot/recentForm)
+- [x] Add hqsContact/hqsQuality/hqsPower/bbeConfidence/hrrProfile/env/platoon/bullpen to factorBreakdown type + object
+- [x] Wire batchGetLockStatuses + enrichPicksWithLockStatus into hrrPicksService.ts
+- [x] Build playerName→gamePk lookup from lineupData.matchups for lock enrichment
+- [x] Persist ELITE/STRONG picks to picks_history when lockStage is LOCKED or FINAL (fire-and-forget)
+- [x] Clean factorBreakdown excludes rc/hrTargets test-compat fields before persisting
+- [x] Create trackingRouter.ts with getCumulativeRecord, getPicksHistory, verifyResults, verifyYesterday
+- [x] Register trackingRouter in appRouter (server/routers.ts)
+- [x] Create verifyResultsJob.ts — daily 6 AM ET scheduler using setTimeout + setInterval
+- [x] Register startVerifyResultsJob() in server/_core/index.ts
+- [x] Write 5 vitest tests for progressiveTrackingService (all pass)
+- [x] TypeScript: 0 errors after all changes

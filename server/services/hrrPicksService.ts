@@ -24,6 +24,8 @@ import { passesQualityGate, rankByPQS } from './playQualityScore';
 import { getAdaptedLineupData } from './lineupAdapter';
 import { getDataDate } from './mlbLineupService';
 import { getEnrichmentData, pollForWarmEnrichment } from './enrichmentCache';
+import { batchGetLockStatuses, enrichPicksWithLockStatus } from './pickLockService';
+import { saveLockedPick } from './progressiveTrackingService';
 
 // ─── Phase BK: Alt Line Optimization ─────────────────────────────────────────
 
@@ -949,8 +951,105 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     pick.pickAlternatives = finalAlts.length > 0 ? finalAlts : [{ tier: 'NONE' as AlternativeTier, marketLabel: '', bookOdds: 0, trueProb: 0, impliedProb: 0, edge: 0, fairOdds: 0, ev: 0, reason: '' }];
   }
 
+  // ── Phase LOCK: Enrich money picks with per-game lock status ────────────────
+  // Build a gamePk → MLBGame map from lineupData.games so we can call batchGetLockStatuses
+  const gamePkToGame = new Map<number, any>();
+  for (const game of (lineupData.games ?? [])) {
+    gamePkToGame.set(game.gamePk, game);
+  }
+  // Build a playerName → gamePk lookup from matchups
+  const playerNameToGamePk = new Map<string, number>();
+  for (const m of matchups) {
+    if (m.gamePk) playerNameToGamePk.set(m.playerName, m.gamePk);
+  }
+
+  // Enrich each money pick with its lock status
+  const lockStatuses = batchGetLockStatuses(lineupData.games ?? []);
+  const moneyPicksWithLock = enrichPicksWithLockStatus(
+    (moneyPicks as any[]).map(p => ({
+      ...p,
+      gamePk: p.gamePk ?? playerNameToGamePk.get(p.playerName),
+    })),
+    lockStatuses
+  );
+
+  // Persist ELITE/STRONG picks to picks_history when they reach LOCKED stage
+  // (fire-and-forget — never block the response)
+  for (const pick of moneyPicksWithLock) {
+    const ls = (pick as any).lockStatus;
+    if (!ls || !['LOCKED', 'FINAL'].includes(ls.lockStage)) continue;
+
+    const score = (pick as any).overallScore ?? 0;
+    const tier: 'ELITE' | 'STRONG' | 'LEAN' =
+      score >= 85 ? 'ELITE' : score >= 75 ? 'STRONG' : 'LEAN';
+    if (tier === 'LEAN') continue; // only persist ELITE and STRONG
+
+    const gamePk = (pick as any).gamePk ?? playerNameToGamePk.get((pick as any).playerName);
+    if (!gamePk) continue;
+
+    // Derive opponent from matchup data
+    const matchupForPick = matchups.find((m: any) => m.playerName === (pick as any).playerName);
+    const opponent = matchupForPick?.pitcher?.team ?? (pick as any).pitcherTeam ?? 'UNK';
+
+    // Parse book odds (string like "-115" or "+105" → number)
+    const rawOdds = (pick as any).bookOdds;
+    const numericOdds = typeof rawOdds === 'number'
+      ? rawOdds
+      : typeof rawOdds === 'string'
+        ? parseInt(rawOdds.replace(/[^0-9+\-]/g, ''), 10)
+        : null;
+    const bookOdds = numericOdds !== null && !isNaN(numericOdds) ? numericOdds : null;
+
+    const factorBreakdown = (pick as any).factorBreakdown ?? {};
+    // Build a clean factorBreakdown without test-compat-only rc/hrTargets fields
+    const cleanFactors = {
+      hqs: factorBreakdown.hqs,
+      hqsContact: factorBreakdown.hqsContact,
+      hqsQuality: factorBreakdown.hqsQuality,
+      hqsPower: factorBreakdown.hqsPower,
+      bbeConfidence: factorBreakdown.bbeConfidence ?? factorBreakdown.hqsBbeConfidence,
+      hrrProfile: factorBreakdown.hrrProfile,
+      pitcherWeakness: factorBreakdown.pitcherWeakness,
+      lineupSpot: factorBreakdown.lineupSpot,
+      recentForm: factorBreakdown.recentForm,
+      env: factorBreakdown.env ?? factorBreakdown.envScore,
+      platoon: factorBreakdown.platoon ?? factorBreakdown.platoonAdvantage,
+      bullpen: factorBreakdown.bullpen ?? factorBreakdown.bullpenWeakness,
+      obpXwOBA: factorBreakdown.obpXwOBA,
+      dayNightSplit: factorBreakdown.dayNightSplit,
+      parkWeather: factorBreakdown.parkWeather,
+      hardContactBarrel: factorBreakdown.hardContactBarrel,
+      teamImpliedRuns: factorBreakdown.teamImpliedRuns,
+    };
+
+    saveLockedPick({
+      slateDate: todayETDate,
+      pickType: 'hrr',
+      playerId: (pick as any).playerId,
+      playerName: (pick as any).playerName,
+      team: (pick as any).team,
+      opponent,
+      gamePk,
+      propType: 'hrr',
+      line: (pick as any).recommendedLine ?? (pick as any).hrrLine ?? 0.5,
+      bookOdds,
+      modelProb: (pick as any).recommendedProb ?? (pick as any).overProbability ?? 0,
+      edge: (pick as any).edge ?? null,
+      tier,
+      overallScore: score,
+      lockedAt: ls.lockedAt?.toISOString() ?? new Date().toISOString(),
+      actual: null,
+      result: 'pending',
+      verifiedAt: null,
+      voidReason: null,
+    }).catch(err => console.error('[HRRPicks] saveLockedPick failed:', err));
+  }
+
+  // Replace moneyPicks with the lock-enriched version (same picks, adds lockStatus field)
+  const moneyPicksFinal = moneyPicksWithLock as unknown as EnrichedMoneyPick[];
+
   // Compute topCandidates: top 3 picks from enrichedPicks that did NOT make moneyPicks (near-misses)
-  const moneyPickNames = new Set(moneyPicks.map((p: any) => p.playerName));
+  const moneyPickNames = new Set(moneyPicksFinal.map((p: any) => p.playerName));
   const topCandidates = enrichedPicks
     .filter((p: any) => !moneyPickNames.has(p.playerName))
     .slice(0, 3);
@@ -991,7 +1090,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   };
 
   const result: HRRPicksResult = {
-    moneyPicks,
+    moneyPicks: moneyPicksFinal,
     allMatrixPicks: matrixPicks,
     dataDate,
     lineupSource: lineupData.lineupSource,
@@ -1007,7 +1106,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   };
 
   picksCache = { result, ts: Date.now(), slateDate: todayETDate };
-  console.log(`[HRRPicks] Cache updated: ${moneyPicks.length} money picks, ${matrixPicks.length} matrix picks`);
+  console.log(`[HRRPicks] Cache updated: ${moneyPicksFinal.length} money picks, ${matrixPicks.length} matrix picks`);
 
   return result;
 }

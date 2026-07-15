@@ -207,9 +207,16 @@ export interface AIPick {
     gameTotal?: number;
     // Step 7: HQS Layer 4 fields
     hqs?: number;
+    hqsContact?: number;
+    hqsQuality?: number;
+    hqsPower?: number;
     hqsBbeConfidence?: number;
+    bbeConfidence?: number;
     hrrProfile?: string | null;
     envScore?: number;
+    env?: number;
+    platoon?: number;
+    bullpen?: number;
   };
   // S2: Projected plate appearances
   projectedPA?: number; // Projected PA this game (e.g. 4.8 for 3-hole)
@@ -1020,9 +1027,16 @@ export function rankAIPicks(
           gameTotal: Math.round(gameTotalScore),
           // Step 7: HQS Layer 4 fields for backtest logging
           hqs: Math.round(hqsScore),
+          hqsContact: Math.round(hqsResult.components.contact),
+          hqsQuality: Math.round(hqsResult.components.quality),
+          hqsPower: Math.round(hqsResult.components.power),
           hqsBbeConfidence: hqsResult.bbeConfidence,
+          bbeConfidence: hqsResult.bbeConfidence,
           hrrProfile: hrrProfile ?? null,
           envScore: Math.round(envScore),
+          env: Math.round(envScore),
+          platoon: Math.round(platoonScore),
+          bullpen: Math.round(bullpenWeaknessScore),
         },
         primePosition: favorableCount >= 3,
         primePositionFactors: {

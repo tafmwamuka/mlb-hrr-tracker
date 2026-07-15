@@ -356,3 +356,41 @@ export const pitcherRecommendationHistory = mysqlTable("pitcher_recommendation_h
 export type PitcherRecommendationHistory = typeof pitcherRecommendationHistory.$inferSelect;
 export type InsertPitcherRecommendationHistory = typeof pitcherRecommendationHistory.$inferInsert;
 
+
+/**
+ * Picks History table — Option B: separate table for progressive results tracking.
+ * Stores every ELITE or STRONG pick that reaches the LOCKED stage, with frozen
+ * odds/edge/prob at lock time. Results are filled in by verifyYesterdayResults().
+ *
+ * Unique index on (slateDate, playerId, propType, line) ensures idempotent inserts.
+ */
+import { float, datetime, index, uniqueIndex } from "drizzle-orm/mysql-core";
+
+export const picksHistory = mysqlTable("picks_history", {
+  id: int("id").autoincrement().primaryKey(),
+  slateDate: varchar("slate_date", { length: 10 }).notNull(),
+  pickType: varchar("pick_type", { length: 10 }).notNull(),       // 'hrr' | 'pitcher'
+  playerId: int("player_id").notNull(),
+  playerName: varchar("player_name", { length: 100 }).notNull(),
+  team: varchar("team", { length: 10 }).notNull(),
+  opponent: varchar("opponent", { length: 10 }).notNull(),
+  gamePk: int("game_pk").notNull(),
+  propType: varchar("prop_type", { length: 12 }).notNull(),
+  line: float("line").notNull(),
+  bookOdds: int("book_odds"),
+  modelProb: float("model_prob").notNull(),
+  edge: float("edge"),
+  tier: varchar("tier", { length: 10 }).notNull(),
+  overallScore: float("overall_score").notNull(),
+  lockedAt: datetime("locked_at").notNull(),
+  actual: float("actual"),
+  result: varchar("result", { length: 10 }).notNull().default("pending"),
+  verifiedAt: datetime("verified_at"),
+  voidReason: varchar("void_reason", { length: 200 }),
+}, (t) => [
+  uniqueIndex("uniq_pick").on(t.slateDate, t.playerId, t.propType, t.line),
+  index("date_idx").on(t.slateDate),
+]);
+
+export type PicksHistory = typeof picksHistory.$inferSelect;
+export type InsertPicksHistory = typeof picksHistory.$inferInsert;

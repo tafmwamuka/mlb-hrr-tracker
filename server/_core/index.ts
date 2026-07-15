@@ -14,6 +14,7 @@ import { warmEnrichmentCacheOnStartup } from "../services/enrichmentCache";
 import { fetchPitcherMarketData, fetchHRRMarketData } from "../services/oddsApiService";
 import { startAutoGradeJob } from "../jobs/autoGradeResults";
 import { startPostponedGameCleanupJob } from "../jobs/postponedGameCleanup";
+import { startVerifyResultsJob } from "../jobs/verifyResultsJob";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -103,6 +104,10 @@ async function startServer() {
     // Start postponed game cleanup job
     // Detects postponed/cancelled/suspended games every 5 min and purges their picks/results from DB
     startPostponedGameCleanupJob();
+
+    // Start daily 6 AM ET results verification job
+    // Fills in actual stats and hit/miss results for all pending picks_history rows
+    startVerifyResultsJob();
   });
 }
 

@@ -16,6 +16,7 @@ import { historyRouter } from "./routers/history";
 import { smartLabRouter } from "./routers/smartLab";
 import { disciplineRouter } from "./routers/discipline";
 import { pitcherIntelRouter } from "./routers/pitcherIntel";
+import { trackingRouter } from "./routers/tracking";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -44,6 +45,7 @@ export const appRouter = router({
   smartLab: smartLabRouter,
   discipline: disciplineRouter,
   pitcherIntel: pitcherIntelRouter,
+  tracking: trackingRouter,
 });
 
 export type AppRouter = typeof appRouter;
