@@ -22,7 +22,7 @@ import {
 import { PlayerModal } from "@/components/PlayerModal";
 import { DiamondSmartLab } from "@/components/DiamondSmartLab";
 import { MoneyPicksTab } from "@/components/MoneyPicksTab";
-import { ResultsTab } from "@/components/ResultsTab";
+import ResultsTab from "@/components/ResultsTab";
 import { GameCards } from "@/components/GameCards";
 import { PerformanceDashboard } from "@/components/PerformanceDashboard";
 import PitchersTab from "@/components/PitchersTab";

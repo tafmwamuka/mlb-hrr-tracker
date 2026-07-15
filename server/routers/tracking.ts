@@ -65,6 +65,39 @@ export const trackingRouter = router({
     }),
 
   /**
+   * Get all picks_history rows for a given slate date, split by pickType.
+   * Accepts 'YYYY-MM-DD' or the special value 'yesterday' (ET timezone).
+   * Returns factorBreakdown and voidReason on every row.
+   */
+  getResultsForDate: publicProcedure
+    .input(z.object({ date: z.string() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { slateDate: input.date, hrr: [], pitcher: [] };
+
+      // Resolve 'yesterday' to an actual YYYY-MM-DD in ET timezone
+      const dateStr = input.date === 'yesterday'
+        ? (() => {
+            const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+            d.setDate(d.getDate() - 1);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          })()
+        : input.date;
+
+      // Select all columns — factorBreakdown and voidReason are included in the
+      // full row returned by drizzle's db.select().from(picksHistory)
+      const rows = await db.select().from(picksHistory)
+        .where(eq(picksHistory.slateDate, dateStr))
+        .orderBy(desc(picksHistory.overallScore));
+
+      return {
+        slateDate: dateStr,
+        hrr: rows.filter(r => r.pickType === 'hrr'),
+        pitcher: rows.filter(r => r.pickType === 'pitcher'),
+      };
+    }),
+
+  /**
    * Trigger verification for a specific date (admin only).
    * Useful for backfilling or re-running after a data issue.
    */

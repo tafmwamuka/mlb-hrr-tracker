@@ -1,26 +1,84 @@
 /**
- * ResultsTab.tsx — IMPROVED (Phase CN)
+ * ResultsTab_v2_tracking.tsx — REBUILT against progressive tracking (picks_history)
+ *
+ * Deploy this AS ResultsTab.tsx, replacing the earlier version entirely. The
+ * old file called trpc.results.getYesterdayResults, trpc.history.getSevenDayStats,
+ * and trpc.discipline.getEdgeHistory — none of which reflect the tracking
+ * pipeline now in place. This version reads exclusively from picks_history via
+ * the tracking router, the single source of truth for both HRR and pitcher
+ * picks (both deduped upstream in their own pipelines before saving).
  *
  * Two sections:
- *   1. HRR Money Picks results (existing, improved UI)
- *   2. Pitcher Edge Picks results (NEW — tracks K/BB prop outcomes)
+ *   1. Yesterday's individual picks — HRR and Pitcher, split into sub-tabs,
+ *      each showing predicted vs actual with a hit/miss/void badge.
+ *   2. Cumulative record strip — running W/L/ROI, tier splits, 7-day trend,
+ *      current streak, from trpc.tracking.getCumulativeRecord.
  *
- * Key improvements:
- *   - Separate pitcher results section with OVER/UNDER outcome
- *   - Hit rate shown separately for batter picks vs pitcher picks
- *   - Real outcome display: predicted vs actual
- *   - Rolling 7-day performance strip at top
- *   - Empty states that explain WHY there are no results yet
+ * REQUIRED NEW ROUTER PROCEDURE (add to the tracking router if not present):
  *
- * Field name mapping (API → UI):
- *   getSevenDayStats: totalPlays → totalPicks, byDay → dailyBreakdown, byDay[].plays → picks
- *   getEdgeHistory: result ('hit'|'miss'|'pending') → hit (boolean|null), pitcherTeam → team,
- *                   opponentTeam → opponent, gameDate → date, projection → modelProbability,
- *                   no tier field (derive from tms), no edge field (derive from projection vs line)
+ *   getResultsForDate: publicProcedure
+ *     .input(z.object({ date: z.string() }))  // 'YYYY-MM-DD' or 'yesterday'
+ *     .query(async ({ input }) => {
+ *       const dateStr = input.date === 'yesterday'
+ *         ? (() => { const d = new Date(new Date().toLocaleString('en-US',
+ *             { timeZone: 'America/New_York' })); d.setDate(d.getDate() - 1);
+ *             return d.toISOString().slice(0, 10); })()
+ *         : input.date;
+ *       const rows = await db.select().from(picksHistory)
+ *         .where(eq(picksHistory.slateDate, dateStr));
+ *       return {
+ *         slateDate: dateStr,
+ *         hrr: rows.filter(r => r.pickType === 'hrr'),
+ *         pitcher: rows.filter(r => r.pickType === 'pitcher'),
+ *       };
+ *     }),
+ *
+ * This mirrors the date-handling shape picksSummaryRoute already uses.
  */
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+
+// ─── Types (mirror picks_history rows) ────────────────────────────────────────
+
+interface HistoryRow {
+  id: number;
+  slateDate: string;
+  pickType: 'hrr' | 'pitcher';
+  playerId: number;
+  playerName: string;
+  team: string;
+  opponent: string;
+  propType: string;           // 'hrr' | 'strikeouts' | 'walks' etc.
+  line: number;
+  bookOdds: number | null;
+  modelProb: number;
+  edge: number | null;
+  tier: 'ELITE' | 'STRONG';
+  overallScore: number;
+  factorBreakdown: Record<string, unknown> | null;
+  lockedAt: string;
+  actual: number | null;
+  result: 'hit' | 'miss' | 'void' | 'pending';
+  verifiedAt: string | null;
+  voidReason: string | null;
+}
+
+interface CumulativeRecord {
+  since: string;
+  totalPicks: number;
+  wins: number;
+  losses: number;
+  voids: number;
+  pending: number;
+  hitRate: number;
+  roi: number;
+  roiDollars: number;
+  byTier: Record<string, { w: number; l: number; hitRate: number; roi: number }>;
+  byType: Record<string, { w: number; l: number; hitRate: number }>;
+  last7Days: Array<{ date: string; w: number; l: number; hitRate: number }>;
+  currentStreak: { type: 'W' | 'L'; count: number } | null;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -36,126 +94,109 @@ function hitRateBg(rate: number) {
   return 'bg-red-500/10 border-red-500/20';
 }
 
-function outcomeIcon(hit: boolean | null) {
-  if (hit === null) return { icon: '⏳', color: 'text-zinc-500' };
-  if (hit) return { icon: '✓', color: 'text-emerald-400' };
+function outcomeIcon(result: HistoryRow['result']) {
+  if (result === 'pending') return { icon: '⏳', color: 'text-zinc-500' };
+  if (result === 'hit') return { icon: '✓', color: 'text-emerald-400' };
+  if (result === 'void') return { icon: '—', color: 'text-zinc-500' };
   return { icon: '✗', color: 'text-red-400' };
 }
 
-function statLabel(stat: string) {
+function propLabel(propType: string) {
   const labels: Record<string, string> = {
-    hits: 'Hits', runs: 'Runs', rbi: 'RBI', hrr: 'H+R+RBI',
+    hrr: 'H+R+RBI', hits: 'Hits', runs: 'Runs', rbi: 'RBI',
     strikeouts: 'Strikeouts', walks: 'Walks',
   };
-  return labels[stat] ?? stat.toUpperCase();
+  return labels[propType] ?? propType.toUpperCase();
 }
 
 function formatDate(dateStr: string) {
   try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   } catch { return dateStr; }
 }
 
-/** Derive a tier label from TMS score (no tier field in DB schema) */
-function tmsToTier(tms: number | null | undefined): string {
-  if (tms == null) return 'LEAN';
-  if (tms >= 75) return 'ELITE';
-  if (tms >= 60) return 'OFFICIAL';
-  return 'LEAN';
+function formatOdds(odds: number | null) {
+  if (odds === null) return '—';
+  return odds > 0 ? `+${odds}` : `${odds}`;
 }
 
-/** Derive edge from projection vs line */
-function calcEdge(projection: number | null | undefined, line: number | null | undefined): number {
-  if (projection == null || line == null) return 0;
-  return Math.max(0, projection - line);
-}
+// ─── Rolling 7-day strip ───────────────────────────────────────────────────────
 
-// ─── Rolling 7-day strip ─────────────────────────────────────────────────────
-
-interface SevenDayData {
-  totalPlays: number;
-  hits: number;
-  hitRate: number;
-  roi: number;
-  trend: 'up' | 'down' | 'neutral';
-  byDay: Array<{ date: string; hitRate: number; plays: number }>;
-}
-
-function SevenDayStrip({ stats }: { stats: SevenDayData | null | undefined }) {
-  if (!stats || stats.totalPlays === 0) return null;
-
-  const hitRate = stats.hitRate;
+function SevenDayStrip({ record }: { record: CumulativeRecord | null }) {
+  if (!record || record.totalPicks === 0) return null;
 
   return (
-    <div className={`rounded-2xl border p-4 ${hitRateBg(hitRate)}`}>
+    <div className={`rounded-2xl border p-4 ${hitRateBg(record.hitRate)}`}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-widest">7-Day Performance</p>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Cumulative Record</p>
           <div className="flex items-baseline gap-2 mt-0.5">
-            <span className={`text-3xl font-bold ${hitRateColor(hitRate)}`}>
-              {hitRate.toFixed(0)}%
+            <span className={`text-3xl font-bold ${hitRateColor(record.hitRate)}`}>
+              {record.hitRate.toFixed(0)}%
             </span>
             <span className="text-zinc-500 text-xs">
-              {stats.hits}/{stats.totalPlays} picks hit
+              {record.wins}-{record.losses}
+              {record.voids > 0 && <span className="text-zinc-600"> ({record.voids} void)</span>}
             </span>
           </div>
+          <p className="text-[10px] text-zinc-600 mt-0.5">Since {formatDate(record.since)}</p>
         </div>
         <div className="text-right">
           <p className="text-[10px] text-zinc-500 uppercase tracking-widest">ROI</p>
-          <p className={`text-xl font-bold ${stats.roi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {stats.roi >= 0 ? '+' : ''}{stats.roi.toFixed(1)}%
+          <p className={`text-xl font-bold ${record.roi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {record.roi >= 0 ? '+' : ''}{record.roi.toFixed(1)}%
           </p>
+          {record.currentStreak && (
+            <p className={`text-[10px] mt-0.5 ${record.currentStreak.type === 'W' ? 'text-emerald-400' : 'text-red-400'}`}>
+              {record.currentStreak.count}{record.currentStreak.type} streak
+            </p>
+          )}
         </div>
       </div>
 
-      {stats.byDay.length > 0 && (
+      {record.last7Days.length > 0 && (
         <div className="flex gap-1 items-end h-8">
-          {stats.byDay.slice(-7).map((day, i) => (
+          {record.last7Days.map((day, i) => (
             <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
               <div
-                className={`w-full rounded-sm transition-all ${
+                className={`w-full rounded-sm ${
                   day.hitRate >= 65 ? 'bg-emerald-500' :
                   day.hitRate >= 50 ? 'bg-yellow-500' :
-                  day.plays === 0 ? 'bg-zinc-800' : 'bg-red-500/70'
+                  day.w + day.l === 0 ? 'bg-zinc-800' : 'bg-red-500/70'
                 }`}
                 style={{ height: `${Math.max(4, (day.hitRate / 100) * 28)}px` }}
-                title={`${formatDate(day.date)}: ${day.plays} picks (${day.hitRate.toFixed(0)}%)`}
+                title={`${formatDate(day.date)}: ${day.w}-${day.l} (${day.hitRate.toFixed(0)}%)`}
               />
               <span className="text-[8px] text-zinc-700">{formatDate(day.date).split(' ')[1]}</span>
             </div>
           ))}
         </div>
       )}
+
+      <div className="flex gap-3 mt-3 pt-3 border-t border-white/8">
+        {Object.entries(record.byTier).map(([tier, stats]) => (
+          <div key={tier} className="flex-1 text-center">
+            <p className="text-[9px] text-zinc-600 uppercase">{tier}</p>
+            <p className={`text-sm font-bold ${hitRateColor(stats.hitRate)}`}>{stats.hitRate.toFixed(0)}%</p>
+            <p className="text-[9px] text-zinc-600">{stats.w}-{stats.l}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ─── Batter result card ───────────────────────────────────────────────────────
+// ─── Individual pick card ──────────────────────────────────────────────────────
 
-interface PickResult {
-  id: number;
-  playerName: string;
-  team: string;
-  stat: 'hits' | 'runs' | 'rbi' | 'hrr';
-  line: string;
-  actualValue: number | null;
-  hit: boolean | null;
-  confidence: number;
-  matrixScore: number | null;
-  tier: string | null;
-  odds: string | null;
-  streakLabel: string | null;
-}
-
-function BatterResultCard({ result }: { result: PickResult }) {
-  const outcome = outcomeIcon(result.hit);
-  const score = result.matrixScore ?? 0;
+function PickResultCard({ row }: { row: HistoryRow }) {
+  const outcome = outcomeIcon(row.result);
+  const isPitcher = row.pickType === 'pitcher';
 
   return (
     <div className={`rounded-xl border p-3 ${
-      result.hit === true ? 'border-emerald-500/20 bg-emerald-500/5' :
-      result.hit === false ? 'border-red-500/15 bg-red-500/5' :
+      row.result === 'hit' ? 'border-emerald-500/20 bg-emerald-500/5' :
+      row.result === 'miss' ? 'border-red-500/15 bg-red-500/5' :
+      row.result === 'void' ? 'border-zinc-600/20 bg-zinc-500/5' :
       'border-white/8 bg-white/3'
     }`}>
       <div className="flex items-center justify-between gap-2">
@@ -163,9 +204,16 @@ function BatterResultCard({ result }: { result: PickResult }) {
           <div className="flex items-center gap-2">
             <span className={`text-base font-bold ${outcome.color}`}>{outcome.icon}</span>
             <div>
-              <p className="text-white text-sm font-semibold leading-tight">{result.playerName}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-white text-sm font-semibold leading-tight">{row.playerName}</p>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                  row.tier === 'ELITE' ? 'text-yellow-400 bg-yellow-500/10' : 'text-purple-400 bg-purple-500/10'
+                }`}>
+                  {row.tier}
+                </span>
+              </div>
               <p className="text-zinc-500 text-[10px]">
-                {result.team} · {statLabel(result.stat)}
+                {row.team} vs {row.opponent} · {formatDate(row.slateDate)}
               </p>
             </div>
           </div>
@@ -173,187 +221,55 @@ function BatterResultCard({ result }: { result: PickResult }) {
 
         <div className="text-right shrink-0">
           <div className="flex items-center gap-1.5 justify-end">
-            <span className="text-zinc-500 text-xs">O{result.line}</span>
-            <span className="text-zinc-600 text-xs">{statLabel(result.stat)}</span>
+            <span className="text-zinc-500 text-xs">O{row.line}</span>
+            <span className="text-zinc-600 text-xs">{propLabel(row.propType)}</span>
           </div>
-          <div className="flex items-center gap-1.5 justify-end mt-0.5">
-            {result.actualValue !== null ? (
-              <span className={`text-sm font-bold ${result.hit ? 'text-emerald-400' : 'text-red-400'}`}>
-                Actual: {result.actualValue}
-              </span>
-            ) : (
-              <span className="text-zinc-600 text-xs">Pending</span>
-            )}
-          </div>
-          {result.odds && (
-            <p className="text-[10px] text-zinc-600 mt-0.5">{result.odds}</p>
-          )}
-        </div>
-      </div>
-
-      {score > 0 && (
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-[9px] text-zinc-700 w-12">Score</span>
-          <div className="flex-1 h-1 bg-white/8 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full ${
-                score >= 85 ? 'bg-emerald-500' :
-                score >= 78 ? 'bg-blue-400' : 'bg-zinc-500'
-              }`}
-              style={{ width: `${score}%` }}
-            />
-          </div>
-          <span className="text-[9px] text-zinc-600 w-6 text-right">{score}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Pitcher result card ──────────────────────────────────────────────────────
-
-interface PitcherEdgeRow {
-  id: number;
-  gameDate: string;
-  pitcherName: string;
-  pitcherTeam: string;
-  opponentTeam: string;
-  propType: string;
-  line: number | null;
-  projection: number | null;
-  result: string;
-  actualValue: number | null;
-  tms: number | null;
-  disciplineGrade: string | null;
-}
-
-function PitcherResultCard({ row }: { row: PitcherEdgeRow }) {
-  const hit: boolean | null =
-    row.result === 'hit' ? true :
-    row.result === 'miss' ? false : null;
-  const outcome = outcomeIcon(hit);
-  const tier = tmsToTier(row.tms);
-  const edge = calcEdge(row.projection, row.line);
-
-  const tierColor =
-    tier === 'ELITE' ? 'text-yellow-400 bg-yellow-500/10 border-yellow-500/25' :
-    tier === 'OFFICIAL' ? 'text-purple-400 bg-purple-500/10 border-purple-500/20' :
-    'text-blue-300 bg-blue-500/8 border-blue-500/15';
-
-  return (
-    <div className={`rounded-xl border p-3 ${
-      hit === true ? 'border-emerald-500/20 bg-emerald-500/5' :
-      hit === false ? 'border-red-500/15 bg-red-500/5' :
-      'border-white/8 bg-white/3'
-    }`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className={`text-base font-bold ${outcome.color}`}>{outcome.icon}</span>
-            <span className="text-white text-sm font-semibold">{row.pitcherName}</span>
-            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${tierColor}`}>
-              {tier}
-            </span>
-          </div>
-          <p className="text-zinc-500 text-[10px] ml-6">
-            {row.pitcherTeam} vs {row.opponentTeam} · {formatDate(row.gameDate)}
-          </p>
-
-          <div className="ml-6 mt-1.5 flex items-center gap-3">
-            {row.line != null && (
-              <span className="text-zinc-400 text-xs">
-                O{row.line} {statLabel(row.propType)}
-              </span>
-            )}
-            {row.projection != null && (
-              <span className="text-zinc-600 text-[10px]">
-                Model: {row.projection.toFixed(1)}
-              </span>
-            )}
-            {edge > 0 && (
-              <span className="text-emerald-400 text-[10px]">+{edge.toFixed(1)} edge</span>
-            )}
-          </div>
-        </div>
-
-        <div className="text-right shrink-0">
-          {row.actualValue != null ? (
-            <div>
-              <p className={`text-sm font-bold ${hit ? 'text-emerald-400' : 'text-red-400'}`}>
-                {row.actualValue} {row.propType === 'strikeouts' ? 'K' : 'BB'}
-              </p>
-              <p className="text-[10px] text-zinc-600">
-                {hit ? 'Hit ✓' : 'Miss ✗'}
-              </p>
-            </div>
-          ) : (
-            <p className="text-zinc-600 text-xs">Pending</p>
-          )}
-          {row.disciplineGrade && (
-            <p className={`text-[10px] font-bold mt-1 ${
-              row.disciplineGrade.startsWith('A') ? 'text-emerald-400' :
-              row.disciplineGrade === 'B' ? 'text-blue-300' : 'text-zinc-400'
+          {row.actual !== null ? (
+            <p className={`text-sm font-bold mt-0.5 ${
+              row.result === 'hit' ? 'text-emerald-400' : row.result === 'miss' ? 'text-red-400' : 'text-zinc-500'
             }`}>
-              Grade: {row.disciplineGrade}
+              Actual: {row.actual}
             </p>
+          ) : row.result === 'void' ? (
+            <p className="text-xs text-zinc-500 mt-0.5">{row.voidReason ?? 'Voided'}</p>
+          ) : (
+            <p className="text-xs text-zinc-600 mt-0.5">Pending</p>
+          )}
+          {row.bookOdds !== null && (
+            <p className="text-[10px] text-zinc-600 mt-0.5">{formatOdds(row.bookOdds)}</p>
           )}
         </div>
       </div>
 
-      {row.tms != null && (
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-[9px] text-zinc-700 w-8">TMS</span>
-          <div className="flex-1 h-1 bg-white/8 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full ${
-                row.tms >= 75 ? 'bg-emerald-500' :
-                row.tms >= 60 ? 'bg-blue-400' : 'bg-zinc-500'
-              }`}
-              style={{ width: `${row.tms}%` }}
-            />
-          </div>
-          <span className="text-[9px] text-zinc-600 w-6 text-right">{row.tms}</span>
+      <div className="mt-2 flex items-center gap-2">
+        <span className="text-[9px] text-zinc-700 w-14">{isPitcher ? 'Model' : 'Score'}</span>
+        <div className="flex-1 h-1 bg-white/8 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full ${
+              row.modelProb >= 75 ? 'bg-emerald-500' :
+              row.modelProb >= 60 ? 'bg-blue-400' : 'bg-zinc-500'
+            }`}
+            style={{ width: `${Math.min(100, row.modelProb)}%` }}
+          />
         </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Section header with hit rate ────────────────────────────────────────────
-
-function SectionHeader({
-  title, subtitle, hitRate, picks, hits,
-}: {
-  title: string; subtitle: string; hitRate: number | null; picks: number; hits: number;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <div>
-        <h3 className="text-white font-bold text-sm">{title}</h3>
-        <p className="text-zinc-600 text-[10px]">{subtitle}</p>
+        <span className="text-[9px] text-zinc-600 w-10 text-right">{row.modelProb.toFixed(0)}%</span>
       </div>
-      {hitRate !== null && picks > 0 && (
-        <div className={`px-3 py-1.5 rounded-xl border text-center ${hitRateBg(hitRate)}`}>
-          <p className={`text-base font-bold ${hitRateColor(hitRate)}`}>{hitRate.toFixed(0)}%</p>
-          <p className="text-[9px] text-zinc-600">{hits}/{picks}</p>
-        </div>
-      )}
     </div>
   );
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
-function EmptyState({ type }: { type: 'batter' | 'pitcher' }) {
+function EmptyState({ type }: { type: 'hrr' | 'pitcher' }) {
   return (
     <div className="rounded-xl border border-white/6 bg-white/2 p-6 text-center">
       <p className="text-zinc-500 text-sm font-medium mb-1">
-        {type === 'batter' ? 'No HRR Pick Results Yet' : 'No Pitcher Pick Results Yet'}
+        No {type === 'hrr' ? 'HRR' : 'Pitcher'} Picks Locked
       </p>
       <p className="text-zinc-700 text-xs leading-relaxed max-w-[220px] mx-auto">
-        {type === 'batter'
-          ? "Results appear here after today's games finish. Official picks are tracked from the Money Picks tab."
-          : 'Pitcher K/BB prop results appear here after games finish. Only Official and Elite tier pitcher picks are tracked.'}
+        {type === 'hrr'
+          ? 'No HRR picks reached ELITE or STRONG tier on this slate.'
+          : 'No pitcher picks reached ELITE or STRONG tier on this slate.'}
       </p>
     </div>
   );
@@ -361,53 +277,49 @@ function EmptyState({ type }: { type: 'batter' | 'pitcher' }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-type TabKey = 'hrr' | 'pitchers';
+type SubTab = 'hrr' | 'pitcher';
 
-export function ResultsTab() {
-  const [activeTab, setActiveTab] = useState<TabKey>('hrr');
+export default function ResultsTab() {
+  const [activeTab, setActiveTab] = useState<SubTab>('hrr');
 
-  const { data: resultsData, isLoading: resultsLoading, refetch } =
-    trpc.results.getYesterdayResults.useQuery(undefined, {
-      staleTime: 5 * 60 * 1000,
-      refetchOnWindowFocus: false,
-    });
+  const { data: dayData, isLoading: dayLoading, refetch } =
+    trpc.tracking.getResultsForDate.useQuery(
+      { date: 'yesterday' },
+      { staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false }
+    );
 
-  const { data: sevenDayData } =
-    trpc.history.getSevenDayStats.useQuery(undefined, {
-      staleTime: 10 * 60 * 1000,
-    });
+  const { data: record } = trpc.tracking.getCumulativeRecord.useQuery({}, {
+    staleTime: 10 * 60 * 1000,
+  });
 
-  const { data: pitcherResultsData, isLoading: pitcherLoading } =
-    trpc.discipline.getEdgeHistory.useQuery(undefined, {
-      staleTime: 5 * 60 * 1000,
-    });
+  // Drizzle returns pickType as string; cast via unknown to narrow to 'hrr' | 'pitcher'
+  const hrrRows = (dayData?.hrr ?? []) as unknown as HistoryRow[];
+  const pitcherRows = (dayData?.pitcher ?? []) as unknown as HistoryRow[];
 
-  const batterResults: PickResult[] = (resultsData?.results ?? []) as PickResult[];
-  const pitcherRows: PitcherEdgeRow[] = (pitcherResultsData ?? []).filter(
-    (r: PitcherEdgeRow) => r.result !== 'pending'
-  );
+  const hrrSettled = hrrRows.filter(r => r.result === 'hit' || r.result === 'miss');
+  const hrrHits = hrrSettled.filter(r => r.result === 'hit').length;
+  const hrrHitRate = hrrSettled.length ? (hrrHits / hrrSettled.length) * 100 : null;
 
-  const batterHits = batterResults.filter(r => r.hit === true).length;
-  const batterMisses = batterResults.filter(r => r.hit === false).length;
-  const batterTotal = batterHits + batterMisses;
-  const batterHitRate = batterTotal > 0 ? (batterHits / batterTotal) * 100 : null;
+  const pitcherSettled = pitcherRows.filter(r => r.result === 'hit' || r.result === 'miss');
+  const pitcherHits = pitcherSettled.filter(r => r.result === 'hit').length;
+  const pitcherHitRate = pitcherSettled.length ? (pitcherHits / pitcherSettled.length) * 100 : null;
 
-  const pitcherHits = pitcherRows.filter(r => r.result === 'hit').length;
-  const pitcherMisses = pitcherRows.filter(r => r.result === 'miss').length;
-  const pitcherTotal = pitcherHits + pitcherMisses;
-  const pitcherHitRate = pitcherTotal > 0 ? (pitcherHits / pitcherTotal) * 100 : null;
-
-  const isLoading = activeTab === 'hrr' ? resultsLoading : pitcherLoading;
+  const activeRows = activeTab === 'hrr' ? hrrRows : pitcherRows;
+  const orderedRows = [
+    ...activeRows.filter(r => r.result === 'hit'),
+    ...activeRows.filter(r => r.result === 'miss'),
+    ...activeRows.filter(r => r.result === 'void'),
+    ...activeRows.filter(r => r.result === 'pending'),
+  ];
 
   return (
     <div className="flex flex-col h-full overflow-y-auto pb-28">
 
-      {/* Header */}
       <div className="px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
         <div>
           <h2 className="text-white font-bold text-base">Results</h2>
           <p className="text-zinc-600 text-[10px] mt-0.5">
-            Yesterday's picks · Verified against real game data
+            {dayData?.slateDate ? formatDate(dayData.slateDate) : 'Yesterday'} · Verified against real box scores
           </p>
         </div>
         <button
@@ -418,117 +330,57 @@ export function ResultsTab() {
         </button>
       </div>
 
-      {/* 7-day performance strip */}
       <div className="px-4 mb-4">
-        <SevenDayStrip stats={sevenDayData} />
+        <SevenDayStrip record={record ?? null} />
       </div>
 
-      {/* Tab switcher */}
       <div className="px-4 mb-4 shrink-0">
         <div className="grid grid-cols-2 gap-2 bg-white/4 rounded-xl p-1">
           <button
             onClick={() => setActiveTab('hrr')}
             className={`py-2 rounded-lg text-xs font-semibold transition-all ${
-              activeTab === 'hrr'
-                ? 'bg-[oklch(0.55_0.25_280)] text-white'
-                : 'text-zinc-500'
+              activeTab === 'hrr' ? 'bg-[oklch(0.55_0.25_280)] text-white' : 'text-zinc-500'
             }`}
           >
-            💰 HRR Picks
-            {batterHitRate !== null && (
-              <span className={`ml-1.5 font-bold ${hitRateColor(batterHitRate)}`}>
-                {batterHitRate.toFixed(0)}%
-              </span>
+            💰 HRR
+            {hrrHitRate !== null && (
+              <span className={`ml-1.5 font-bold ${hitRateColor(hrrHitRate)}`}>{hrrHitRate.toFixed(0)}%</span>
             )}
           </button>
           <button
-            onClick={() => setActiveTab('pitchers')}
+            onClick={() => setActiveTab('pitcher')}
             className={`py-2 rounded-lg text-xs font-semibold transition-all ${
-              activeTab === 'pitchers'
-                ? 'bg-[oklch(0.40_0.20_280)] text-white'
-                : 'text-zinc-500'
+              activeTab === 'pitcher' ? 'bg-[oklch(0.40_0.20_280)] text-white' : 'text-zinc-500'
             }`}
           >
-            ⚾ Pitcher Picks
+            ⚾ Pitcher
             {pitcherHitRate !== null && (
-              <span className={`ml-1.5 font-bold ${hitRateColor(pitcherHitRate)}`}>
-                {pitcherHitRate.toFixed(0)}%
-              </span>
+              <span className={`ml-1.5 font-bold ${hitRateColor(pitcherHitRate)}`}>{pitcherHitRate.toFixed(0)}%</span>
             )}
           </button>
         </div>
       </div>
 
-      {/* Content */}
       <div className="px-4 space-y-3 flex-1">
-        {isLoading ? (
+        {dayLoading ? (
           <div className="space-y-2">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-20 bg-white/4 rounded-xl animate-pulse" />
-            ))}
+            {[1, 2, 3].map(i => <div key={i} className="h-20 bg-white/4 rounded-xl animate-pulse" />)}
           </div>
-        ) : activeTab === 'hrr' ? (
-          <>
-            <SectionHeader
-              title="HRR Money Picks"
-              subtitle="H+R+RBI combined props · Yesterday's official picks"
-              hitRate={batterHitRate}
-              picks={batterTotal}
-              hits={batterHits}
-            />
-            {batterResults.length === 0 ? (
-              <EmptyState type="batter" />
-            ) : (
-              <div className="space-y-2">
-                {batterResults.filter(r => r.hit === true).map(r => (
-                  <BatterResultCard key={r.id} result={r} />
-                ))}
-                {batterResults.filter(r => r.hit === false).map(r => (
-                  <BatterResultCard key={r.id} result={r} />
-                ))}
-                {batterResults.filter(r => r.hit === null).map(r => (
-                  <BatterResultCard key={r.id} result={r} />
-                ))}
-              </div>
-            )}
-            {batterTotal > 0 && (
-              <div className="rounded-xl border border-white/6 bg-white/2 p-3 mt-2">
-                <p className="text-[10px] text-zinc-600 leading-relaxed">
-                  Official tracking began May 15, 2026. Results compare predicted OVER outcomes
-                  against real MLB game stats. Only picks with overall score ≥78 are tracked.
-                </p>
-              </div>
-            )}
-          </>
+        ) : orderedRows.length === 0 ? (
+          <EmptyState type={activeTab} />
         ) : (
-          <>
-            <SectionHeader
-              title="Pitcher Edge Picks"
-              subtitle="K & BB props · Official + Elite tier only"
-              hitRate={pitcherHitRate}
-              picks={pitcherTotal}
-              hits={pitcherHits}
-            />
-            {pitcherRows.length === 0 ? (
-              <EmptyState type="pitcher" />
-            ) : (
-              <div className="space-y-2">
-                {pitcherRows.filter(r => r.result === 'hit').map(r => (
-                  <PitcherResultCard key={r.id} row={r} />
-                ))}
-                {pitcherRows.filter(r => r.result === 'miss').map(r => (
-                  <PitcherResultCard key={r.id} row={r} />
-                ))}
-              </div>
-            )}
-            <div className="rounded-xl border border-white/6 bg-white/2 p-3">
-              <p className="text-[10px] text-zinc-600 leading-relaxed">
-                Only OFFICIAL and ELITE tier pitcher picks from the Pitchers tab are tracked here.
-                Pitcher K/BB props are independent of HRR batter picks.
-              </p>
-            </div>
-          </>
+          <div className="space-y-2">
+            {orderedRows.map(row => <PickResultCard key={row.id} row={row} />)}
+          </div>
         )}
+
+        <div className="rounded-xl border border-white/6 bg-white/2 p-3">
+          <p className="text-[10px] text-zinc-600 leading-relaxed">
+            Only ELITE and STRONG tier picks are tracked. Voided picks (player scratched
+            after lock) do not count as misses. Results verify against real MLB box scores
+            each morning at 6 AM ET.
+          </p>
+        </div>
       </div>
 
       <p className="text-center text-[10px] text-zinc-700 px-4 py-4">
