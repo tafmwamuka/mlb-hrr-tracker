@@ -41,6 +41,8 @@ export interface LockedPickRecord {
   result: 'hit' | 'miss' | 'void' | 'pending';
   verifiedAt: string | null;
   voidReason: string | null;
+  // 7-factor breakdown persisted for weight-validation analysis
+  factorBreakdown?: Record<string, unknown>;
 }
 
 export interface CumulativeRecord {
@@ -89,7 +91,13 @@ export async function saveLockedPick(pick: LockedPickRecord): Promise<void> {
       result: 'pending',
       verifiedAt: null,
       voidReason: null,
-    }).onDuplicateKeyUpdate({ set: { lockedAt: new Date(pick.lockedAt) } });
+      factorBreakdown: pick.factorBreakdown ? JSON.stringify(pick.factorBreakdown) : null,
+    }).onDuplicateKeyUpdate({
+      set: {
+        lockedAt: new Date(pick.lockedAt),
+        factorBreakdown: pick.factorBreakdown ? JSON.stringify(pick.factorBreakdown) : null,
+      },
+    });
   } catch (e) {
     console.error('[Tracking] saveLockedPick failed:', e);
   }

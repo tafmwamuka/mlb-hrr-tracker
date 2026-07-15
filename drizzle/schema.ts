@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -364,7 +364,7 @@ export type InsertPitcherRecommendationHistory = typeof pitcherRecommendationHis
  *
  * Unique index on (slateDate, playerId, propType, line) ensures idempotent inserts.
  */
-import { float, datetime, index, uniqueIndex } from "drizzle-orm/mysql-core";
+import { float, datetime, index, uniqueIndex, json as jsonCol } from "drizzle-orm/mysql-core";
 
 export const picksHistory = mysqlTable("picks_history", {
   id: int("id").autoincrement().primaryKey(),
@@ -387,6 +387,7 @@ export const picksHistory = mysqlTable("picks_history", {
   result: varchar("result", { length: 10 }).notNull().default("pending"),
   verifiedAt: datetime("verified_at"),
   voidReason: varchar("void_reason", { length: 200 }),
+  factorBreakdown: jsonCol("factor_breakdown"),  // 7-factor scores: hqs/pitcherWeakness/lineupSpot/recentForm/env/platoon/bullpen + HQS sub-scores
 }, (t) => [
   uniqueIndex("uniq_pick").on(t.slateDate, t.playerId, t.propType, t.line),
   index("date_idx").on(t.slateDate),

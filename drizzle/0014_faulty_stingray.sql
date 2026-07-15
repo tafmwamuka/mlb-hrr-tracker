@@ -1,0 +1,1 @@
+ALTER TABLE `picks_history` ADD `factor_breakdown` json;

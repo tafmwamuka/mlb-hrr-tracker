@@ -980,8 +980,12 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     if (!ls || !['LOCKED', 'FINAL'].includes(ls.lockStage)) continue;
 
     const score = (pick as any).overallScore ?? 0;
+    // Thresholds aligned with getPickGrade() in aiRankingService.ts:
+    // Elite >= 80 (Integration Patch: recalibrated from 85)
+    // Strong >= 68 (Integration Patch: recalibrated from 78)
+    // Lean / Projection < 68 — never tracked
     const tier: 'ELITE' | 'STRONG' | 'LEAN' =
-      score >= 85 ? 'ELITE' : score >= 75 ? 'STRONG' : 'LEAN';
+      score >= 80 ? 'ELITE' : score >= 68 ? 'STRONG' : 'LEAN';
     if (tier === 'LEAN') continue; // only persist ELITE and STRONG
 
     const gamePk = (pick as any).gamePk ?? playerNameToGamePk.get((pick as any).playerName);
@@ -1042,6 +1046,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       result: 'pending',
       verifiedAt: null,
       voidReason: null,
+      factorBreakdown: cleanFactors,
     }).catch(err => console.error('[HRRPicks] saveLockedPick failed:', err));
   }
 

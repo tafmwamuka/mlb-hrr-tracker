@@ -1679,6 +1679,16 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] TypeScript check: 0 errors
 - [x] parlayBuilder.test.ts: 43/43 passing
 
+## Phase LOCK+TRACK v2: factorBreakdown Column + Threshold Alignment (Jul 2025)
+- [x] Add factorBreakdown json column to picks_history schema (migration 0014_faulty_stingray.sql applied)
+- [x] Add json import to drizzle/schema.ts (jsonCol alias to avoid duplicate identifier conflict)
+- [x] Extend LockedPickRecord type with factorBreakdown?: Record<string, unknown>
+- [x] Pass cleanFactors into saveLockedPick call in hrrPicksService.ts
+- [x] Write JSON.stringify(pick.factorBreakdown) to factor_breakdown column in progressiveTrackingService.ts
+- [x] Align saveLockedPick tier thresholds to getPickGrade: ELITE >= 80, STRONG >= 68 (was 85/75)
+- [x] TypeScript: 0 errors after all changes
+- [x] All 231 tests pass (19 test files)
+
 ## Phase LOCK+TRACK: Pick Lock Service & Progressive Tracking (Jul 2025)
 - [x] Add pickLockService.ts — per-game lock stages (PRELIMINARY/LOCKING_SOON/LOCKED/FINAL/VOID/POSTPONED)
 - [x] Add progressiveTrackingService.ts — saveLockedPick, verifyResultsForDate, getCumulativeRecord
