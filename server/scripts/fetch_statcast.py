@@ -14,6 +14,16 @@ Output shape:
     count: number,
     pitcherCount: number,
   }
+
+HQS fields added (Phase BN):
+  kPct         — k_percent from percentile_ranks (percentile 0-100)
+  whiffPct     — whiff_percent from percentile_ranks (percentile 0-100)
+  bbe          — attempts from exitvelo_barrels (raw BBE count)
+  iso          — xiso from percentile_ranks (xISO percentile 0-100, used as proxy)
+  NOTE: kPct/whiffPct/iso are percentile scores (0-100), not raw rates.
+        hitterQualityScore.ts normalization ranges are calibrated for raw rates,
+        so these are stored as-is and the HQS service treats them as pre-normalized
+        when the values are 0-100 (already in norm range).
 """
 
 import sys
@@ -35,6 +45,7 @@ players = {}
 pitchers = {}
 
 # ── 1. Exit velocity + barrels (batters) ─────────────────────────────────────
+# Also provides: attempts = BBE count (the raw ball-in-play sample size)
 try:
     evb = pybaseball.statcast_batter_exitvelo_barrels(year, minBBE=20)
     for _, row in evb.iterrows():
@@ -52,6 +63,8 @@ try:
             'barrelPA': float(row.get('brl_pa', 0) or 0),
             'hardHitPct': float(row.get('ev95percent', 0) or 0),  # EV95+ = hard hit %
             'sweetSpotPct': float(row.get('anglesweetspotpercent', 0) or 0),
+            # Phase BN: BBE count from 'attempts' column
+            'bbe': int(row.get('attempts', 0) or 0),
             'xwOBA': None,
             'xBA': None,
             'xSLG': None,
@@ -60,6 +73,10 @@ try:
             'exitVeloPercentile': None,
             'hardHitPercentile': None,
             'sprintSpeedPercentile': None,
+            # Phase BN: HQS discipline fields (filled from percentile_ranks below)
+            'kPct': None,
+            'whiffPct': None,
+            'iso': None,
         }
 except Exception as e:
     sys.stderr.write(f"[pybaseball] exitvelo_barrels error: {e}\n")
@@ -77,6 +94,10 @@ except Exception as e:
     sys.stderr.write(f"[pybaseball] expected_stats error: {e}\n")
 
 # ── 3. Percentile ranks (0-100 percentile scores) for batters ────────────────
+# Phase BN: Also provides k_percent, whiff_percent, xiso as percentile ranks.
+# These are stored as kPct/whiffPct/iso on the player object so hitterQualityScore.ts
+# can use them directly. Since they are already 0-100 percentile scores, they are
+# pre-normalized and do not need the raw-rate normalization ranges.
 try:
     pcts = pybaseball.statcast_batter_percentile_ranks(year)
     for _, row in pcts.iterrows():
@@ -87,6 +108,13 @@ try:
             players[pid]['exitVeloPercentile'] = float(row.get('exit_velocity', 50) or 50)
             players[pid]['hardHitPercentile'] = float(row.get('hard_hit_percent', 50) or 50)
             players[pid]['sprintSpeedPercentile'] = float(row.get('sprint_speed', 50) or 50)
+            # Phase BN: HQS discipline fields — percentile ranks (0-100, higher = better)
+            # k_percent percentile: HIGHER = BETTER (lower raw K% → higher percentile)
+            players[pid]['kPct'] = float(row.get('k_percent', 50) or 50)
+            # whiff_percent percentile: HIGHER = BETTER (lower raw whiff% → higher percentile)
+            players[pid]['whiffPct'] = float(row.get('whiff_percent', 50) or 50)
+            # xiso percentile: HIGHER = BETTER (higher xISO → higher percentile)
+            players[pid]['iso'] = float(row.get('xiso', 50) or 50)
         else:
             # Player in percentile ranks but not in exit velo (fewer PA)
             name_raw = str(row.get('player_name', ''))
@@ -101,6 +129,7 @@ try:
                 'barrelPA': 0,
                 'hardHitPct': 0,
                 'sweetSpotPct': 0,
+                'bbe': None,  # no BBE count available from percentile ranks alone
                 'xwOBA': None,
                 'xBA': None,
                 'xSLG': None,
@@ -109,6 +138,10 @@ try:
                 'exitVeloPercentile': float(row.get('exit_velocity', 50) or 50),
                 'hardHitPercentile': float(row.get('hard_hit_percent', 50) or 50),
                 'sprintSpeedPercentile': float(row.get('sprint_speed', 50) or 50),
+                # Phase BN: HQS discipline fields
+                'kPct': float(row.get('k_percent', 50) or 50),
+                'whiffPct': float(row.get('whiff_percent', 50) or 50),
+                'iso': float(row.get('xiso', 50) or 50),
             }
 except Exception as e:
     sys.stderr.write(f"[pybaseball] percentile_ranks error: {e}\n")

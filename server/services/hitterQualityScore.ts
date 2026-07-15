@@ -21,14 +21,21 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface HitterStatline {
-  kPct?: number | null;            // e.g. 21.5
-  whiffPct?: number | null;        // e.g. 24.0
+  kPct?: number | null;            // e.g. 21.5 (raw rate) OR 0-100 percentile if preNormalized=true
+  whiffPct?: number | null;        // e.g. 24.0 (raw rate) OR 0-100 percentile if preNormalized=true
   hardHitPct?: number | null;      // e.g. 44.5
   sweetSpotPct?: number | null;    // e.g. 34.0
   woba?: number | null;            // e.g. 0.352 (xwOBA acceptable)
-  iso?: number | null;             // e.g. 0.185
+  iso?: number | null;             // e.g. 0.185 (raw ISO) OR 0-100 percentile if preNormalized=true
   barrelPct?: number | null;       // e.g. 11.2
   bbe?: number | null;             // balls in play in the window
+  /**
+   * Phase BN: When true, kPct/whiffPct/iso are already 0-100 percentile scores
+   * (higher = better for all three) and should NOT be run through the raw-rate
+   * normalization ranges. Set by pybaseballService when data comes from
+   * statcast_batter_percentile_ranks instead of raw FanGraphs rates.
+   */
+  preNormalized?: boolean;
 }
 
 export interface HQSResult {
@@ -76,14 +83,18 @@ export function calculateHQS(
   };
   if (!s) return neutral;
 
+  // Phase BN: kPct/whiffPct/iso may be pre-normalized 0-100 percentile scores
+  // (higher = better for all three) when data comes from percentile_ranks.
+  // In that case, skip the raw-rate normalization ranges and use the value directly.
+  const pn = s.preNormalized === true;
   const sub: Record<string, number | null> = {
-    kPct: s.kPct != null ? norm(s.kPct, R.kPct.lo, R.kPct.hi) : null,
-    whiffPct: s.whiffPct != null ? norm(s.whiffPct, R.whiffPct.lo, R.whiffPct.hi) : null,
-    hardHitPct: s.hardHitPct != null ? norm(s.hardHitPct, R.hardHitPct.lo, R.hardHitPct.hi) : null,
+    kPct:       s.kPct      != null ? (pn ? Math.max(0, Math.min(100, s.kPct))      : norm(s.kPct, R.kPct.lo, R.kPct.hi))           : null,
+    whiffPct:   s.whiffPct  != null ? (pn ? Math.max(0, Math.min(100, s.whiffPct))  : norm(s.whiffPct, R.whiffPct.lo, R.whiffPct.hi)) : null,
+    hardHitPct: s.hardHitPct  != null ? norm(s.hardHitPct,  R.hardHitPct.lo,  R.hardHitPct.hi)  : null,
     sweetSpotPct: s.sweetSpotPct != null ? norm(s.sweetSpotPct, R.sweetSpotPct.lo, R.sweetSpotPct.hi) : null,
-    woba: s.woba != null ? norm(s.woba, R.woba.lo, R.woba.hi) : null,
-    iso: s.iso != null ? norm(s.iso, R.iso.lo, R.iso.hi) : null,
-    barrelPct: s.barrelPct != null ? norm(s.barrelPct, R.barrelPct.lo, R.barrelPct.hi) : null,
+    woba:       s.woba      != null ? norm(s.woba,      R.woba.lo,      R.woba.hi)       : null,
+    iso:        s.iso       != null ? (pn ? Math.max(0, Math.min(100, s.iso))        : norm(s.iso, R.iso.lo, R.iso.hi))               : null,
+    barrelPct:  s.barrelPct != null ? norm(s.barrelPct, R.barrelPct.lo, R.barrelPct.hi) : null,
   };
 
   // Component builder — reweights over AVAILABLE inputs only (missing ≠ 50 drag)
@@ -103,8 +114,12 @@ export function calculateHQS(
   const hqsRaw = Math.round(top);
 
   // ── BBE confidence multiplier — shrink toward 50, never toward 0 ──
-  const bbe = s.bbe ?? 0;
-  const bbeConfidence = Math.round(Math.sqrt(Math.min(1, bbe / bbeTarget)) * 100) / 100;
+  // Phase BN fix: when BBE is entirely unavailable (null/undefined), use 0.75 neutral
+  // confidence instead of 0 — a flat 50 from a null BBE is not meaningful signal.
+  const bbe = s.bbe ?? null;
+  const bbeConfidence = bbe === null
+    ? 0.75  // BBE unavailable — default to moderate confidence, not zero
+    : Math.round(Math.sqrt(Math.min(1, bbe / bbeTarget)) * 100) / 100;
   const hqs = Math.round(50 + (hqsRaw - 50) * bbeConfidence);
 
   const present = Object.values(sub).filter(v => v !== null).length;
@@ -113,7 +128,9 @@ export function calculateHQS(
     : present >= 3 ? 'partial' : 'none';
 
   const flags: string[] = [];
-  if (bbeConfidence < 0.7 && Math.abs(hqsRaw - 50) > 15)
+  if (bbe === null)
+    flags.push(`BBE unavailable — confidence defaulted to 0.75 (score ${hqsRaw}→${hqs})`);
+  else if (bbeConfidence < 0.7 && Math.abs(hqsRaw - 50) > 15)
     flags.push(`Score shrunk ${hqsRaw}→${hqs} — only ${bbe} BBE (need ${bbeTarget} for full confidence)`);
   if ((contact ?? 50) >= 70 && (quality ?? 50) >= 70)
     flags.push(`Contact + quality both elite — high-floor HRR profile`);

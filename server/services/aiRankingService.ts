@@ -689,6 +689,8 @@ export function rankAIPicks(
         iso:          statcastPlayer?.iso ?? null,
         barrelPct:    statcastPlayer?.barrel_batted_rate ?? statcastPlayer?.barrelPct ?? null,
         bbe:          statcastPlayer?.bbe ?? statcastPlayer?.batted_ball_events ?? null,
+        // Phase BN: StatcastPlayer data comes from percentile_ranks — already 0-100
+        preNormalized: statcastPlayer?.preNormalized ?? false,
       }, 60);
       const hqsScore = hqsResult.hqs;
 

@@ -26,6 +26,16 @@ export interface StatcastPlayer {
   exitVeloPercentile: number | null;
   hardHitPercentile: number | null;
   sprintSpeedPercentile: number | null;
+  // Phase BN: HQS discipline fields from statcast_batter_percentile_ranks
+  // These are 0-100 percentile scores (higher = better for all three).
+  // kPct/whiffPct: higher percentile = lower raw K%/whiff% = better contact
+  // iso: higher percentile = higher xISO = more power
+  // bbe: raw ball-in-play count from exitvelo_barrels 'attempts' column
+  kPct: number | null;
+  whiffPct: number | null;
+  iso: number | null;
+  bbe: number | null;
+  preNormalized: true;  // always true — these are percentile ranks, not raw rates
 }
 
 export interface StatcastPitcher {
