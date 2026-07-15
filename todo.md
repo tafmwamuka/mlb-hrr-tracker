@@ -1679,6 +1679,17 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] TypeScript check: 0 errors
 - [x] parlayBuilder.test.ts: 43/43 passing
 
+## Phase LOCK+TRACK v3: Pitcher Pipeline Tracking + Duplicate Diagnosis (Jul 2025)
+- [x] Diagnosed unique index: uniq_pick on (slate_date, player_id, prop_type, line) confirmed in DB via information_schema.STATISTICS
+- [x] Audited HRR propType: hrrPicksService.ts uses propType: 'hrr' (constant) — no variation between hits/runs/rbi. Unique index works correctly.
+- [x] Wired saveLockedPick into discipline.ts getPitcherEdgePicks after filterPitcherPicks
+- [x] Only isOfficialTier picks tracked (ELITE/OFFICIAL/DUAL_EDGE/STACK_ALERT) — LEAN/PROJECTION excluded
+- [x] Tier mapping: ELITE/DUAL_EDGE/STACK_ALERT → 'ELITE', OFFICIAL → 'STRONG'
+- [x] 8-factor pitcherFactors breakdown: tms, disciplineGrade, opponentKRate, opponentBBRate, pitcherEdgeScore, isDualEdge, modelProbability, edge
+- [x] pickType: 'pitcher', propType: 'strikeouts' | 'walks' (actual prop, not 'pitcher')
+- [x] TypeScript: 0 errors
+- [x] All 231 tests pass (19 test files)
+
 ## Phase LOCK+TRACK v2: factorBreakdown Column + Threshold Alignment (Jul 2025)
 - [x] Add factorBreakdown json column to picks_history schema (migration 0014_faulty_stingray.sql applied)
 - [x] Add json import to drizzle/schema.ts (jsonCol alias to avoid duplicate identifier conflict)

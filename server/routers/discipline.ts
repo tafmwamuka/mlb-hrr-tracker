@@ -17,8 +17,9 @@ import {
 } from "../services/teamDisciplineService";
 import { detectDisciplineEdge } from "../services/disciplineEdgeDetector";
 import { getDisciplineEdgeHistory, getPitcherHistory } from "../services/pitcherLearningEngine";
-import { runPitcherEdgeEngine } from "../services/pitcherEdgeEngine";
+import { runPitcherEdgeEngine, isOfficialTier } from "../services/pitcherEdgeEngine";
 import { filterPitcherPicks } from "../services/pitcherPicksFilter";
+import { saveLockedPick } from "../services/progressiveTrackingService";
 
 // ── Serializable discipline data (for tRPC transport) ─────────────────────────
 function serializeDisciplineData(d: TeamDisciplineData) {
@@ -265,6 +266,77 @@ export const disciplineRouter = router({
     try {
       const result = await runPitcherEdgeEngine();
       const filtered = filterPitcherPicks(result.picks, result.rejectedPlays);
+
+      // ── Persist official pitcher picks to picks_history (fire-and-forget) ──
+      // Only ELITE and OFFICIAL (isOfficialTier) picks are tracked — LEAN/PROJECTION are not.
+      // propType is 'strikeouts' or 'walks' (the actual prop, not 'pitcher').
+      // gamePk is derived from game.gamePk via the game key; pitcher playerId comes from
+      // slot.pitcher.id (optional — falls back to 0 if not available in the lineup data).
+      void (async () => {
+        try {
+          const now = new Date();
+          const todayET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+          const slateDate = `${todayET.getFullYear()}-${String(todayET.getMonth() + 1).padStart(2, '0')}-${String(todayET.getDate()).padStart(2, '0')}`;
+
+          for (const pick of filtered.officialPicks) {
+            if (!isOfficialTier(pick.tier as any)) continue;
+
+            // Map pitcher tier to ELITE/STRONG for tracking
+            const trackingTier: 'ELITE' | 'STRONG' =
+              pick.tier === 'ELITE' || pick.tier === 'DUAL_EDGE' || pick.tier === 'STACK_ALERT'
+                ? 'ELITE'
+                : 'STRONG'; // OFFICIAL tier maps to STRONG
+
+            // Parse book odds to number
+            const rawOdds = (pick as any).bookOdds;
+            const numericOdds = typeof rawOdds === 'number'
+              ? rawOdds
+              : typeof rawOdds === 'string'
+                ? parseInt(String(rawOdds).replace(/[^0-9+\-]/g, ''), 10)
+                : null;
+            const bookOdds = numericOdds !== null && !isNaN(numericOdds) ? numericOdds : null;
+
+            // Pitcher-side factor breakdown — 8 factors for weight-validation
+            const pitcherFactors: Record<string, unknown> = {
+              tms: pick.tms,
+              disciplineGrade: pick.disciplineGrade,
+              opponentKRate: pick.opponentKRate,
+              opponentBBRate: pick.opponentBBRate,
+              pitcherEdgeScore: pick.pitcherEdgeScore,
+              isDualEdge: pick.isDualEdge,
+              modelProbability: pick.modelProbability,
+              edge: pick.edge,
+            };
+
+            await saveLockedPick({
+              slateDate,
+              pickType: 'pitcher',
+              playerId: (pick as any).pitcherId ?? 0,  // pitcher MLB ID if available
+              playerName: pick.pitcherName,
+              team: pick.pitcherTeam,
+              opponent: pick.opponentTeam,
+              gamePk: (pick as any).gamePk ?? 0,       // gamePk if available
+              propType: pick.propType,                  // 'strikeouts' | 'walks'
+              line: pick.line,
+              bookOdds,
+              modelProb: pick.modelProbability,         // already 0-1 scale
+              edge: pick.edge,
+              tier: trackingTier,
+              overallScore: pick.pitcherEdgeScore,
+              lockedAt: new Date().toISOString(),
+              actual: null,
+              result: 'pending',
+              verifiedAt: null,
+              voidReason: null,
+              factorBreakdown: pitcherFactors,
+            });
+          }
+          console.log(`[Discipline] Persisted ${filtered.officialPicks.length} official pitcher picks to picks_history for ${slateDate}`);
+        } catch (trackErr) {
+          console.error('[Discipline] saveLockedPick for pitcher picks failed:', trackErr);
+        }
+      })();
+
       return {
         // Main board — max 8 deduped official picks, no outliers
         picks: filtered.officialPicks.map(serializePick),
