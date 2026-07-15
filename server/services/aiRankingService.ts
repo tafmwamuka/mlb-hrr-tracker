@@ -997,9 +997,13 @@ export function rankAIPicks(
           bullpenWeakness: Math.round(bullpenWeaknessScore),
           platoonAdvantage: Math.round(platoonScore),
           hardContactBarrel: Math.round(hardContactScore),
-          // Legacy aliases (rc/hrTargets removed Phase AZ)
-          rc: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100)),  // kept for test compat
-          hrTargets: 50,  // kept for test compat
+          // ⚠️ TEST COMPATIBILITY ONLY — NOT REAL SIGNAL, DO NOT USE IN BACKTEST ANALYSIS
+          // rc: derived from hitsPerGame (not a real "Runs Created" model)
+          // hrTargets: hardcoded constant 50 — meaningless for analysis
+          // Both exist solely to satisfy aiPicks.test.ts assertions from Phase AZ.
+          // They are NOT written to pickSnapshots DB (schema has no factorBreakdown column).
+          rc: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100)),  // TEST COMPAT ONLY
+          hrTargets: 50,  // TEST COMPAT ONLY — constant, not a real factor
           playerStats: Math.round(Math.min(100, (hitsPerGame / 0.9) * 100)),
           parkFactors: Math.round(Math.min(100, ((parkFactor - 0.8) / 0.5) * 100)),
           pitcherMatchup: Math.round(pitcherWeaknessScore),
