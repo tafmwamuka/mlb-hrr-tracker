@@ -2031,18 +2031,23 @@ export const aiPicksRouter = router({
         gameTotalOU: pick.gameTotalOU ?? null,
         projectedPA: pick.projectedPA ?? null,
         passesGate: pick.overallScore >= 75,
+        // Step 6: 7-factor HQS model (replaces 10-factor model)
         factors: {
-          teamImpliedRuns: pick.factorBreakdown.teamImpliedRuns,
-          lineupSpot: pick.factorBreakdown.lineupSpot,
-          obpXwOBA: pick.factorBreakdown.obpXwOBA,
+          hqs: (pick as any).hqs ?? pick.factorBreakdown.obpXwOBA,
           pitcherWeakness: pick.factorBreakdown.pitcherWeakness,
+          lineupSpot: pick.factorBreakdown.lineupSpot,
           recentForm: pick.factorBreakdown.recentForm,
-          dayNightSplit: pick.factorBreakdown.dayNightSplit,
-          parkWeather: pick.factorBreakdown.parkWeather,
-          bullpenWeakness: pick.factorBreakdown.bullpenWeakness,
+          env: (pick as any).envScore ?? Math.round(
+            pick.factorBreakdown.teamImpliedRuns * 0.50 +
+            pick.factorBreakdown.parkWeather * 0.35 +
+            pick.factorBreakdown.dayNightSplit * 0.15
+          ),
           platoonAdvantage: pick.factorBreakdown.platoonAdvantage,
-          hardContactBarrel: pick.factorBreakdown.hardContactBarrel,
+          bullpenWeakness: pick.factorBreakdown.bullpenWeakness,
         },
+        // Step 6: PRIME/SOLID badge for UI chip
+        hrrProfile: (pick as any).hrrProfile ?? null,
+        hqsBbeConfidence: (pick as any).hqsBbeConfidence ?? 'low',
         reasons: pick.reasons,
         riskFlags: pick.riskFlags,
       }));

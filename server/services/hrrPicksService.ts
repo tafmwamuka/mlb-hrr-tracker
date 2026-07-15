@@ -364,7 +364,23 @@ export interface HRRPicksResult {
 // ─── Picks-level in-memory cache ────────────────────────────────────────────
 // Avoids re-running the full pipeline (VS gate + matrix scoring + Poisson) on
 // every request. TTL is 5 minutes; invalidated automatically when a game starts.
-const PICKS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes — extended to reduce cycling (Phase BA)
+const PICKS_CACHE_TTL = 10 * 60 * 1000; // 10 minutes — Phase BN: reduced for game status freshness
+
+// Phase BN: Game status filter — excludes in-progress and final games
+function isGameBettable(m: { gameTime?: string; gameStatus?: string }): boolean {
+  const status = (m.gameStatus ?? '').toLowerCase();
+  const finished = ['final', 'game over', 'completed', 'cancelled', 'postponed', 'suspended'];
+  const live = ['in progress', 'live', 'delay', 'warmup', 'replay', 'challenge'];
+  if (finished.some(s => status.includes(s))) return false;
+  if (live.some(s => status.includes(s))) return false;
+  if (m.gameTime) {
+    try {
+      const mins = (Date.now() - new Date(m.gameTime).getTime()) / 60000;
+      if (mins > 20) return false;
+    } catch {}
+  }
+  return true;
+}
 let picksCache: { result: HRRPicksResult; ts: number; slateDate: string } | null = null;
 
 // Phase BQ: Hard-lock flag — once set, the board is permanently frozen for the day.
@@ -461,6 +477,16 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   const { vsGradeMap, gameTotalsMap, dayNightSplitsMap, mlbStreakMap, statcastCache, bullpenFatigueMap } = enrichment as any;
 
   const matchups = lineupData.matchups;
+
+  // Phase BN: Game status filter active — bettableMatchups excludes in-progress and final games.
+  const bettableMatchups = matchups.filter((m: any) =>
+    isGameBettable({
+      gameTime: m.gameTime,
+      gameStatus: m.gameStatus ?? m.game?.status?.detailedState ?? ''
+    })
+  );
+  console.log(`[HRRPicks] Game filter: ${matchups.length} -> ${bettableMatchups.length} matchups`);
+
   const players = lineupData.playerDataMap;
 
   const now = new Date();
@@ -536,11 +562,11 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   // Previously skipped when vsGradeMap was empty OR all neutral — meaning every player passed with no matchup filtering.
   // Now: only skip if BOTH empty AND very few matchups (data truly unavailable).
   const allNeutral = vsGradeMap.size > 0 && Array.from(vsGradeMap.values()).every(v => v === 5.0);
-  const skipVsGate = vsGradeMap.size === 0 && matchups.length < 5; // much stricter skip condition
+  const skipVsGate = vsGradeMap.size === 0 && bettableMatchups.length < 5; // much stricter skip condition
 
   const gatedMatchups = skipVsGate
-    ? matchups
-    : matchups.filter((m: any) => {
+    ? bettableMatchups
+    : bettableMatchups.filter((m: any) => {
         const vsScore = vsGradeMap.get(m.playerName) ?? null;
         if (vsScore === null) return true; // no entry = neutral, let through
         if (vsScore >= STRONG_THRESHOLD) return true;
@@ -561,7 +587,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
         return false;
       });
 
-  console.log(`[HRRPicks] VS Gate (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD}, skip=${skipVsGate}): ${matchups.length} → ${gatedMatchups.length} matchups passed`);
+  console.log(`[HRRPicks] VS Gate (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD}, skip=${skipVsGate}): ${bettableMatchups.length} → ${gatedMatchups.length} matchups passed`);
 
   const hrTargetsMap = getMockHRTargets();
 
@@ -684,7 +710,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     return b.overProbability - a.overProbability;
   });
 
-  // Phase AX: No pre-game gate — all picks kept regardless of game start time.
+  // Phase BN: Game status filter active — bettableMatchups excludes in-progress and final games.
   // ── Money Picks selection: quality gate first, then cap ──
   const MAX_MONEY_PICKS = 6;   // Phase CN: quality over quantity — max 6 official picks
   const MIN_MONEY_PICKS = 0;   // Phase CN: NEVER force picks — 0 picks is valid

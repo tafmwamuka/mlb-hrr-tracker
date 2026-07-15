@@ -2235,20 +2235,17 @@ export function MoneyPicksTab() {
                     {/* Issue 5: Horizontal scroll wrapper for mobile */}
                     <div className="overflow-x-auto -mx-2 px-2">
                       <div style={{ minWidth: 520 }}>
-                        {/* Header row */}
-                        <div className="grid gap-1 mb-2 px-2" style={{ gridTemplateColumns: '140px 36px 28px 28px 28px 28px 28px 28px 28px 28px 28px 28px' }}>
+                        {/* Header row — 7-factor HQS model */}
+                        <div className="grid gap-1 mb-2 px-2" style={{ gridTemplateColumns: '148px 36px 32px 32px 32px 32px 32px 32px 32px' }}>
                           <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)]">Player</span>
                           <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center">Score</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Team Implied Runs">TIR</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Lineup Spot">LU</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="OBP/xwOBA">OBP</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.55_0.18_255)] text-center" title="Hitter Quality Score (contact + power + discipline)">HQS</span>
                           <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Pitcher Weakness">PIT</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Lineup Spot">LU</span>
                           <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Recent Form">FRM</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Day/Night Split">D/N</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Park+Weather">PRK</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Bullpen">BUL</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Platoon">PLT</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Hard Contact/Barrel">HRD</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Environment (TIR + Park + Day/Night)">ENV</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Platoon Advantage">PLT</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Bullpen Weakness">BUL</span>
                         </div>
                         {/* Divider */}
                         <div className="h-px mb-2" style={{ background: "oklch(1 0 0 / 8%)" }} />
@@ -2261,24 +2258,35 @@ export function MoneyPicksTab() {
                               key={i}
                               className="grid gap-1 px-2 py-1.5 rounded-lg items-center"
                               style={{
-                                gridTemplateColumns: '140px 36px 28px 28px 28px 28px 28px 28px 28px 28px 28px 28px',
+                                gridTemplateColumns: '148px 36px 32px 32px 32px 32px 32px 32px 32px',
                                 background: passes ? 'oklch(0.15 0.025 165 / 30%)' : 'oklch(1 0 0 / 2%)',
                                 opacity: passes ? 1 : 0.55,
                               }}
                             >
-                              {/* Player name + team */}
+                              {/* Player name + team + PRIME/SOLID badge */}
                               <div className="min-w-0">
-                                <div className="text-[11px] font-semibold text-white truncate">{c.playerName}</div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[11px] font-semibold text-white truncate">{c.playerName}</span>
+                                  {c.hrrProfile === 'HRR_PRIME' && (
+                                    <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{ background: 'oklch(0.82 0.17 85 / 20%)', color: 'oklch(0.82 0.17 85)', border: '1px solid oklch(0.82 0.17 85 / 40%)' }}>PRIME</span>
+                                  )}
+                                  {c.hrrProfile === 'HRR_SOLID' && (
+                                    <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{ background: 'oklch(0.72 0.18 165 / 15%)', color: 'oklch(0.72 0.18 165)', border: '1px solid oklch(0.72 0.18 165 / 35%)' }}>SOLID</span>
+                                  )}
+                                </div>
                                 <div className="text-[9px] text-[oklch(0.45_0.015_255)] truncate">{c.team} #{c.battingPosition} vs {c.pitcherTeam}</div>
                               </div>
                               {/* Overall score */}
                               <div className="text-center">
                                 <span className="text-[11px] font-bold" style={{ color: tier.color }}>{c.overallScore}</span>
                               </div>
-                              {/* Factor scores */}
-                              {(['teamImpliedRuns','lineupSpot','obpXwOBA','pitcherWeakness','recentForm','dayNightSplit','parkWeather','bullpenWeakness','platoonAdvantage','hardContactBarrel'] as const).map(key => {
-                                const val = c.factors[key] as number;
-                                const color = val >= 70 ? 'oklch(0.72 0.18 165)' : val >= 50 ? 'oklch(0.82 0.17 85)' : 'oklch(0.55 0.015 255)';
+                              {/* 7-factor scores */}
+                              {(['hqs','pitcherWeakness','lineupSpot','recentForm','env','platoonAdvantage','bullpenWeakness'] as const).map(key => {
+                                const val = (c.factors[key] as number) ?? 0;
+                                const isHQS = key === 'hqs';
+                                const color = val >= 70
+                                  ? (isHQS ? 'oklch(0.55 0.18 255)' : 'oklch(0.72 0.18 165)')
+                                  : val >= 50 ? 'oklch(0.82 0.17 85)' : 'oklch(0.55 0.015 255)';
                                 return (
                                   <div key={key} className="text-center">
                                     <span className="text-[10px] font-semibold" style={{ color }}>{val}</span>

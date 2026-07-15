@@ -166,7 +166,9 @@ describe("AI Picks Ranking Service", () => {
       const picks = rankAIPicks(mockMatchups, mockPlayers, getMockHRTargets(), getMockParkFactors());
       const pick = picks[0];
 
-      Object.values(pick.factorBreakdown).forEach((factor) => {
+      Object.entries(pick.factorBreakdown).forEach(([key, factor]) => {
+        // hrrProfile can be a string or null (Step 7 HQS field)
+        if (key === 'hrrProfile') return;
         expect(typeof factor).toBe("number");
         expect(factor).toBeGreaterThanOrEqual(0);
         expect(factor).toBeLessThanOrEqual(100);
@@ -252,7 +254,7 @@ describe("AI Picks Ranking Service", () => {
       parkFactors.forEach((factor) => {
         expect(typeof factor).toBe("number");
         expect(factor).toBeGreaterThan(0.8);
-        expect(factor).toBeLessThanOrEqual(1.2);
+        expect(factor).toBeLessThanOrEqual(1.35); // Coors Field is 1.28 — realistic upper bound
       });
     });
   });

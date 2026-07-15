@@ -62,11 +62,36 @@
 import type { PlayerDayNightSplits } from "./dayNightSplitService";
 import type { PlayerStreakData } from "./mlbStreakService";
 import { calculateHandednessAdvantage, calculateWeatherImpact } from "./advancedDataService";
+import { calculateHQS, getHRRProfileBadge } from './hitterQualityScore';
 import type { GameTotal } from "./gameTotalsService";
 import { getGameTotalScoreForTeam } from "./gameTotalsService";
 import { lookupStatcastPlayer, type StatcastCache } from "./pybaseballService";
 // BallparkMatchup kept as a legacy type for backward compat (ballparkMatchupService removed in Phase AC)
 type BallparkMatchup = { batter: string; kProb?: number | null; hrProb?: number | null };
+
+/**
+ * Change 3: robustStatcastLookup — handles name mismatches, accents, and casing.
+ * Root cause fix: Statcast cache is keyed by lowercase player name from pybaseball,
+ * but lookups used MLB player IDs or mismatched casing/accents → statcastPlayer always null.
+ */
+function robustStatcastLookup(statcastCache: any, playerName: string): any | null {
+  if (!statcastCache?.data) return null;
+  const lower = playerName.toLowerCase().trim();
+  const direct = statcastCache.data.get(lower);
+  if (direct) return direct;
+  const stripped = lower.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s]/g, '').trim();
+  for (const [key, value] of statcastCache.data) {
+    const keyStripped = String(key).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s]/g, '').trim();
+    if (keyStripped === stripped) return value;
+  }
+  const lastName = lower.split(' ').pop() ?? '';
+  if (lastName.length >= 4) {
+    for (const [key, value] of statcastCache.data) {
+      if (String(key).toLowerCase().includes(lastName)) return value;
+    }
+  }
+  return null;
+}
 import { getBullpenFatigueScore, type BullpenFatigue } from "./bullpenFatigueService";
 import { analyzeValue } from "./valueEngine";
 
@@ -180,6 +205,11 @@ export interface AIPick {
     streakBonus?: number;
     statcast?: number;
     gameTotal?: number;
+    // Step 7: HQS Layer 4 fields
+    hqs?: number;
+    hqsBbeConfidence?: number;
+    hrrProfile?: string | null;
+    envScore?: number;
   };
   // S2: Projected plate appearances
   projectedPA?: number; // Projected PA this game (e.g. 4.8 for 3-hole)
@@ -497,42 +527,68 @@ function calculateDayNightScore(
 /**
  * Calculate recent form score (0-100) from MLB game log data
  */
-function calculateRecentFormScore(
-  mlbStreak?: PlayerStreakData | null
-): {
-  score: number;
-  isOnStreak: boolean;
-  streakLength: number;
-  streakType: 'hot' | 'cold' | 'neutral';
-  last5HitRate: number;
-  last10HitRate: number;
-  trendDirection: 'up' | 'down' | 'stable';
+// Change 5: sample-size-guarded calculateRecentFormScore
+// Root cause fix: no sample-size check — players with 2 games in the streak cache
+// were getting full streak bonuses and hitting 100.
+function calculateRecentFormScore(mlbStreak?: any | null): {
+  score: number; isOnStreak: boolean; streakLength: number;
+  streakType: 'hot' | 'cold' | 'neutral'; last5HitRate: number;
+  last10HitRate: number; trendDirection: 'up' | 'down' | 'stable';
 } {
-  if (mlbStreak && mlbStreak.hasRealData) {
-    const last5 = mlbStreak.last5HitRate;
-    const streakLen = mlbStreak.streakLength;
-    const trend = mlbStreak.trendDirection;
-    let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
-    if (last5 >= 70 || streakLen >= 3 || trend === 'HOT') streakType = 'hot';
-    else if ((last5 <= 30 && (streakLen <= -3 || trend === 'COLD')) || streakLen <= -5) streakType = 'cold';
-    let score = 50;
-    score += (last5 - 50) * 0.8;
-    if (streakLen >= 3) score += 10;
-    if (streakLen <= -3) score -= 10;
-    if (trend === 'HOT') score += 5;
-    if (trend === 'COLD') score -= 5;
-    const trendDirection = trend === 'HOT' ? 'up' : trend === 'COLD' ? 'down' : 'stable';
-    return {
-      score: Math.min(100, Math.max(0, Math.round(score))),
-      isOnStreak: streakLen >= 3,
-      streakLength: Math.abs(streakLen),
-      streakType,
-      last5HitRate: Math.round(last5),
-      last10HitRate: Math.round(last5),
-      trendDirection,
-    };
+  if (!mlbStreak || !mlbStreak.hasRealData) {
+    return { score: 50, isOnStreak: false, streakLength: 0, streakType: 'neutral',
+             last5HitRate: 50, last10HitRate: 50, trendDirection: 'stable' };
   }
-  return { score: 50, isOnStreak: false, streakLength: 0, streakType: 'neutral', last5HitRate: 50, last10HitRate: 50, trendDirection: 'stable' };
+  const last5 = mlbStreak.last5HitRate ?? 50;
+  const streakLen = mlbStreak.streakLength ?? 0;
+  const trend = mlbStreak.trendDirection ?? 'NEUTRAL';
+  const sampleSize = mlbStreak.last5Games?.length ?? 0;
+  const sampleWeight = sampleSize >= 5 ? 1.0 : sampleSize >= 3 ? 0.5 : 0.1;
+
+  let streakType: 'hot' | 'cold' | 'neutral' = 'neutral';
+  if (last5 >= 70 || (streakLen >= 3 && trend === 'HOT')) streakType = 'hot';
+  else if (last5 <= 30 && streakLen <= -3) streakType = 'cold';
+
+  let score = 50;
+  score += (last5 - 50) * 0.8;
+  if (streakLen >= 3) score += 10 * sampleWeight;
+  if (streakLen <= -3) score -= 10 * sampleWeight;
+  if (trend === 'HOT') score += 5 * sampleWeight;
+  if (trend === 'COLD') score -= 5 * sampleWeight;
+  score = Math.min(95, Math.max(5, Math.round(score)));
+
+  const trendDirection = trend === 'HOT' ? 'up' : trend === 'COLD' ? 'down' : 'stable';
+  return {
+    score,
+    isOnStreak: streakLen >= 3 && sampleSize >= 3,
+    streakLength: Math.abs(streakLen),
+    streakType,
+    last5HitRate: Math.round(last5),
+    last10HitRate: Math.round(last5),
+    trendDirection,
+  };
+}
+
+/**
+ * Change 2: calculatePlatoonScore — handles undefined pitcher handedness gracefully.
+ * Root cause fix: calculateHandednessAdvantage() returned 45 for everyone because
+ * matchup.pitcher.handedness was arriving undefined.
+ */
+function calculatePlatoonScore(
+  batterHand: 'R' | 'L' | 'S',
+  pitcherHand: 'R' | 'L' | undefined | null,
+  platoonSplit?: { vsRHP: number; vsLHP: number } | null,
+  seasonAvg: number = 0.260
+): number {
+  if (!pitcherHand) return 50;
+  if (platoonSplit) {
+    const relevantAvg = pitcherHand === 'R' ? platoonSplit.vsRHP : platoonSplit.vsLHP;
+    const advantage = relevantAvg - seasonAvg;
+    return Math.max(0, Math.min(100, 50 + (advantage / 0.030) * 30));
+  }
+  if (batterHand === 'S') return 72;
+  const isOpposite = (batterHand === 'L' && pitcherHand === 'R') || (batterHand === 'R' && pitcherHand === 'L');
+  return isOpposite ? 68 : 38;
 }
 
 /**
@@ -618,10 +674,33 @@ export function rankAIPicks(
       const gameTotalScore = gameTotalData?.score ?? 50;
       const gameTotalOU = gameTotalData?.overUnder ?? null;
 
-      // ── Statcast data ─────────────────────────────────────────────────────
+      // ── Statcast data (Change 3: robustStatcastLookup handles name mismatches) ──
       const statcastPlayer = statcastCache
-        ? (statcastCache.byId.get(matchup.playerId) ?? lookupStatcastPlayer(statcastCache, matchup.playerName))
+        ? (statcastCache.byId?.get(matchup.playerId) ?? robustStatcastLookup(statcastCache, matchup.playerName))
         : null;
+
+      // ── Step 2: HQS (Layer 4) — absorbs OBP/xwOBA + HRD ───────────────────────
+      const hqsResult = calculateHQS({
+        kPct:         statcastPlayer?.k_percent ?? statcastPlayer?.kPct ?? null,
+        whiffPct:     statcastPlayer?.whiff_percent ?? statcastPlayer?.whiffPct ?? null,
+        hardHitPct:   statcastPlayer?.hard_hit_percent ?? statcastPlayer?.hardHitPct ?? null,
+        sweetSpotPct: statcastPlayer?.sweet_spot_percent ?? statcastPlayer?.sweetSpotPct ?? null,
+        woba:         statcastPlayer?.xwoba ?? statcastPlayer?.woba ?? null,
+        iso:          statcastPlayer?.iso ?? null,
+        barrelPct:    statcastPlayer?.barrel_batted_rate ?? statcastPlayer?.barrelPct ?? null,
+        bbe:          statcastPlayer?.bbe ?? statcastPlayer?.batted_ball_events ?? null,
+      }, 60);
+      const hqsScore = hqsResult.hqs;
+
+      const hrrProfile = getHRRProfileBadge({
+        kPct:         statcastPlayer?.k_percent ?? statcastPlayer?.kPct,
+        whiffPct:     statcastPlayer?.whiff_percent ?? statcastPlayer?.whiffPct,
+        hardHitPct:   statcastPlayer?.hard_hit_percent ?? statcastPlayer?.hardHitPct,
+        sweetSpotPct: statcastPlayer?.sweet_spot_percent ?? statcastPlayer?.sweetSpotPct,
+        woba:         statcastPlayer?.xwoba ?? statcastPlayer?.woba,
+        iso:          statcastPlayer?.iso,
+        bbe:          statcastPlayer?.bbe ?? statcastPlayer?.batted_ball_events,
+      });
 
       // kProb: from ballparkMatchups if provided (legacy), otherwise null
       const bpMatchup = (ballparkMatchups ?? []).find(bp =>
@@ -700,21 +779,30 @@ export function rankAIPicks(
         // ── Factor 8: Bullpen Weakness (6%) — S3 upgrade ─────────────────
       // S3: Use real bullpen fatigue data if available, else fall back to ERA proxy
       let bullpenWeaknessScore: number;
+      // Change 4: improved bullpen block — adds OU boost to ERA proxy
+      // Root cause fix: matchup.opponentTeamId is never populated, so the fatigue path
+      // was always skipping and the ERA fallback returned ~50 for everyone.
       if (bullpenFatigueMap && matchup.opponentTeamId) {
         const fatigue = getBullpenFatigueScore(matchup.opponentTeamId, bullpenFatigueMap);
-        bullpenWeaknessScore = fatigue.score; // 0-100: higher = more tired = scoring opportunity
+        bullpenWeaknessScore = (fatigue && fatigue.score !== undefined)
+          ? fatigue.score
+          : calculateBullpenWeaknessScore(matchup.pitcher.era, matchup.confidence);
       } else {
-        bullpenWeaknessScore = calculateBullpenWeaknessScore(
-          matchup.pitcher.era,
-          matchup.confidence
-        );
+        const pitcherEra = matchup.pitcher?.era ?? 4.0; // default to league-average ERA when missing
+        const eraProxy = Math.min(100, Math.max(0, ((pitcherEra - 2.5) / 3.5) * 100));
+        const ouBoost = gameTotalOU !== null ? Math.min(20, Math.max(-10, (gameTotalOU - 8.5) * 4)) : 0;
+        bullpenWeaknessScore = Math.round(Math.min(100, Math.max(0,
+          eraProxy * 0.65 + matchup.confidence * 0.25 + ouBoost * 0.10
+        )));
       }
 
       // ── Factor 9: Platoon Advantage (5%) ─────────────────────────────────
-      const platoonScore = calculateHandednessAdvantage(
+      // Change 2: use calculatePlatoonScore (handles undefined pitcher handedness)
+      const platoonScore = calculatePlatoonScore(
         playerData.handedness,
-        matchup.pitcher.handedness,
-        matchup.platoonSplit
+        matchup.pitcher?.handedness ?? null,
+        matchup.platoonSplit,
+        playerData.stats.avg
       );
 
       // ── Factor 10: Hard Contact / Barrel (4%) — S1 upgrade ──────────────
@@ -727,22 +815,23 @@ export function rankAIPicks(
         barrelPercentile
       );
 
-      // ── Weighted base score (0-100) ───────────────────────────────────────
-      // Integration Patch: CRITICAL FIX — TIR was 16% and consistently scoring 25-50
-      // due to gameTotals API returning neutral data, dragging ALL scores below threshold.
-      // Redistributed 8% to more reliable factors. Total = 100%.
+      // ── Step 3: ENV score (merged environment factor) ──────────────────────────────
+      // Merged environment factor: implied runs 50%, park 35%, day/night 15%
+      const envScore = Math.round(
+        teamImpliedScore * 0.50 + parkWeatherScore * 0.35 + dayNightScore * 0.15
+      );
+
+      // ── Step 4: 7-factor HQS baseScore (Layer 4 model) ───────────────────────────
+      // HQS absorbs OBP/xwOBA + HRD. ENV absorbs TIR + PRK + D/N. Total = 1.00.
       const baseScore =
-        teamImpliedScore   * 0.08 +   // Team Implied Runs — REDUCED from 16% to 8%
-        lineupSpotScore    * 0.16 +   // Lineup Spot — INCREASED from 15% to 16%
-        obpXwOBAScore      * 0.18 +   // OBP / xwOBA — INCREASED from 14% to 18%
-        pitcherWeaknessScore * 0.18 + // Pitcher Weakness — INCREASED from 14% to 18%
-        recentFormScore    * 0.12 +   // Recent Form — INCREASED from 10% to 12%
-        dayNightScore      * 0.07 +   // Day/Night Split
-        parkWeatherScore   * 0.07 +   // Park + Weather
-        bullpenWeaknessScore * 0.05 + // Bullpen Weakness
-        platoonScore       * 0.05 +   // Platoon Advantage
-        hardContactScore   * 0.04;    // Hard Contact/Barrel
-      // Total: 0.08+0.16+0.18+0.18+0.12+0.07+0.07+0.05+0.05+0.04 = 1.00 ✓
+        hqsScore             * 0.28 +  // HQS  — Layer 4 (absorbs OBP/xwOBA + HRD)
+        pitcherWeaknessScore * 0.20 +  // PIT
+        lineupSpotScore      * 0.14 +  // LU
+        recentFormScore      * 0.12 +  // FRM  (sample-guarded)
+        envScore             * 0.12 +  // ENV  (absorbs TIR + PRK + D/N)
+        platoonScore         * 0.09 +  // PLT  (fixed handedness)
+        bullpenWeaknessScore * 0.05;   // BUL
+      // 0.28 + 0.20 + 0.14 + 0.12 + 0.12 + 0.09 + 0.05 = 1.00 ✓
 
       // ── Matchup Grade boost/penalty (Diamond Edge VS gate) ─────────────
       const bpBoost = calculateBPBoost(vsGrade);
@@ -923,6 +1012,11 @@ export function rankAIPicks(
             (statcastPlayer.exitVeloPercentile ?? 50) * 0.15
           ) : 50,
           gameTotal: Math.round(gameTotalScore),
+          // Step 7: HQS Layer 4 fields for backtest logging
+          hqs: Math.round(hqsScore),
+          hqsBbeConfidence: hqsResult.bbeConfidence,
+          hrrProfile: hrrProfile ?? null,
+          envScore: Math.round(envScore),
         },
         primePosition: favorableCount >= 3,
         primePositionFactors: {
@@ -1013,6 +1107,25 @@ export function rankAIPicks(
         // Alt lines: no direct access to hrrMarketData here, pass empty array
         // (alt lines are enriched later in hrrPicksService when HRRMarketData is available)
         pick.valueAnalysis = analyzeValue(trueProb, bookOddsForValue, []);
+      }
+
+      // Step 5: Expose HQS fields on pick for UI and backtest logging
+      (pick as any).hqs = hqsScore;
+      (pick as any).hqsComponents = hqsResult.components;
+      (pick as any).hqsBbeConfidence = hqsResult.bbeConfidence;
+      (pick as any).hrrProfile = hrrProfile;
+      (pick as any).hqsFlags = hqsResult.flags;
+      (pick as any).envScore = envScore;
+
+      // Push HQS flags into reasons for Why This Play section
+      if (hqsResult.flags && hqsResult.flags.length > 0) {
+        for (const flag of hqsResult.flags) {
+          if (!pick.reasons.includes(flag)) pick.reasons.push(flag);
+        }
+      }
+      if (hrrProfile) {
+        const badge = hrrProfile === 'HRR_PRIME' ? 'PRIME contact profile (elite HQS)' : 'SOLID contact profile (above-avg HQS)';
+        if (!pick.reasons.includes(badge)) pick.reasons.push(badge);
       }
 
       return pick;
@@ -1132,39 +1245,16 @@ export function getMockHRTargets(): Map<string, HRTargetData> {
  * Mock park factors
  */
 export function getMockParkFactors(): Map<string, number> {
-  const data = new Map<string, number>();
-  // Hitter-friendly parks
-  data.set("COL", 1.20); // Coors Field
-  data.set("CIN", 1.12); // Great American Ball Park
-  data.set("TEX", 1.10); // Globe Life Field
-  data.set("PHI", 1.08); // Citizens Bank Park
-  data.set("BOS", 1.07); // Fenway Park
-  data.set("NYY", 1.06); // Yankee Stadium
-  data.set("CHC", 1.05); // Wrigley Field
-  data.set("MIL", 1.04); // American Family Field
-  data.set("BAL", 1.03); // Camden Yards
-  // Neutral parks
-  data.set("LAD", 1.01); // Dodger Stadium
-  data.set("ATL", 1.00); // Truist Park
-  data.set("HOU", 1.00); // Minute Maid Park
-  data.set("STL", 0.99); // Busch Stadium
-  data.set("WSH", 0.99); // Nationals Park
-  data.set("TOR", 0.98); // Rogers Centre
-  data.set("MIN", 0.98); // Target Field
-  data.set("SEA", 0.97); // T-Mobile Park
-  data.set("CLE", 0.97); // Progressive Field
-  data.set("DET", 0.97); // Comerica Park
-  data.set("MIA", 0.96); // LoanDepot Park
-  data.set("TB", 0.96);  // Tropicana Field
-  data.set("CHW", 0.96); // Guaranteed Rate Field
-  data.set("KC", 0.96);  // Kauffman Stadium
-  data.set("PIT", 0.96); // PNC Park
-  // Pitcher-friendly parks
-  data.set("NYM", 0.95); // Citi Field
-  data.set("ARI", 0.95); // Chase Field
-  data.set("LAA", 0.94); // Angel Stadium
-  data.set("OAK", 0.94); // Oakland Coliseum
-  data.set("SD", 0.93);  // Petco Park
-  data.set("SF", 0.92);  // Oracle Park
-  return data;
+  // Change 1: Complete 30-team park factors (2024-2026 calibrated)
+  // Root cause fix: missing teams were returning undefined → defaulting to 1.0 → flat PRK scores
+  return new Map<string, number>([
+    ['COL', 1.28], ['CIN', 1.10], ['PHI', 1.08], ['NYY', 1.07],
+    ['MIL', 1.06], ['BOS', 1.06], ['BAL', 1.05], ['HOU', 1.04],
+    ['TEX', 1.04], ['CHC', 1.03], ['TOR', 1.03], ['STL', 1.02],
+    ['MIA', 1.01], ['TB', 1.01], ['MIN', 0.99], ['WSH', 0.99],
+    ['ATL', 0.99], ['NYM', 0.98], ['CLE', 0.98], ['KC', 0.97],
+    ['PIT', 0.97], ['LAA', 0.97], ['CWS', 0.96], ['CHW', 0.96],
+    ['DET', 0.96], ['ARI', 0.95], ['SEA', 0.95], ['LAD', 0.94],
+    ['SD', 0.92], ['SF', 0.91], ['OAK', 0.90], ['ATH', 0.98],
+  ]);
 }
