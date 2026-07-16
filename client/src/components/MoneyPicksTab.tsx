@@ -12,6 +12,7 @@ import {
   TrendingDown, CalendarDays, BarChart2, ChevronRight
 } from "lucide-react";
 import { SaferPlayTip } from "@/components/SaferPlayTip";
+import { LockBadge, LockCountdown, VoidedPickOverlay, type LockStatus } from "@/components/LockBadge";
 import { MoneyPickAlternatives } from "@/components/MoneyPickAlternatives";
 import { StructuredPickSections } from "@/components/StructuredPickSections";
 import { PerformanceGraph } from "@/components/PerformanceGraph";
@@ -151,6 +152,15 @@ interface MoneyPick {
     ev: number;
     reason: string;
   }>;
+  // Lock status fields (from pickLockService)
+  lockStage?: string;
+  lockLabel?: string;
+  lockColor?: string;
+  canStillBet?: boolean;
+  minutesUntilGame?: number;
+  minutesUntilLock?: number;
+  lockedAt?: string | null;
+  voidReason?: string | null;
   // Phase AW: Value Intelligence System
   valueAnalysis?: {
     trueProb: number;
@@ -288,17 +298,32 @@ function MoneyPickCard({
   const isGameSoon = minsUntilGame !== null && minsUntilGame >= 0 && minsUntilGame <= 30;
   const isGameImminent = minsUntilGame !== null && minsUntilGame >= 0 && minsUntilGame <= 10;
 
+  // Build LockStatus object from pick's lock fields
+  const lockStatus: LockStatus | null = pick.lockStage ? {
+    lockStage: pick.lockStage as LockStatus['lockStage'],
+    lockLabel: pick.lockLabel ?? pick.lockStage,
+    lockColor: pick.lockColor ?? '#888',
+    canStillBet: pick.canStillBet ?? true,
+    minutesUntilGame: pick.minutesUntilGame ?? 999,
+    minutesUntilLock: pick.minutesUntilLock ?? 999,
+    lockedAt: pick.lockedAt ?? null,
+  } : null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: rank * 0.05, duration: 0.35 }}
-      className={`rounded-2xl overflow-hidden border ${isSelected ? "ring-2 ring-emerald-400/60" : ""}`}
+      className={`relative rounded-2xl overflow-hidden border ${isSelected ? "ring-2 ring-emerald-400/60" : ""}`}
       style={{
         background: isSelected ? "oklch(0.15 0.03 165 / 40%)" : "oklch(0.14 0.022 255)",
         borderColor: isSelected ? "oklch(0.72 0.18 165 / 50%)" : "oklch(1 0 0 / 8%)",
       }}
     >
+      {/* Voided pick overlay */}
+      {pick.lockStage === 'VOID' && (
+        <VoidedPickOverlay reason={pick.voidReason ?? 'Player scratched from lineup'} />
+      )}
       {/* Top accent bar — tier color */}
       <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${scoreTier.color}, ${scoreTier.color}60)` }} />
 
@@ -949,9 +974,9 @@ function MoneyPickCard({
           </div>
         )}
 
-        {/* Grade badge row */}
-        {pick.grade && (
-          <div className="flex items-center gap-2 mb-3">
+        {/* Grade badge row + Lock status badge */}
+        {(pick.grade || lockStatus) && (
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
             {pick.grade === 'elite' ? (
               <div
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest"
@@ -976,6 +1001,11 @@ function MoneyPickCard({
                   </span>
                 )}
               </div>
+            )}
+            {/* Lock status badge */}
+            {lockStatus && <LockBadge lockStatus={lockStatus} />}
+            {pick.lockStage === 'LOCKING_SOON' && pick.minutesUntilLock !== undefined && (
+              <LockCountdown minutesUntilLock={pick.minutesUntilLock} />
             )}
           </div>
         )}

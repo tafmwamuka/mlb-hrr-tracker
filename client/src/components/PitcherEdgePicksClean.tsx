@@ -17,6 +17,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { RefreshCw, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
+import { LockBadge, LockCountdown, VoidedPickOverlay, type LockStatus } from "@/components/LockBadge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,15 @@ interface PitcherPick {
   isLeanPlay: boolean;
   pricingPenaltyTier?: string;
   playCategory?: string;
+  // Lock status fields (from pickLockService)
+  lockStage?: string;
+  lockLabel?: string;
+  lockColor?: string;
+  canStillBet?: boolean;
+  minutesUntilGame?: number;
+  minutesUntilLock?: number;
+  lockedAt?: string | null;
+  voidReason?: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -106,6 +116,15 @@ function PitcherPickCard({
   const [expanded, setExpanded] = useState(false);
   const propLabel = pick.propType === 'strikeouts' ? 'K' : 'BB';
   const cleanedReasons = cleanReasons(pick.qualifyingReasons);
+  const lockStatus: LockStatus | null = pick.lockStage ? {
+    lockStage: pick.lockStage as LockStatus['lockStage'],
+    lockLabel: pick.lockLabel ?? pick.lockStage,
+    lockColor: pick.lockColor ?? '#888',
+    canStillBet: pick.canStillBet ?? true,
+    minutesUntilGame: pick.minutesUntilGame ?? 999,
+    minutesUntilLock: pick.minutesUntilLock ?? 999,
+    lockedAt: pick.lockedAt ?? null,
+  } : null;
 
   const borderColor =
     pick.isOfficialPlay ? 'border-[oklch(0.55_0.25_280)]' :
@@ -118,10 +137,14 @@ function PitcherPickCard({
     'bg-white/3';
 
   return (
-    <div className={`rounded-2xl border ${borderColor} ${bgColor} overflow-hidden`}>
+    <div className={`relative rounded-2xl border ${borderColor} ${bgColor} overflow-hidden`}>
+      {/* Voided pick overlay */}
+      {pick.lockStage === 'VOID' && (
+        <VoidedPickOverlay reason={pick.voidReason ?? 'Pitcher scratched'} />
+      )}
       <div className="px-4 pt-3 pb-2">
 
-        {/* Tier badges — simplified */}
+        {/* Tier badges + lock status */}
         <div className="flex items-center gap-1.5 flex-wrap mb-2">
           {pick.isOfficialPlay && (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[oklch(0.55_0.25_280)] text-white">
@@ -138,13 +161,17 @@ function PitcherPickCard({
               ⚡ DUAL
             </span>
           )}
-          {pick.hasDisciplineEdge && (
+                    {pick.hasDisciplineEdge && (
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300">
               💎 EDGE
             </span>
           )}
+          {/* Lock status badge */}
+          {lockStatus && <LockBadge lockStatus={lockStatus} compact />}
+          {pick.lockStage === 'LOCKING_SOON' && pick.minutesUntilLock !== undefined && (
+            <LockCountdown minutesUntilLock={pick.minutesUntilLock} />
+          )}
         </div>
-
         {/* Pitcher + prop — the two most important things */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex-1 min-w-0">
