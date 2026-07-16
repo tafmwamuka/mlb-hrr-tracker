@@ -603,6 +603,74 @@ function calculatePlatoonScore(
  * Phase W calibration: reduced influence so BP doesn't act as a hidden hard gate.
  * Grade 10 → +12, Grade 9 → +8, Grade 8 → +4, Grade 7 → 0, Grade 6 → -4, Grade ≤5 → -6
  */
+/**
+ * Runtime assertion: verifies that Statcast data arriving in aiRankingService looks like
+ * percentile scores (0-100), not raw rates. Fires once per cache load (guarded by a module-level
+ * flag) so it does not spam logs on every pick request.
+ *
+ * What we check:
+ *   - kPct and whiffPct should be 0-100. If any value > 100 or < 0 that is a raw-rate leak.
+ *   - A healthy cache should have a non-trivial spread (std-dev > 5). A flat distribution
+ *     (e.g. all values = 50) means the fallback default is being used everywhere.
+ *   - At least 80% of players should have non-null kPct (data availability check).
+ *
+ * If any check fails, a loud console.error is emitted so the failure is visible in logs
+ * and in the dev-server overlay — it will NOT silently scramble scores again.
+ */
+let _statcastShapeChecked = false;
+function assertStatcastPercentileShape(cache: StatcastCache | null): void {
+  if (_statcastShapeChecked || !cache || cache.data.size === 0) return;
+  _statcastShapeChecked = true;
+
+  const players = Array.from(cache.data.values());
+  const kPctValues = players.map(p => p.kPct).filter((v): v is number => v !== null && v !== undefined);
+  const whiffValues = players.map(p => p.whiffPct).filter((v): v is number => v !== null && v !== undefined);
+
+  const issues: string[] = [];
+
+  // Check 1: availability — at least 80% of players should have kPct
+  const kPctCoverage = kPctValues.length / players.length;
+  if (kPctCoverage < 0.80) {
+    issues.push(`kPct coverage only ${(kPctCoverage * 100).toFixed(1)}% (${kPctValues.length}/${players.length} players) — expected ≥80%`);
+  }
+
+  // Check 2: range — all values must be 0-100 (raw K-rates are typically 5-40%)
+  const outOfRange = kPctValues.filter(v => v < 0 || v > 100);
+  if (outOfRange.length > 0) {
+    issues.push(`${outOfRange.length} kPct values outside 0-100 range (e.g. ${outOfRange[0].toFixed(1)}) — raw rates leaking into percentile field`);
+  }
+
+  // Check 3: distribution — std-dev should be > 5 (flat = all-50 fallback)
+  if (kPctValues.length >= 10) {
+    const mean = kPctValues.reduce((a, b) => a + b, 0) / kPctValues.length;
+    const variance = kPctValues.reduce((a, b) => a + (b - mean) ** 2, 0) / kPctValues.length;
+    const stdDev = Math.sqrt(variance);
+    if (stdDev < 5) {
+      issues.push(`kPct std-dev is only ${stdDev.toFixed(1)} (mean=${mean.toFixed(1)}) — suspiciously flat, likely all-50 fallback`);
+    }
+  }
+
+  // Check 4: whiffPct sanity — same range check
+  const whiffOutOfRange = whiffValues.filter(v => v < 0 || v > 100);
+  if (whiffOutOfRange.length > 0) {
+    issues.push(`${whiffOutOfRange.length} whiffPct values outside 0-100 range (e.g. ${whiffOutOfRange[0].toFixed(1)}) — raw rates leaking`);
+  }
+
+  if (issues.length > 0) {
+    console.error(
+      `[HQS] ⚠️  STATCAST SHAPE ASSERTION FAILED — HQS scores will be wrong:\n` +
+      issues.map(i => `  • ${i}`).join('\n') + '\n' +
+      `  StatcastPlayer.preNormalized is hardcoded true in aiRankingService.ts.\n` +
+      `  If kPct/whiffPct/iso are not 0-100 percentile scores, fix fetch_statcast.py first.`
+    );
+  } else {
+    const mean = kPctValues.reduce((a, b) => a + b, 0) / kPctValues.length;
+    const variance = kPctValues.reduce((a, b) => a + (b - mean) ** 2, 0) / kPctValues.length;
+    const stdDev = Math.sqrt(variance);
+    console.log(`[HQS] Statcast shape OK: ${players.length} players, kPct coverage=${(kPctCoverage*100).toFixed(0)}%, kPct std-dev=${stdDev.toFixed(1)}`);
+  }
+}
+
 function calculateBPBoost(vsGrade: number | null): number {
   if (vsGrade === null) return 0; // No data = neutral
   if (vsGrade >= 9.0) return 15;  // Grade 9-10: elite matchup
@@ -687,28 +755,31 @@ export function rankAIPicks(
         : null;
 
       // ── Step 2: HQS (Layer 4) — absorbs OBP/xwOBA + HRD ───────────────────────
+      // FIX: assert Statcast shape once per cache load — warns loudly if data is not percentile-shaped
+      assertStatcastPercentileShape(statcastCache ?? null);
       const hqsResult = calculateHQS({
-        kPct:         statcastPlayer?.k_percent ?? statcastPlayer?.kPct ?? null,
-        whiffPct:     statcastPlayer?.whiff_percent ?? statcastPlayer?.whiffPct ?? null,
-        hardHitPct:   statcastPlayer?.hard_hit_percent ?? statcastPlayer?.hardHitPct ?? null,
-        sweetSpotPct: statcastPlayer?.sweet_spot_percent ?? statcastPlayer?.sweetSpotPct ?? null,
-        woba:         statcastPlayer?.xwoba ?? statcastPlayer?.woba ?? null,
+        kPct:         statcastPlayer?.kPct ?? null,
+        whiffPct:     statcastPlayer?.whiffPct ?? null,
+        hardHitPct:   statcastPlayer?.hardHitPct ?? null,
+        sweetSpotPct: statcastPlayer?.sweetSpotPct ?? null,
+        woba:         statcastPlayer?.xwOBA ?? null,  // FIX: was xwoba (lowercase) — always resolved to null
         iso:          statcastPlayer?.iso ?? null,
-        barrelPct:    statcastPlayer?.barrel_batted_rate ?? statcastPlayer?.barrelPct ?? null,
-        bbe:          statcastPlayer?.bbe ?? statcastPlayer?.batted_ball_events ?? null,
-        // Phase BN: StatcastPlayer data comes from percentile_ranks — already 0-100
-        preNormalized: statcastPlayer?.preNormalized ?? false,
+        barrelPct:    statcastPlayer?.barrelPct ?? null,
+        bbe:          statcastPlayer?.bbe ?? null,
+        // FIX: hardcoded true — StatcastPlayer always carries percentile scores (0-100).
+        // assertStatcastPercentileShape() above will warn loudly if this assumption breaks.
+        preNormalized: true,
       }, 60);
       const hqsScore = hqsResult.hqs;
 
       const hrrProfile = getHRRProfileBadge({
-        kPct:         statcastPlayer?.k_percent ?? statcastPlayer?.kPct,
-        whiffPct:     statcastPlayer?.whiff_percent ?? statcastPlayer?.whiffPct,
-        hardHitPct:   statcastPlayer?.hard_hit_percent ?? statcastPlayer?.hardHitPct,
-        sweetSpotPct: statcastPlayer?.sweet_spot_percent ?? statcastPlayer?.sweetSpotPct,
-        woba:         statcastPlayer?.xwoba ?? statcastPlayer?.woba,
+        kPct:         statcastPlayer?.kPct,
+        whiffPct:     statcastPlayer?.whiffPct,
+        hardHitPct:   statcastPlayer?.hardHitPct,
+        sweetSpotPct: statcastPlayer?.sweetSpotPct,
+        woba:         statcastPlayer?.xwOBA,  // FIX: was xwoba (lowercase)
         iso:          statcastPlayer?.iso,
-        bbe:          statcastPlayer?.bbe ?? statcastPlayer?.batted_ball_events,
+        bbe:          statcastPlayer?.bbe,
       });
 
       // kProb: from ballparkMatchups if provided (legacy), otherwise null

@@ -11,6 +11,7 @@ import { serveStatic, setupVite } from "./vite";
 import scheduledBackfillRouter from "../routes/scheduledBackfill";
 import { registerPicksSummaryRoute } from "../routes/picksSummaryRoute";
 import { warmEnrichmentCacheOnStartup } from "../services/enrichmentCache";
+import { warmHandednessOnStartup } from "../services/lineupAdapter";
 import { fetchPitcherMarketData, fetchHRRMarketData } from "../services/oddsApiService";
 import { startAutoGradeJob } from "../jobs/autoGradeResults";
 import { startPostponedGameCleanupJob } from "../jobs/postponedGameCleanup";
@@ -61,6 +62,11 @@ async function startServer() {
   } else {
     serveStatic(app);
   }
+
+  // FIX PLT-COLD-START: warm handedness + platoon splits BEFORE accepting requests.
+  // This ensures the first user request gets real PLT scores, not the same-hand fallback (PLT=38).
+  // warmHandednessOnStartup is blocking with a 30s timeout — safe to await here.
+  await warmHandednessOnStartup();
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);

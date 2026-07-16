@@ -447,6 +447,43 @@ export async function getAdaptedLineupData(): Promise<AdaptedData> {
 /**
  * Check if real lineup data is available (lineups posted ~1-2 hours before games)
  */
+/**
+ * Blocking startup warm: fetches handedness + platoon splits for today's players BEFORE
+ * the server starts serving requests. This ensures cold-start PLT scores use real splits
+ * instead of the same-hand fallback (PLT=38) that fires when the cache is empty.
+ *
+ * Called from server/_core/index.ts BEFORE server.listen().
+ * Timeout: 30s — if MLB API is down, we log a warning and continue rather than blocking forever.
+ */
+export async function warmHandednessOnStartup(): Promise<void> {
+  const startMs = Date.now();
+  console.log('[LineupAdapter] Startup handedness warm: fetching today\'s players...');
+  try {
+    const timeoutPromise = new Promise<void>((_, reject) =>
+      setTimeout(() => reject(new Error('Startup handedness warm timed out after 30s')), 30_000)
+    );
+    const warmPromise = (async () => {
+      const players = await getTodaysPlayersWithStats();
+      if (players.length === 0) {
+        console.log('[LineupAdapter] Startup handedness warm: no players today (off-day or pre-lineup), skipping.');
+        return;
+      }
+      // Temporarily clear the in-progress guard so prewarmHandednessInBackground runs
+      handednessWarmInProgress = false;
+      lastHandednessWarm = 0;
+      await prewarmHandednessInBackground(players);
+      const elapsed = Date.now() - startMs;
+      const handednessCount = Array.from(batterHandCache.values()).filter(h => h.batSide !== 'R').length;
+      const platoonCount = Array.from(platoonCache.values()).length;
+      console.log(`[LineupAdapter] Startup handedness warm complete in ${elapsed}ms. Non-R batters: ${handednessCount}/${batterHandCache.size}, platoon splits: ${platoonCount}`);
+    })();
+    await Promise.race([warmPromise, timeoutPromise]);
+  } catch (err) {
+    const elapsed = Date.now() - startMs;
+    console.warn(`[LineupAdapter] Startup handedness warm failed after ${elapsed}ms (non-fatal — PLT will use handedness-only fallback on first request):`, err instanceof Error ? err.message : err);
+  }
+}
+
 export async function hasLineupData(): Promise<boolean> {
   const data = await getAdaptedLineupData();
   return data.matchups.length > 0;

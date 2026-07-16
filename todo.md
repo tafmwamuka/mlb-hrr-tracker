@@ -1734,3 +1734,15 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Added vsGateScore/vsGateTier/isDamageMatchup/vsBreakdown to cleanFactors (persisted to factor_breakdown JSON column)
 - [x] TypeScript: 0 errors
 - [x] All 231 tests pass (19 test files)
+
+## Phase HQS-PLT-FIX: HQS=50 and PLT=38 Bug Fixes (Jul 2025)
+- [x] Identified 3 bugs: preNormalized=false (scrambled HQS), xwoba lowercase (woba always null), PLT cold-start (same-hand fallback)
+- [x] Audited all statcastPlayer field accesses in aiRankingService.ts — only xwoba (x2) was a case mismatch
+- [x] Added assertStatcastPercentileShape() function with 4 checks (coverage, range, std-dev, whiffPct range)
+- [x] Hardcoded preNormalized: true in calculateHQS call (StatcastPlayer always carries percentile scores)
+- [x] Fixed xwOBA case: statcastPlayer?.xwoba → statcastPlayer?.xwOBA in both calculateHQS and getHRRProfileBadge calls
+- [x] Removed dead snake_case fallbacks (k_percent, whiff_percent, hard_hit_percent, sweet_spot_percent, barrel_batted_rate)
+- [x] Added warmHandednessOnStartup() export to lineupAdapter.ts (blocking, 30s timeout)
+- [x] Wired warmHandednessOnStartup() as blocking await in server/_core/index.ts BEFORE server.listen()
+- [x] TypeScript: 0 errors
+- [x] Tests: 226/231 pass (5 pre-existing failures in parlays.test.ts + results.test.ts — baseline had 6 failures)
