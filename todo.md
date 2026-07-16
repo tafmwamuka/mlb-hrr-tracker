@@ -1785,3 +1785,17 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Registered startClosingLinePollerJob() in server/_core/index.ts alongside other background jobs
 - [x] TypeScript: 0 errors
 - [x] Tests: 227/231 pass (same 4 pre-existing parlays.test.ts failures — no regression)
+
+## Phase BR: Node.js Statcast Rewrite (Python subprocess removed)
+
+- [x] Wrote statcastFetcher.ts — pure Node.js HTTP fetch for all 5 Baseball Savant CSV endpoints
+- [x] BOM stripping applied and validated individually on each endpoint (throws if missed)
+- [x] Custom CSV parser handles quoted fields, BOM, and empty rows without pandas dependency
+- [x] preNormalized direction validated at runtime: Arraez kPct=100, Kwan kPct=96 (HIGH); Schwarber kPct=1, Cruz kPct=1 (LOW)
+- [x] validatePreNormalizedDirection() throws loudly if direction inverts — prevents silent scoring bugs
+- [x] Wired fetchStatcastDataNode into pybaseballService.ts, replacing Python subprocess
+- [x] Removed python3.11 dependency — no Dockerfile required
+- [x] 5-player audit confirmed: Young kPct=52/iso=68, Soto kPct=91/iso=99, Baty kPct=19/iso=35 (non-flat)
+- [x] Lindor/Polanco: sparse 2026 Savant data (blank k_percent/whiff_percent) — fallback to neutral 50 for those fields only
+- [x] TypeScript: 0 errors
+- [x] Tests: 227/231 pass (same 4 pre-existing parlays.test.ts failures — no regression)

@@ -1,12 +1,11 @@
 /**
  * Pybaseball Statcast Service
- * Calls the Python fetch_statcast.py script to get real Baseball Savant data.
- * Data: xwOBA, xBA, xSLG, barrel%, exit velocity, hard hit%, sprint speed percentiles.
+ * Fetches real Baseball Savant data via pure Node.js HTTP (statcastFetcher.ts).
+ * Replaced Python subprocess (fetch_statcast.py) which required python3.11 in the
+ * production container — a fragile dependency that silently broke on Reserved Hosting.
  * Cache: 6 hours (data updates once per day on Baseball Savant).
  */
-
-import { spawn } from "child_process";
-import path from "path";
+import { fetchStatcastDataNode } from "./statcastFetcher";
 
 export interface StatcastPlayer {
   playerId: number;
@@ -62,73 +61,6 @@ let cache: StatcastCache | null = null;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 let inFlightPromise: Promise<StatcastCache> | null = null;
 
-const SCRIPT_PATH = path.resolve(
-  process.cwd(),
-  "server/scripts/fetch_statcast.py"
-);
-
-async function fetchStatcastData(year: number): Promise<StatcastCache> {
-  return new Promise((resolve, reject) => {
-    // Unset PYTHONHOME/PYTHONPATH to avoid uv Python 3.13 env contamination
-    const cleanEnv = { ...process.env };
-    delete cleanEnv.PYTHONHOME;
-    delete cleanEnv.PYTHONPATH;
-    const python = spawn("/usr/bin/python3.11", [SCRIPT_PATH, String(year)], {
-      timeout: 120_000, // 2 minutes max
-      env: cleanEnv,
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    python.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    python.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    python.on("close", (code) => {
-      if (stderr) {
-        console.warn("[Statcast] Python stderr:", stderr.slice(0, 500));
-      }
-      if (code !== 0 || !stdout.trim()) {
-        reject(new Error(`fetch_statcast.py exited with code ${code}`));
-        return;
-      }
-      try {
-        const parsed = JSON.parse(stdout);
-        const byName = new Map<string, StatcastPlayer>();
-        const byId = new Map<number, StatcastPlayer>();
-        for (const p of parsed.players as StatcastPlayer[]) {
-          byName.set(p.playerName.toLowerCase(), p);
-          // Also index by last name only for fuzzy matching
-          const lastName = p.playerName.split(" ").slice(-1)[0].toLowerCase();
-          if (!byName.has(lastName)) byName.set(lastName, p);
-          byId.set(p.playerId, p);
-        }
-        // Parse pitcher xwOBA-against data
-        const pitchers = new Map<number, StatcastPitcher>();
-        for (const p of (parsed.pitchers ?? []) as StatcastPitcher[]) {
-          pitchers.set(p.pitcherId, p);
-        }
-        console.log(`[Statcast] Loaded ${parsed.count} batters, ${parsed.pitcherCount ?? pitchers.size} pitchers for ${year}`);
-        resolve({
-          data: byName,
-          byId,
-          pitchers,
-          fetchedAt: Date.now(),
-          year,
-        });
-      } catch (e) {
-        reject(new Error(`Failed to parse statcast JSON: ${e}`));
-      }
-    });
-
-    python.on("error", reject);
-  });
-}
-
 export async function getStatcastData(year?: number): Promise<StatcastCache> {
   const targetYear = year ?? new Date().getFullYear();
 
@@ -144,26 +76,27 @@ export async function getStatcastData(year?: number): Promise<StatcastCache> {
   // Deduplicate concurrent fetches
   if (inFlightPromise) return inFlightPromise;
 
-  inFlightPromise = fetchStatcastData(targetYear)
-    .then((result) => {
+  inFlightPromise = fetchStatcastDataNode(targetYear)
+    .then((result: StatcastCache) => {
       cache = result;
       inFlightPromise = null;
       return result;
     })
-    .catch((err) => {
+    .catch((err: Error) => {
       console.error("[Statcast] Fetch failed:", err.message);
       inFlightPromise = null;
       // Return empty cache on failure so the rest of the pipeline continues
-      return {
+      const empty: StatcastCache = {
         data: new Map<string, StatcastPlayer>(),
         byId: new Map<number, StatcastPlayer>(),
         pitchers: new Map<number, StatcastPitcher>(),
         fetchedAt: Date.now(),
         year: targetYear,
       };
+      return empty;
     });
 
-  return inFlightPromise;
+  return inFlightPromise!;
 }
 
 /**
