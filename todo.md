@@ -1762,3 +1762,12 @@ Solution: scheduled task saves data to DB → live server reads from DB.
   - [x] explanationBulletCount + explanationConfidence added to pitcherFactors for backtest logging
 - [x] TypeScript: 0 errors
 - [x] Tests: 227/231 pass (4 pre-existing failures in parlays.test.ts — baseline had 6 failures before this session, 5 before this phase)
+
+## Phase BR: Explanation Gate Behavior Alignment (HRR = Pitcher)
+- [x] Identified asymmetry: HRR gate silently dropped failed picks; pitcher gate demoted them to LEAN
+- [x] Added explanationDemotedPicks[] collector in hrrPicksService.ts qualifiedPicks filter
+- [x] Gate-failed HRR picks now marked with pickGrade: 'LEAN' and explanationGateDemoted: true
+- [x] topCandidates computation updated: demoted picks merged first (highest score first), then score-based near-misses, deduped by playerName, capped at 3
+- [x] MoneyPicksTab near-miss cards: added amber "EXPL GATE" badge for demoted picks with tooltip and "Needs stronger matchup signal" sub-label
+- [x] TypeScript: 0 errors
+- [x] Tests: 227/231 pass (same 4 pre-existing parlays.test.ts failures — no regression)

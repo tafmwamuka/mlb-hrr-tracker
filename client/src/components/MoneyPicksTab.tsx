@@ -1989,14 +1989,33 @@ export function MoneyPicksTab() {
                     {((data as any).topCandidates as any[]).map((cand: any, i: number) => {
                       const score = cand.overallScore ?? cand.hrrConfidence ?? 0;
                       const tier = getScoreTier(score);
+                      const isExplGateDemoted = !!(cand as any).explanationGateDemoted;
                       return (
                         <div key={i} className="flex items-center justify-between p-2.5 rounded-xl" style={{ background: "oklch(0.16 0.022 255)" }}>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-sm font-semibold text-white truncate">{cand.playerName}</span>
                               <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: tier.bg, color: tier.color, border: `1px solid ${tier.border}` }}>{tier.label}</span>
+                              {isExplGateDemoted && (
+                                <span
+                                  className="text-[9px] px-1.5 py-0.5 rounded font-bold"
+                                  style={{
+                                    background: "oklch(0.55 0.18 30 / 14%)",
+                                    color: "oklch(0.75 0.18 30)",
+                                    border: "1px solid oklch(0.55 0.18 30 / 35%)",
+                                  }}
+                                  title="Passed quality gate but could not generate 2+ explanation bullets"
+                                >
+                                  EXPL GATE
+                                </span>
+                              )}
                             </div>
-                            <div className="text-[10px] text-[oklch(0.45_0.015_255)] mt-0.5">{cand.team} vs {cand.pitcherTeam} · #{cand.battingPosition}</div>
+                            <div className="text-[10px] text-[oklch(0.45_0.015_255)] mt-0.5">
+                              {cand.team} vs {cand.pitcherTeam} · #{cand.battingPosition}
+                              {isExplGateDemoted && (
+                                <span className="ml-1" style={{ color: "oklch(0.60 0.12 30)" }}>· Needs stronger matchup signal</span>
+                              )}
+                            </div>
                           </div>
                           <div className="text-right shrink-0 ml-3">
                             <div className="text-base font-bold" style={{ color: tier.color }}>{score.toFixed(0)}</div>

@@ -777,7 +777,9 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   // Integration Patch: PQS filter — only picks with probability >= 60% qualify.
   // passesQualityGate checks Poisson prob + matrix score + optional odds/history.
   // Phase 4 (explanationEngine): picks that cannot generate ≥2 genuine "why" bullets
-  // are also dropped here — an unexplainable pick is not an official pick.
+  // are demoted to LEAN tier (explanationGateDemoted: true) and collected for
+  // topCandidates — same behavior as the pitcher pipeline, never silently dropped.
+  const explanationDemotedPicks: any[] = [];
   const qualifiedPicks = withRecommendedLine.filter((p: any) => {
     if (!passesQualityGate(
       p.overProbability ?? p.recommendedProb ?? 50,
@@ -829,7 +831,14 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     // Attach explanation to pick for frontend rendering
     (p as any).explanation = explanation;
     if (!explanation.qualifies) {
-      console.log(`[HRRPicks] Explanation gate dropped ${p.playerName} — could not generate 2+ genuine qualifying reasons`);
+      // Demote to LEAN — visible in topCandidates near-miss section, not silently dropped.
+      // This mirrors the pitcher pipeline's behavior (isOfficialPlay: false, tier: 'LEAN').
+      console.log(`[HRRPicks] Explanation gate demoted ${p.playerName} to LEAN — could not generate 2+ genuine qualifying reasons`);
+      explanationDemotedPicks.push({
+        ...p,
+        pickGrade: 'LEAN',
+        explanationGateDemoted: true,
+      });
       return false;
     }
     return true;
@@ -1155,11 +1164,29 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
   // Replace moneyPicks with the lock-enriched version (same picks, adds lockStatus field)
   const moneyPicksFinal = moneyPicksWithLock as unknown as EnrichedMoneyPick[];
 
-  // Compute topCandidates: top 3 picks from enrichedPicks that did NOT make moneyPicks (near-misses)
+  // Compute topCandidates: top 3 near-miss picks.
+  // Priority order:
+  //   1. Explanation-gate demoted picks (passed PQS but lacked 2+ explanation bullets)
+  //   2. Picks from enrichedPicks that did not make moneyPicks (score-based near-misses)
+  // Demoted picks are shown first so users can see *why* they didn't qualify.
   const moneyPickNames = new Set(moneyPicksFinal.map((p: any) => p.playerName));
-  const topCandidates = enrichedPicks
+  const scoredNearMisses = enrichedPicks
     .filter((p: any) => !moneyPickNames.has(p.playerName))
-    .slice(0, 3);
+    .filter((p: any) => !(p as any).explanationGateDemoted); // avoid double-listing
+  // Merge: demoted picks first (sorted by score desc), then score-based near-misses
+  const allCandidates = [
+    ...explanationDemotedPicks.sort((a: any, b: any) => (b.overallScore ?? 0) - (a.overallScore ?? 0)),
+    ...scoredNearMisses,
+  ];
+  // Dedupe by playerName, cap at 3
+  const seenCandidateNames = new Set<string>();
+  const topCandidates: any[] = [];
+  for (const c of allCandidates) {
+    if (seenCandidateNames.has(c.playerName)) continue;
+    seenCandidateNames.add(c.playerName);
+    topCandidates.push(c);
+    if (topCandidates.length >= 3) break;
+  }
 
   // Compute bestAvailableScore from all enriched picks
   const bestAvailableScore = enrichedPicks.length > 0 ? (enrichedPicks[0]?.overallScore ?? null) : null;
