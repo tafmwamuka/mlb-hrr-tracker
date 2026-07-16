@@ -24,7 +24,7 @@ export interface PickExplanation {
   trackRecord: string | null;   // filled once Phase 2 data exists
 }
 
-interface ExplainInput {
+export interface ExplainInput {
   playerName: string;
   battingPosition?: number;
   pitcher?: { name?: string; era?: number; whip?: number; kPct?: number; hand?: string };

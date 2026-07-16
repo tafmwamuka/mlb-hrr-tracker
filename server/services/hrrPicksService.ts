@@ -27,6 +27,7 @@ import { getEnrichmentData, pollForWarmEnrichment } from './enrichmentCache';
 import { batchGetLockStatuses, enrichPicksWithLockStatus } from './pickLockService';
 import { batchComputeVSGates } from './mlbMatchupVSGate';
 import { saveLockedPick } from './progressiveTrackingService';
+import { explainPick } from './explanationEngine';
 
 // ─── Phase BK: Alt Line Optimization ─────────────────────────────────────────
 
@@ -775,15 +776,64 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
 
   // Integration Patch: PQS filter — only picks with probability >= 60% qualify.
   // passesQualityGate checks Poisson prob + matrix score + optional odds/history.
-  const qualifiedPicks = withRecommendedLine.filter((p: any) =>
-    passesQualityGate(
+  // Phase 4 (explanationEngine): picks that cannot generate ≥2 genuine "why" bullets
+  // are also dropped here — an unexplainable pick is not an official pick.
+  const qualifiedPicks = withRecommendedLine.filter((p: any) => {
+    if (!passesQualityGate(
       p.overProbability ?? p.recommendedProb ?? 50,
       p.overallScore ?? 60,
       p.bookOdds ?? null,
       p.historicalHitRate ?? null,
       p.last5Games?.length ?? 0
-    )
-  );
+    )) return false;
+
+    // Build ExplainInput from available pick fields
+    const fb = (p.factorBreakdown ?? {}) as Record<string, any>;
+    const envScore: number = fb.env ?? fb.envScore ?? 0;
+    const envGrade: 'A' | 'B' | 'C' | 'D' =
+      envScore >= 75 ? 'A' : envScore >= 55 ? 'B' : envScore >= 35 ? 'C' : 'D';
+    const rawBookOdds = p.bookOdds;
+    const numericBookOdds: number | null = typeof rawBookOdds === 'number'
+      ? rawBookOdds
+      : typeof rawBookOdds === 'string'
+        ? parseInt(rawBookOdds.replace(/[^0-9+\-]/g, ''), 10)
+        : null;
+    const bookOddsNum = numericBookOdds !== null && !isNaN(numericBookOdds) ? numericBookOdds : null;
+    const bookProbVigFree: number | null = p.bookImpliedProb ?? null;
+    const edgeNum: number | null = p.edge ?? null;
+    const explanation = explainPick({
+      playerName: p.playerName,
+      battingPosition: p.battingPosition ?? undefined,
+      pitcher: p.pitcher ? { name: p.pitcher } : undefined,
+      hqs: fb.hqs ?? undefined,
+      hqsComponents: (fb.hqsContact != null && fb.hqsQuality != null && fb.hqsPower != null)
+        ? { contact: fb.hqsContact, quality: fb.hqsQuality, power: fb.hqsPower }
+        : undefined,
+      hqsFlags: (p as any).hqsFlags ?? undefined,
+      hrrProfile: fb.hrrProfile ?? undefined,
+      vsGateScore: p.vsGateScore ?? undefined,
+      vsGateTier: p.vsGateTier ?? undefined,
+      isDamageMatchup: p.isDamageMatchup ?? false,
+      vsReasoning: p.vsReasoning ?? undefined,
+      envGrade,
+      gameTotalOU: p.gameTotalOU ?? undefined,
+      parkFactor: p.parkFactor ?? undefined,
+      platoonEdge: p.primePositionFactors?.platoonAdvantage ?? false,
+      batterHand: undefined,
+      last5HitRate: p.streakInfo?.last5HitRate ?? undefined,
+      modelProb: p.overProbability ?? p.recommendedProb ?? 50,
+      bookOdds: bookOddsNum,
+      bookProbVigFree,
+      edge: edgeNum,
+    });
+    // Attach explanation to pick for frontend rendering
+    (p as any).explanation = explanation;
+    if (!explanation.qualifies) {
+      console.log(`[HRRPicks] Explanation gate dropped ${p.playerName} — could not generate 2+ genuine qualifying reasons`);
+      return false;
+    }
+    return true;
+  });
 
   // If no picks qualify, show top 3 lean picks instead of forcing bad picks
   const picksToShow = qualifiedPicks.length > 0
@@ -1074,6 +1124,9 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
         const r = pid ? vsGateResultMap.get(`${(pick as any).playerId}_${pid}`) : undefined;
         return r?.breakdown ?? null;
       })(),
+      // Phase 4: explanation metadata for backtest logging
+      explanationBulletCount: (pick as any).explanation?.whyBullets?.length ?? null,
+      explanationConfidence: (pick as any).explanation?.confidence?.level ?? null,
     };
     saveLockedPick({
       slateDate: todayETDate,

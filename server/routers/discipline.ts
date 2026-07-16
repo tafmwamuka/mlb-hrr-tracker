@@ -20,6 +20,7 @@ import { getDisciplineEdgeHistory, getPitcherHistory } from "../services/pitcher
 import { runPitcherEdgeEngine, isOfficialTier } from "../services/pitcherEdgeEngine";
 import { filterPitcherPicks } from "../services/pitcherPicksFilter";
 import { saveLockedPick } from "../services/progressiveTrackingService";
+import { explainPick } from "../services/explanationEngine";
 
 // ── Serializable discipline data (for tRPC transport) ─────────────────────────
 function serializeDisciplineData(d: TeamDisciplineData) {
@@ -265,7 +266,46 @@ export const disciplineRouter = router({
     });
     try {
       const result = await runPitcherEdgeEngine();
-      const filtered = filterPitcherPicks(result.picks, result.rejectedPlays);
+
+      // Phase 4 (explanationEngine): attach explanation to every official pick.
+      // Picks that cannot generate ≥2 genuine bullets are removed from officialPicks.
+      const pitcherPicksWithExplanation = result.picks.map((pick: any) => {
+        // For pitcher picks, qualifyingReasons already contain explanation-ready bullets.
+        // We pass them as vsReasoning so vsGateBullet() can surface the best one.
+        // modelProbability is 0-1 in PitcherEdgePick — convert to 0-100 for explainPick.
+        const rawOdds = pick.bookOdds;
+        const numericOdds: number | null = typeof rawOdds === 'number'
+          ? rawOdds
+          : typeof rawOdds === 'string'
+            ? parseInt(String(rawOdds).replace(/[^0-9+\-]/g, ''), 10)
+            : null;
+        const bookOddsNum = numericOdds !== null && !isNaN(numericOdds) ? numericOdds : null;
+        const explanation = explainPick({
+          playerName: pick.pitcherName,
+          vsReasoning: pick.qualifyingReasons ?? [],
+          modelProb: Math.round((pick.modelProbability ?? 0) * 100),
+          bookOdds: bookOddsNum,
+          edge: pick.edge != null ? Math.round(pick.edge * 100) : null,
+        });
+        return { ...pick, explanation };
+      });
+
+      // Replace result.picks with explanation-enriched picks;
+      // remove any official pick that failed the explanation gate.
+      const explainedResult = {
+        ...result,
+        picks: pitcherPicksWithExplanation.map((p: any) => {
+          if (!p.explanation.qualifies && isOfficialTier(p.tier)) {
+            console.log(`[Discipline] Explanation gate dropped ${p.pitcherName} (${p.propType}) — could not generate 2+ qualifying reasons`);
+            // Demote to lean/projection so filterPitcherPicks doesn't count it as official
+            return { ...p, isOfficialPlay: false, isLeanPlay: true, tier: 'LEAN' };
+          }
+          return p;
+        }),
+        rejectedPlays: result.rejectedPlays,
+      };
+
+      const filtered = filterPitcherPicks(explainedResult.picks, explainedResult.rejectedPlays);
 
       // ── Persist official pitcher picks to picks_history (fire-and-forget) ──
       // Only ELITE and OFFICIAL (isOfficialTier) picks are tracked — LEAN/PROJECTION are not.
@@ -297,6 +337,7 @@ export const disciplineRouter = router({
             const bookOdds = numericOdds !== null && !isNaN(numericOdds) ? numericOdds : null;
 
             // Pitcher-side factor breakdown — 8 factors for weight-validation
+            // Phase 4: also log explanation metadata for backtest analysis
             const pitcherFactors: Record<string, unknown> = {
               tms: pick.tms,
               disciplineGrade: pick.disciplineGrade,
@@ -306,6 +347,8 @@ export const disciplineRouter = router({
               isDualEdge: pick.isDualEdge,
               modelProbability: pick.modelProbability,
               edge: pick.edge,
+              explanationBulletCount: (pick as any).explanation?.whyBullets?.length ?? null,
+              explanationConfidence: (pick as any).explanation?.confidence?.level ?? null,
             };
 
             await saveLockedPick({

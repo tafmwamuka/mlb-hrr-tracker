@@ -1746,3 +1746,19 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Wired warmHandednessOnStartup() as blocking await in server/_core/index.ts BEFORE server.listen()
 - [x] TypeScript: 0 errors
 - [x] Tests: 226/231 pass (5 pre-existing failures in parlays.test.ts + results.test.ts — baseline had 6 failures)
+
+
+## Phase BQ: Explanation Engine Integration (explanationEngine.ts)
+- [x] Created explanationEngine.ts with ExplainInput/PickExplanation types and explainPick() function
+- [x] Exported ExplainInput interface so call sites can use it without re-declaring the type
+- [x] Wired explainPick() into hrrPicksService.ts qualifiedPicks filter as a hard gate
+  - [x] Picks that cannot generate ≥2 genuine "why" bullets are dropped before moneyPicks
+  - [x] Explanation object attached to pick for frontend rendering (whyBullets, biggestRisk, confidence)
+  - [x] ExplainInput built from: vsReasoning, hqsFlags, hrrProfile, streakInfo.last5HitRate, battingPosition, factorBreakdown.env, gameTotalOU, parkFactor, primePositionFactors.platoonAdvantage, bookImpliedProb, edge
+- [x] Added explanationBulletCount + explanationConfidence to cleanFactors for backtest logging
+- [x] Wired explainPick() into discipline.ts pitcher pipeline
+  - [x] qualifyingReasons passed as vsReasoning (already explanation-ready bullets)
+  - [x] Official picks that fail the gate are demoted to LEAN tier before filterPitcherPicks
+  - [x] explanationBulletCount + explanationConfidence added to pitcherFactors for backtest logging
+- [x] TypeScript: 0 errors
+- [x] Tests: 227/231 pass (4 pre-existing failures in parlays.test.ts — baseline had 6 failures before this session, 5 before this phase)
