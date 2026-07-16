@@ -25,6 +25,7 @@ import { getAdaptedLineupData } from './lineupAdapter';
 import { getDataDate } from './mlbLineupService';
 import { getEnrichmentData, pollForWarmEnrichment } from './enrichmentCache';
 import { batchGetLockStatuses, enrichPicksWithLockStatus } from './pickLockService';
+import { batchComputeVSGates } from './mlbMatchupVSGate';
 import { saveLockedPick } from './progressiveTrackingService';
 
 // ─── Phase BK: Alt Line Optimization ─────────────────────────────────────────
@@ -291,6 +292,11 @@ export interface EnrichedMoneyPick {
   reasons?: string[];
   riskFlags?: string[];
   vsGrade?: number;
+  // Phase 3: mlbMatchupVSGate fields (replaces legacy vsGrade scalar)
+  vsGateScore?: number;
+  vsGateTier?: 'STRONG' | 'MODERATE' | 'NEUTRAL' | 'WEAK';
+  isDamageMatchup?: boolean;
+  vsReasoning?: string[];
   gameTotalOU?: number | null;
   primePosition?: boolean;
   primePositionFactors?: any;
@@ -546,50 +552,70 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
     }
   }
 
-  // VS gate: always use mlbMatchupService scores (0-10 scale)
-  // STRONG >= 7.0, MODERATE >= 5.5 (with secondary signals), < 5.5 excluded
-  // For projected lineups, lower thresholds to avoid empty slates from incomplete pitcher data
+    // Phase 3: mlbMatchupVSGate — barrel matchup + hand splits + reweighted score
+  // Build gamePk → venueId map from lineupData.games
+  const gamePkToVenueId = new Map<number, number>();
+  for (const g of (lineupData as any).games ?? []) {
+    if (g.gamePk && g.venueId) gamePkToVenueId.set(g.gamePk, g.venueId);
+  }
+
+  // Build batter/pitcher input array for batchComputeVSGates
+  const vsGateInputs = bettableMatchups
+    .filter((m: any) => m.pitcher?.id)
+    .map((m: any) => {
+      const statcastBatter = (statcastCache as any)?.byId?.get(m.playerId) ?? {};
+      const statcastPitcher = (statcastCache as any)?.pitchers?.get(m.pitcher.id) ?? {};
+      const venueId = gamePkToVenueId.get(m.gamePk) ?? 0;
+      return {
+        batter: { playerId: m.playerId, ...statcastBatter },
+        pitcher: { playerId: m.pitcher.id, ...statcastPitcher },
+        venueId,
+      };
+    });
+
+  // Run batchComputeVSGates (batched 15 at a time, 80ms pause between batches)
+  const vsGateResultMap = await batchComputeVSGates(vsGateInputs, statcastCache as any).catch(() => new Map());
+  // Key: `${batterId}_${pitcherId}`
+
+  // Also keep legacy vsGradeMap for rankAIPicks compatibility (scalar 0-10)
+  // vsGradeMap is still populated by enrichmentCache → mlbMatchupService; we keep it
+  // for the matrix scoring path and only replace the gate filter with vsGateResultMap.
+
+  // VS gate thresholds — same as before (coarse pre-filter; quality gate is the real filter)
   const isProjectedLineup = (lineupData.lineupSource as string) !== 'confirmed';
-  // Phase BB: VS gate thresholds further relaxed so more players reach the quality gate.
-  // The quality gate (Elite/Strong/Lean tiers) is the real filter — VS gate is a coarse pre-filter.
-  // STRONG: passes immediately. MODERATE: passes with any one secondary signal.
-  // Confirmed lineups now use same thresholds as projected (5.0/3.5) to avoid under-staffed boards.
-  const STRONG_THRESHOLD = 5.0;   // was 6.0 confirmed / 5.0 projected
-  const MODERATE_THRESHOLD = 3.5; // was 4.5 confirmed / 3.5 projected
+  const STRONG_THRESHOLD = 5.0;
+  const MODERATE_THRESHOLD = 3.5;
   if (isProjectedLineup) {
     console.log(`[HRRPicks] Projected lineups — VS gate thresholds lowered (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD})`);
   }
 
-  // Phase CN fix: stricter VS gate skip condition.
-  // Previously skipped when vsGradeMap was empty OR all neutral — meaning every player passed with no matchup filtering.
-  // Now: only skip if BOTH empty AND very few matchups (data truly unavailable).
-  const allNeutral = vsGradeMap.size > 0 && Array.from(vsGradeMap.values()).every(v => v === 5.0);
-  const skipVsGate = vsGradeMap.size === 0 && bettableMatchups.length < 5; // much stricter skip condition
+  const skipVsGate = vsGradeMap.size === 0 && vsGateResultMap.size === 0 && bettableMatchups.length < 5;
 
   const gatedMatchups = skipVsGate
     ? bettableMatchups
     : bettableMatchups.filter((m: any) => {
-        const vsScore = vsGradeMap.get(m.playerName) ?? null;
+        // Prefer new vsGateResultMap; fall back to legacy vsGradeMap scalar
+        const vsGateKey = `${m.playerId}_${m.pitcher?.id}`;
+        const vsGateResult = vsGateResultMap.get(vsGateKey);
+        const vsScore = vsGateResult?.score ?? vsGradeMap.get(m.playerName) ?? null;
         if (vsScore === null) return true; // no entry = neutral, let through
         if (vsScore >= STRONG_THRESHOLD) return true;
         if (vsScore >= MODERATE_THRESHOLD) {
-          // Phase BB: MODERATE players pass with any one positive signal, or if no data available
           const playerData = players.get(m.playerId);
           const batterHand = playerData?.handedness ?? 'R';
           const pitcherHand = m.pitcher?.handedness ?? 'R';
           const hasPlatoonAdvantage = batterHand !== pitcherHand;
           const pitcherERA = m.pitcher?.era ?? null;
-          const pitcherIsVulnerable = pitcherERA !== null ? pitcherERA >= 4.00 : true; // default true when no ERA data
+          const pitcherIsVulnerable = pitcherERA !== null ? pitcherERA >= 4.00 : true;
           const savantEntry = savantMap.get(m.playerName);
-          const isBarrelThreat = savantEntry ? savantEntry.barrelPct >= 6.0 : false; // lowered from 8.0
-          // Also pass players batting 1-5 in lineup (prime scoring spots)
+          const isBarrelThreat = savantEntry ? savantEntry.barrelPct >= 6.0 : false;
           const isPrimeLineupSpot = m.battingPosition !== undefined && m.battingPosition <= 5;
           return hasPlatoonAdvantage || pitcherIsVulnerable || isBarrelThreat || isPrimeLineupSpot;
         }
         return false;
       });
 
-  console.log(`[HRRPicks] VS Gate (STRONG>=${STRONG_THRESHOLD}, MOD>=${MODERATE_THRESHOLD}, skip=${skipVsGate}): ${bettableMatchups.length} → ${gatedMatchups.length} matchups passed`);
+  console.log(`[HRRPicks] VS Gate (new vsGateResultMap=${vsGateResultMap.size}, legacy vsGradeMap=${vsGradeMap.size}, skip=${skipVsGate}): ${bettableMatchups.length} → ${gatedMatchups.length} matchups passed`);
 
   const hrTargetsMap = getMockHRTargets();
 
@@ -611,6 +637,12 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
 
   const matrixPlayerNames = new Set(matrixPicks.map((p: any) => p.playerName));
   const matrixGatedMatchups = gatedMatchups.filter((m: any) => matrixPlayerNames.has(m.playerName));
+
+  // Build playerId → pitcherId lookup so vsGateResultMap can be keyed correctly in pick assembly
+  const playerIdToPitcherId = new Map<number, number>();
+  for (const m of gatedMatchups as any[]) {
+    if (m.playerId && m.pitcher?.id) playerIdToPitcherId.set(m.playerId, m.pitcher.id);
+  }
 
   const projections = generateHRRProjections(
     matrixGatedMatchups,
@@ -675,10 +707,19 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       baseScore: matrixPick?.baseScore,
       factorBreakdown: matrixPick?.factorBreakdown,
       vsGrade: matrixPick?.vsGrade,
+      // Phase 3: mlbMatchupVSGate fields
+      vsGateScore: (() => { const pid = playerIdToPitcherId.get(proj.playerId); const r = pid ? vsGateResultMap.get(`${proj.playerId}_${pid}`) : undefined; return r?.score ?? null; })(),
+      vsGateTier: (() => { const pid = playerIdToPitcherId.get(proj.playerId); const r = pid ? vsGateResultMap.get(`${proj.playerId}_${pid}`) : undefined; return r?.tier ?? null; })(),
+      isDamageMatchup: (() => { const pid = playerIdToPitcherId.get(proj.playerId); const r = pid ? vsGateResultMap.get(`${proj.playerId}_${pid}`) : undefined; return r?.isDamageMatchup ?? false; })(),
+      vsReasoning: (() => { const pid = playerIdToPitcherId.get(proj.playerId); const r = pid ? vsGateResultMap.get(`${proj.playerId}_${pid}`) : undefined; return r?.reasoning ?? []; })(),
       gameTotalOU: matrixPick?.gameTotalOU,
       primePosition: matrixPick?.primePosition,
       primePositionFactors: matrixPick?.primePositionFactors,
-      reasons: matrixPick?.reasons ?? [],
+      reasons: [
+        ...(matrixPick?.reasons ?? []),
+        // Append VS gate reasoning bullets (barrel matchup, hand-split matchup, park, xwOBA)
+        ...(() => { const pid = playerIdToPitcherId.get(proj.playerId); const r = pid ? vsGateResultMap.get(`${proj.playerId}_${pid}`) : undefined; return r?.reasoning ?? []; })()
+      ],
       riskFlags: matrixPick?.riskFlags ?? [],
       grade: matrixPick?.grade ?? 'strong',
       bpBoost: matrixPick?.bpBoost ?? 0,
@@ -1023,9 +1064,17 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       dayNightSplit: factorBreakdown.dayNightSplit,
       parkWeather: factorBreakdown.parkWeather,
       hardContactBarrel: factorBreakdown.hardContactBarrel,
-      teamImpliedRuns: factorBreakdown.teamImpliedRuns,
+            teamImpliedRuns: factorBreakdown.teamImpliedRuns,
+      // Phase 3: VS gate matchup factors
+      vsGateScore: (pick as any).vsGateScore ?? null,
+      vsGateTier: (pick as any).vsGateTier ?? null,
+      isDamageMatchup: (pick as any).isDamageMatchup ?? false,
+      vsBreakdown: (() => {
+        const pid = playerIdToPitcherId.get((pick as any).playerId);
+        const r = pid ? vsGateResultMap.get(`${(pick as any).playerId}_${pid}`) : undefined;
+        return r?.breakdown ?? null;
+      })(),
     };
-
     saveLockedPick({
       slateDate: todayETDate,
       pickType: 'hrr',

@@ -1717,3 +1717,20 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Register startVerifyResultsJob() in server/_core/index.ts
 - [x] Write 5 vitest tests for progressiveTrackingService (all pass)
 - [x] TypeScript: 0 errors after all changes
+
+## Phase VS-GATE-3: mlbMatchupVSGate + matchupEnhancements Integration (Jul 2025)
+- [x] Copied mlbMatchupVSGate.ts and matchupEnhancements.ts to server/services/
+- [x] Added isDamageMatchup: boolean to VSGateResult type
+- [x] Fixed neutral fallback in batchComputeVSGates to include isDamageMatchup: false
+- [x] Integrated matchupEnhancements into computeVSGate: barrel matchup (geometric fit) + hand splits (40-batter guard)
+- [x] Reweighted VS score: xwOBA 24%, handSplit 16%, pitcherVuln 22%, batterContact 13%, barrel 15%, park 10%
+- [x] Added batchComputeVSGates import to hrrPicksService.ts
+- [x] Built gamePk→venueId map from lineupData.games
+- [x] Built playerIdToPitcherId lookup from gatedMatchups
+- [x] Replaced vsGradeMap gate filter with vsGateResultMap (legacy vsGradeMap kept for rankAIPicks matrix scoring)
+- [x] Added vsGateScore/vsGateTier/isDamageMatchup/vsReasoning to EnrichedMoneyPick type
+- [x] Exposed all 4 fields on pick assembly return object
+- [x] Merged vsReasoning bullets into reasons array on pick assembly
+- [x] Added vsGateScore/vsGateTier/isDamageMatchup/vsBreakdown to cleanFactors (persisted to factor_breakdown JSON column)
+- [x] TypeScript: 0 errors
+- [x] All 231 tests pass (19 test files)

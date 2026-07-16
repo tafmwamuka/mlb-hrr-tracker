@@ -22,6 +22,8 @@
  *   if (vsGate.tier === 'STRONG') applyBoost(+12);
  */
 
+import { computeBarrelMatchup, fetchPitcherHandSplits, computeHandSplitMatchup } from './matchupEnhancements';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface BatterStatcast {
@@ -76,6 +78,7 @@ export interface VSGateResult {
     parkScore: number;
   };
   reasoning: string[];
+  isDamageMatchup: boolean;
 }
 
 // ─── MLB Stats API helpers ────────────────────────────────────────────────────
@@ -301,15 +304,17 @@ export async function computeVSGate(
   const enrichedBatter: Partial<BatterStatcast> = { ...cachedBatter, ...batter };
   const enrichedPitcher: Partial<PitcherStatcast> = { ...cachedPitcher, ...pitcher };
 
-  // Fetch MLB Stats API data (platoon splits + pitcher stats) in parallel
-  const [platoonSplits, pitcherMLBStats] = await Promise.allSettled([
+  // Fetch MLB Stats API data (platoon splits + pitcher stats + hand splits) in parallel
+  const [platoonSplits, pitcherMLBStats, handSplits] = await Promise.allSettled([
     fetchBatterPlatoonSplits(batter.playerId),
     fetchPitcherMLBStats(pitcher.playerId),
+    fetchPitcherHandSplits(pitcher.playerId),
   ]);
 
   const splits = platoonSplits.status === 'fulfilled' ? platoonSplits.value : { vsLeft: 0.320, vsRight: 0.320 };
   const pitcherStats = pitcherMLBStats.status === 'fulfilled' ? pitcherMLBStats.value : {};
   const fullPitcher = { ...enrichedPitcher, ...pitcherStats };
+  const pitcherHandSplits = handSplits.status === 'fulfilled' ? handSplits.value : null;
 
   // Compute individual scores
   const batterXwoba = enrichedBatter.xwoba ?? 0.320;
@@ -317,6 +322,7 @@ export async function computeVSGate(
   const xwobaDelta = batterXwoba - pitcherXwobaAgainst;
 
   const xwobaDeltaScore = scoreXwobaDelta(batterXwoba, pitcherXwobaAgainst);
+  // Generic platoon score (fallback when hand splits unavailable)
   const platoonScore = scorePlatoon(
     enrichedBatter.hand ?? 'R',
     fullPitcher.hand ?? 'R',
@@ -327,13 +333,31 @@ export async function computeVSGate(
   const batterContactScore = scoreBatterContact(enrichedBatter);
   const parkScore = scorePark(venueId);
 
-  // Weighted final score
+  // Barrel matchup (geometric fit — both sides must contribute)
+  const barrel = computeBarrelMatchup(
+    enrichedBatter.barrelPct ?? null,
+    (fullPitcher as any).barrelPctAllowed ?? null,
+  );
+
+  // Hand-split matchup (replaces generic platoon when 40-batter sample guard passes)
+  const handMatch = pitcherHandSplits
+    ? computeHandSplitMatchup(enrichedBatter.hand ?? 'R', pitcherHandSplits)
+    : { score: platoonScore, onWeakSide: false, explanationBullet: null };
+
+  // Weighted final score — Phase 3 reweight (matchupEnhancements.ts integration)
+  //   xwOBA delta:      24% (was 30%)
+  //   Hand-split match: 16% (NEW — replaces generic platoon 20%)
+  //   Pitcher vuln:     22% (was 25%)
+  //   Batter contact:   13% (was 15%)
+  //   Barrel matchup:   15% (NEW — geometric fit)
+  //   Park:             10% (unchanged)
   const score =
-    xwobaDeltaScore   * 0.30 +
-    platoonScore      * 0.20 +
-    pitcherVulnScore  * 0.25 +
-    batterContactScore * 0.15 +
-    parkScore         * 0.10;
+    xwobaDeltaScore    * 0.24 +
+    handMatch.score    * 0.16 +
+    pitcherVulnScore   * 0.22 +
+    batterContactScore * 0.13 +
+    barrel.score       * 0.15 +
+    parkScore          * 0.10;
 
   const roundedScore = Math.round(score * 10) / 10;
 
@@ -364,10 +388,16 @@ export async function computeVSGate(
   const reasoning: string[] = [];
   if (xwobaDelta > 0.030) reasoning.push(`Batter xwOBA edge +${(xwobaDelta * 1000).toFixed(0)} pts vs pitcher`);
   if (xwobaDelta < -0.030) reasoning.push(`Pitcher suppresses xwOBA (−${(Math.abs(xwobaDelta) * 1000).toFixed(0)} pts)`);
-  if (platoonScore >= 7) reasoning.push(`Favorable platoon split (OBP ${(splits.vsLeft > splits.vsRight ? splits.vsLeft : splits.vsRight).toFixed(3)} vs this hand)`);
+  // Use hand-split explanation when available, fall back to generic platoon
+  if (handMatch.explanationBullet) {
+    reasoning.push(handMatch.explanationBullet);
+  } else if (platoonScore >= 7) {
+    reasoning.push(`Favorable platoon split (OBP ${(splits.vsLeft > splits.vsRight ? splits.vsLeft : splits.vsRight).toFixed(3)} vs this hand)`);
+  }
   if (pitcherVulnScore >= 7) reasoning.push(`Pitcher vulnerable: ERA ${(fullPitcher.era ?? 4.5).toFixed(2)}, WHIP ${(fullPitcher.whip ?? 1.3).toFixed(2)}`);
   if (pitcherVulnScore <= 3) reasoning.push(`Facing elite pitcher (ERA ${(fullPitcher.era ?? 3.0).toFixed(2)})`);
   if (batterContactScore >= 7) reasoning.push(`Elite contact quality (xwOBA ${batterXwoba.toFixed(3)}, Barrel ${(enrichedBatter.barrelPct ?? 0).toFixed(1)}%)`);
+  if (barrel.explanationBullet) reasoning.push(barrel.explanationBullet);
   const park = getParkFactor(venueId);
   if (park.runFactor > 1.08) reasoning.push(`Hitter-friendly park (${park.venueName}, run factor ${park.runFactor.toFixed(2)})`);
   if (park.runFactor < 0.94) reasoning.push(`Pitcher-friendly park (${park.venueName}, run factor ${park.runFactor.toFixed(2)})`);
@@ -377,6 +407,7 @@ export async function computeVSGate(
     tier,
     passesGate,
     matrixScoreRequired,
+    isDamageMatchup: barrel.isDamageMatchup,
     breakdown: {
       xwobaDelta: Math.round(xwobaDelta * 1000) / 1000,
       xwobaDeltaScore: Math.round(xwobaDeltaScore * 10) / 10,
@@ -421,6 +452,7 @@ export async function batchComputeVSGates(
           tier: 'NEUTRAL',
           passesGate: true,
           matrixScoreRequired: 78,
+          isDamageMatchup: false,
           breakdown: { xwobaDelta: 0, xwobaDeltaScore: 5, platoonAdvantage: 0, platoonScore: 5, pitcherVulnerability: 5, pitcherVulnScore: 5, batterContact: 5, batterContactScore: 5, parkEnvironment: 1.0, parkScore: 5 },
           reasoning: ['Matchup data unavailable — neutral score applied'],
         });
