@@ -1144,9 +1144,21 @@ function MoneyPickCard({
                       ] as Array<{ label: string; key: string; weight: number; color: string }>).map(({ label, key, weight, color }) => {
                         const raw = (pick as any).factorBreakdown?.[key] ?? null;
                         const pct = raw != null ? Math.min(100, Math.max(0, raw)) : null;
+                        // Phase BS: BUL tooltip sub-label
+                        const isBUL = key === 'bullpenWeakness';
+                        const bulLabel = isBUL ? (() => {
+                          const fl = (pick as any).factorBreakdown?.bulFatigueLabel;
+                          const apps = (pick as any).factorBreakdown?.bulRelieverAppearances;
+                          if (fl === 'ERA-proxy' || fl == null) return null;
+                          const appStr = apps != null ? `${apps} app${apps !== 1 ? 's' : ''} L3D` : 'L3D';
+                          return `${fl} · ${appStr}`;
+                        })() : null;
                         return (
                           <div key={key} className="flex items-center gap-2">
-                            <div className="text-[9px] text-[oklch(0.45_0.015_255)] w-28 shrink-0 truncate">{label}</div>
+                            <div className="w-28 shrink-0">
+                              <div className="text-[9px] text-[oklch(0.45_0.015_255)] truncate">{label}</div>
+                              {bulLabel && <div className="text-[8px] text-[oklch(0.38_0.015_255)] truncate">{bulLabel}</div>}
+                            </div>
                             <div className="flex-1 h-[4px] rounded-full" style={{ background: 'oklch(0.20 0.02 255)' }}>
                               {pct != null && (
                                 <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
@@ -2294,7 +2306,7 @@ export function MoneyPicksTab() {
                           <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Recent Form">FRM</span>
                           <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Environment (TIR + Park + Day/Night)">ENV</span>
                           <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Platoon Advantage">PLT</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Bullpen Weakness">BUL</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[oklch(0.40_0.015_255)] text-center" title="Bullpen Weakness (0 = fresh bullpen, 100 = heavily fatigued)">BUL</span>
                         </div>
                         {/* Divider */}
                         <div className="h-px mb-2" style={{ background: "oklch(1 0 0 / 8%)" }} />
@@ -2336,8 +2348,16 @@ export function MoneyPicksTab() {
                                 const color = val >= 70
                                   ? (isHQS ? 'oklch(0.55 0.18 255)' : 'oklch(0.72 0.18 165)')
                                   : val >= 50 ? 'oklch(0.82 0.17 85)' : 'oklch(0.55 0.015 255)';
+                                // Phase BS: BUL cell tooltip with fatigueLabel + appearances
+                                const bulTooltip = key === 'bullpenWeakness' ? (() => {
+                                  const fl = c.factors?.bulFatigueLabel;
+                                  const apps = c.factors?.bulRelieverAppearances;
+                                  if (!fl || fl === 'ERA-proxy') return 'Bullpen Weakness (ERA proxy)';
+                                  const appStr = apps != null ? `${apps} app${apps !== 1 ? 's' : ''} L3D` : 'L3D';
+                                  return `${fl} · ${appStr}`;
+                                })() : undefined;
                                 return (
-                                  <div key={key} className="text-center">
+                                  <div key={key} className="text-center" title={bulTooltip}>
                                     <span className="text-[10px] font-semibold" style={{ color }}>{val}</span>
                                   </div>
                                 );

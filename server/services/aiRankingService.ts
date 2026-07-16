@@ -217,6 +217,10 @@ export interface AIPick {
     env?: number;
     platoon?: number;
     bullpen?: number;
+    // Phase BS: BUL transparency fields for backtest logging and UI tooltip
+    bulRaw?: number;
+    bulFatigueLabel?: string;
+    bulRelieverAppearances?: number | null;
   };
   // S2: Projected plate appearances
   projectedPA?: number; // Projected PA this game (e.g. 4.8 for 3-hole)
@@ -859,6 +863,8 @@ export function rankAIPicks(
         // ── Factor 8: Bullpen Weakness (6%) — S3 upgrade ─────────────────
       // S3: Use real bullpen fatigue data if available, else fall back to ERA proxy
       let bullpenWeaknessScore: number;
+      let bulFatigueLabel: string = 'ERA-proxy';
+      let bulRelieverAppearances: number | null = null;
       // Change 4: improved bullpen block — adds OU boost to ERA proxy
       // Root cause fix: matchup.opponentTeamId is never populated, so the fatigue path
       // was always skipping and the ERA fallback returned ~50 for everyone.
@@ -867,6 +873,10 @@ export function rankAIPicks(
         bullpenWeaknessScore = (fatigue && fatigue.score !== undefined)
           ? fatigue.score
           : calculateBullpenWeaknessScore(matchup.pitcher.era, matchup.confidence);
+        bulFatigueLabel = fatigue?.label ?? 'Unknown';
+        // Pull relieverAppearances from the raw fatigue map for backtest logging
+        const rawFatigue = bullpenFatigueMap.get(matchup.opponentTeamId);
+        bulRelieverAppearances = rawFatigue?.relieverAppearances ?? null;
       } else {
         const pitcherEra = matchup.pitcher?.era ?? 4.0; // default to league-average ERA when missing
         const eraProxy = Math.min(100, Math.max(0, ((pitcherEra - 2.5) / 3.5) * 100));
@@ -1108,6 +1118,10 @@ export function rankAIPicks(
           env: Math.round(envScore),
           platoon: Math.round(platoonScore),
           bullpen: Math.round(bullpenWeaknessScore),
+          // Phase BS: BUL transparency fields for backtest logging and UI tooltip
+          bulRaw: Math.round(bullpenWeaknessScore),
+          bulFatigueLabel,
+          bulRelieverAppearances,
         },
         primePosition: favorableCount >= 3,
         primePositionFactors: {

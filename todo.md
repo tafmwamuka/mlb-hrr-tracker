@@ -1799,3 +1799,8 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Lindor/Polanco: sparse 2026 Savant data (blank k_percent/whiff_percent) — fallback to neutral 50 for those fields only
 - [x] TypeScript: 0 errors
 - [x] Tests: 227/231 pass (same 4 pre-existing parlays.test.ts failures — no regression)
+
+## Phase BS: BUL Factor Transparency (No formula changes — display only)
+- [x] Add bulRaw, relieverAppearances, fatigueLabel to factorBreakdown in aiRankingService.ts
+- [x] Surface fatigueLabel and relieverAppearances in BUL tooltip in MoneyPicksTab and scoring matrix UI
+- [x] TypeScript check, tests, save checkpoint

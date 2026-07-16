@@ -167,8 +167,11 @@ describe("AI Picks Ranking Service", () => {
       const pick = picks[0];
 
       Object.entries(pick.factorBreakdown).forEach(([key, factor]) => {
-        // hrrProfile can be a string or null (Step 7 HQS field)
-        if (key === 'hrrProfile') return;
+        // Non-numeric factorBreakdown fields — skip type/range assertions
+        // hrrProfile: string | null (Step 7 HQS field)
+        // bulFatigueLabel: string (Phase BS — fatigue label for BUL tooltip)
+        // bulRelieverAppearances: number | null (Phase BS — appearance count, may be null)
+        if (key === 'hrrProfile' || key === 'bulFatigueLabel' || key === 'bulRelieverAppearances') return;
         expect(typeof factor).toBe("number");
         expect(factor).toBeGreaterThanOrEqual(0);
         expect(factor).toBeLessThanOrEqual(100);
