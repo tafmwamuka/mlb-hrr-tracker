@@ -367,6 +367,7 @@ export const disciplineRouter = router({
               tier: trackingTier,
               overallScore: pick.pitcherEdgeScore,
               lockedAt: new Date().toISOString(),
+              gameTime: (pick as any).gameTime ?? null,
               actual: null,
               result: 'pending',
               verifiedAt: null,

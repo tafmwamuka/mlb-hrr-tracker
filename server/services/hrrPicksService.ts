@@ -1153,6 +1153,7 @@ export async function getEnrichedMoneyPicks(): Promise<HRRPicksResult> {
       tier,
       overallScore: score,
       lockedAt: ls.lockedAt?.toISOString() ?? new Date().toISOString(),
+      gameTime: matchupForPick?.gameTime ?? null,
       actual: null,
       result: 'pending',
       verifiedAt: null,

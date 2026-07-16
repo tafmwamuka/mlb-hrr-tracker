@@ -36,6 +36,7 @@ export interface LockedPickRecord {
   tier: 'ELITE' | 'STRONG' | 'LEAN';
   overallScore: number;
   lockedAt: string;             // ISO
+  gameTime?: string | null;      // ISO — first pitch time; used by closingLinePoller
   // Result fields (filled by verification job)
   actual: number | null;
   result: 'hit' | 'miss' | 'void' | 'pending';
@@ -87,6 +88,7 @@ export async function saveLockedPick(pick: LockedPickRecord): Promise<void> {
       tier: pick.tier,
       overallScore: pick.overallScore,
       lockedAt: new Date(pick.lockedAt),
+      gameTime: pick.gameTime ? new Date(pick.gameTime) : null,
       actual: null,
       result: 'pending',
       verifiedAt: null,

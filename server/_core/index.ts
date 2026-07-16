@@ -16,6 +16,7 @@ import { fetchPitcherMarketData, fetchHRRMarketData } from "../services/oddsApiS
 import { startAutoGradeJob } from "../jobs/autoGradeResults";
 import { startPostponedGameCleanupJob } from "../jobs/postponedGameCleanup";
 import { startVerifyResultsJob } from "../jobs/verifyResultsJob";
+import { startClosingLinePollerJob } from "../jobs/closingLinePollerJob";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -114,6 +115,10 @@ async function startServer() {
     // Start daily 6 AM ET results verification job
     // Fills in actual stats and hit/miss results for all pending picks_history rows
     startVerifyResultsJob();
+
+    // Start every-5-minute closing line poller
+    // Captures odds at game time for CLV tracking (closingOdds column on picks_history)
+    startClosingLinePollerJob();
   });
 }
 

@@ -1771,3 +1771,17 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] MoneyPicksTab near-miss cards: added amber "EXPL GATE" badge for demoted picks with tooltip and "Needs stronger matchup signal" sub-label
 - [x] TypeScript: 0 errors
 - [x] Tests: 227/231 pass (same 4 pre-existing parlays.test.ts failures — no regression)
+
+## Phase BQ: Closing Line Poller Integration
+
+- [x] Added game_time and closing_odds columns to picks_history schema (migration 0015_orange_raider.sql)
+- [x] Added gameTime field to LockedPickRecord interface in progressiveTrackingService.ts
+- [x] Wired gameTime into saveLockedPick INSERT in progressiveTrackingService.ts
+- [x] Wired gameTime into saveLockedPick call in hrrPicksService.ts (from matchupForPick?.gameTime)
+- [x] Wired gameTime into saveLockedPick call in discipline.ts (from pick.gameTime)
+- [x] Wrote closingLinePoller.ts — fetchCurrentOdds wired to fetchOddsForPicks(), 12-min lookahead window, idempotent UPDATE (race-safe)
+- [x] Pitcher picks: fetchCurrentOdds returns { found: false } gracefully (pitcher prop markets not in HRR feed)
+- [x] Wrote closingLinePollerJob.ts — every-5-minute scheduler aligned to clock boundaries via msUntilNextFiveMinuteBoundary()
+- [x] Registered startClosingLinePollerJob() in server/_core/index.ts alongside other background jobs
+- [x] TypeScript: 0 errors
+- [x] Tests: 227/231 pass (same 4 pre-existing parlays.test.ts failures — no regression)

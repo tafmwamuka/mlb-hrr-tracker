@@ -383,6 +383,8 @@ export const picksHistory = mysqlTable("picks_history", {
   tier: varchar("tier", { length: 10 }).notNull(),
   overallScore: float("overall_score").notNull(),
   lockedAt: datetime("locked_at").notNull(),
+  gameTime: datetime("game_time"),               // first pitch time (UTC); used by closingLinePoller for the 12-min lookahead filter
+  closingOdds: int("closing_odds"),              // American odds captured at game time by closingLinePoller; null until poller fires
   actual: float("actual"),
   result: varchar("result", { length: 10 }).notNull().default("pending"),
   verifiedAt: datetime("verified_at"),
