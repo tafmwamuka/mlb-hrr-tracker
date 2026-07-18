@@ -1,15 +1,22 @@
 /**
  * Performance Dashboard — Diamond Edge
- * Phase BD: Consolidated stats page — shows:
- * - Rolling 7-day performance (hit rate, money %, ROI, units)
+ *
+ * Data source: trpc.tracking.getCumulativeRecord (reads picks_history)
+ * All four old queries (trpc.history.getSevenDayStats,
+ * trpc.history.getPerformanceSummary, trpc.results.getHitRateStats,
+ * trpc.results.getYesterdayResults) have been replaced.
+ *
+ * Shows:
+ * - Rolling 7-day performance (hit rate, ROI, streak)
  * - Historical pick performance by period (7D / 30D / All)
- * - All-time model accuracy by stat type
- * - Tier system guide
+ * - All-time model accuracy by tier
+ * - Yesterday's result card
  * - Model transparency statement
  */
 
-import { useState } from "react";
+import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   TrendingUp, Target, BarChart3, Shield, Award, Zap,
@@ -35,19 +42,43 @@ function StatBar({ value, max = 100, color }: { value: number; max?: number; col
   );
 }
 
+/** Returns a YYYY-MM-DD string for N days ago (ET timezone). */
+function daysAgo(n: number): string {
+  const d = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // ─── Rolling 7-Day Card ────────────────────────────────────────────────────────
 function SevenDayCard() {
-  const { data, isLoading } = trpc.history.getSevenDayStats.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-  });
+  const since7 = useMemo(() => daysAgo(7), []);
+  const { data, isLoading } = trpc.tracking.getCumulativeRecord.useQuery(
+    { sinceDate: since7 },
+    { staleTime: 5 * 60 * 1000, gcTime: 30 * 60 * 1000 },
+  );
+
+  const settled = (data?.wins ?? 0) + (data?.losses ?? 0);
+  const hitRate = data?.hitRate ?? 0;
+  const roi = data?.roi ?? 0;
+
+  // Trend: compare first half vs second half of last7Days
+  const byDay = data?.last7Days ?? [];
+  const trend: "up" | "down" | "flat" = useMemo(() => {
+    if (byDay.length < 2) return "flat";
+    const mid = Math.floor(byDay.length / 2);
+    const firstHalf = byDay.slice(0, mid);
+    const secondHalf = byDay.slice(mid);
+    const avg = (arr: typeof byDay) => arr.reduce((s, d) => s + d.hitRate, 0) / arr.length;
+    const diff = avg(secondHalf) - avg(firstHalf);
+    return diff > 3 ? "up" : diff < -3 ? "down" : "flat";
+  }, [byDay]);
 
   const trendColor =
-    data?.trend === "up" ? "oklch(0.72 0.18 165)" :
-    data?.trend === "down" ? "oklch(0.68 0.22 25)" : "oklch(0.55 0.015 255)";
-  const TrendIcon = data?.trend === "up" ? ArrowUp : data?.trend === "down" ? ArrowDown : Minus;
+    trend === "up" ? "oklch(0.72 0.18 165)" :
+    trend === "down" ? "oklch(0.68 0.22 25)" : "oklch(0.55 0.015 255)";
+  const TrendIcon = trend === "up" ? ArrowUp : trend === "down" ? ArrowDown : Minus;
 
-  if (isLoading || !data || data.totalPlays === 0) {
+  if (isLoading || settled === 0) {
     return (
       <div
         className="rounded-2xl border px-4 py-3 flex items-center gap-3"
@@ -56,7 +87,7 @@ function SevenDayCard() {
         <TrendingUp size={13} style={{ color: "oklch(0.72 0.18 165)" }} />
         <span className="text-xs font-bold text-white">7-Day Trend</span>
         <span className="text-[10px] text-[oklch(0.40_0.015_255)] ml-auto">
-          {isLoading ? "Loading..." : "No data yet — tracking started May 15"}
+          {isLoading ? "Loading…" : "No data yet — picks are tracked as they lock"}
         </span>
       </div>
     );
@@ -75,16 +106,16 @@ function SevenDayCard() {
         <div className="flex items-center gap-1" style={{ color: trendColor }}>
           <TrendIcon size={11} />
           <span className="text-[10px] font-bold">
-            {data.trend === "up" ? "Trending Up" : data.trend === "down" ? "Trending Down" : "Stable"}
+            {trend === "up" ? "Trending Up" : trend === "down" ? "Trending Down" : "Stable"}
           </span>
         </div>
       </div>
       <div className="grid grid-cols-4 divide-x" style={{ borderColor: "oklch(1 0 0 / 8%)" }}>
         {[
-          { label: "Hit Rate", value: `${data.hitRate}%`, sub: `${data.hits}/${data.totalPlays}`, color: hitRateColor(data.hitRate) },
-          { label: "Money %", value: `${data.moneyHitRate}%`, sub: "money picks", color: hitRateColor(data.moneyHitRate) },
-          { label: "ROI", value: `${data.roi > 0 ? "+" : ""}${data.roi}%`, sub: "at -110", color: data.roi >= 0 ? "oklch(0.72 0.18 165)" : "oklch(0.68 0.22 25)" },
-          { label: "Units", value: `${data.unitsWon > 0 ? "+" : ""}${data.unitsWon}u`, sub: "7 days", color: data.unitsWon >= 0 ? "oklch(0.72 0.18 165)" : "oklch(0.68 0.22 25)" },
+          { label: "Hit Rate", value: `${hitRate}%`, sub: `${data?.wins}/${settled}`, color: hitRateColor(hitRate) },
+          { label: "Wins", value: String(data?.wins ?? 0), sub: "last 7 days", color: "oklch(0.72 0.18 165)" },
+          { label: "ROI", value: `${roi > 0 ? "+" : ""}${roi}%`, sub: "at book odds", color: roi >= 0 ? "oklch(0.72 0.18 165)" : "oklch(0.68 0.22 25)" },
+          { label: "Streak", value: data?.currentStreak ? `${data.currentStreak.count}${data.currentStreak.type}` : "—", sub: "current", color: data?.currentStreak?.type === "W" ? "oklch(0.72 0.18 165)" : "oklch(0.68 0.22 25)" },
         ].map((stat, i) => (
           <div key={i} className="px-3 py-2.5 text-center" style={{ borderColor: "oklch(1 0 0 / 8%)" }}>
             <div className="text-[9px] text-[oklch(0.40_0.015_255)] uppercase font-semibold tracking-wider mb-1">{stat.label}</div>
@@ -93,10 +124,10 @@ function SevenDayCard() {
           </div>
         ))}
       </div>
-      {data.byDay.length > 1 && (
+      {byDay.length > 1 && (
         <div className="px-4 pb-3 pt-2">
           <div className="flex items-end gap-1 h-8">
-            {data.byDay.map((d, i) => (
+            {byDay.map((d, i) => (
               <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
                 <div
                   className="w-full rounded-sm"
@@ -106,8 +137,8 @@ function SevenDayCard() {
             ))}
           </div>
           <div className="flex justify-between mt-1">
-            <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{data.byDay[0]?.date.slice(5)}</span>
-            <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{data.byDay[data.byDay.length - 1]?.date.slice(5)}</span>
+            <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{byDay[0]?.date.slice(5)}</span>
+            <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{byDay[byDay.length - 1]?.date.slice(5)}</span>
           </div>
         </div>
       )}
@@ -119,7 +150,31 @@ function SevenDayCard() {
 function HistoricalPanel() {
   const [period, setPeriod] = useState<"week" | "month" | "all">("week");
   const [expanded, setExpanded] = useState(true);
-  const { data: summary, isLoading } = trpc.history.getPerformanceSummary.useQuery({ period });
+
+  const since7 = useMemo(() => daysAgo(7), []);
+  const since30 = useMemo(() => daysAgo(30), []);
+
+  const { data: week, isLoading: loadingWeek } = trpc.tracking.getCumulativeRecord.useQuery(
+    { sinceDate: since7 },
+    { staleTime: 5 * 60 * 1000, gcTime: 30 * 60 * 1000 },
+  );
+  const { data: month, isLoading: loadingMonth } = trpc.tracking.getCumulativeRecord.useQuery(
+    { sinceDate: since30 },
+    { staleTime: 5 * 60 * 1000, gcTime: 30 * 60 * 1000 },
+  );
+  const { data: all, isLoading: loadingAll } = trpc.tracking.getCumulativeRecord.useQuery(
+    {},
+    { staleTime: 5 * 60 * 1000, gcTime: 30 * 60 * 1000 },
+  );
+
+  const isLoading = loadingWeek || loadingMonth || loadingAll;
+
+  const active = period === "week" ? week : period === "month" ? month : all;
+  const settled = (active?.wins ?? 0) + (active?.losses ?? 0);
+  const hitRate = active?.hitRate ?? 0;
+
+  // Build byDate bars from last7Days (available on all windows)
+  const byDate = active?.last7Days ?? [];
 
   const PERIODS = [
     { key: "week" as const, label: "7D" },
@@ -142,12 +197,12 @@ function HistoricalPanel() {
         <div className="flex items-center gap-2">
           <BarChart3 size={13} style={{ color: "oklch(0.72 0.18 165)" }} />
           <span className="text-xs font-bold text-white">Pick History</span>
-          {!isLoading && summary && summary.totalPlays > 0 && (
+          {!isLoading && settled > 0 && (
             <span
               className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-              style={{ background: `${hitRateColor(summary.hitRate)}20`, color: hitRateColor(summary.hitRate) }}
+              style={{ background: `${hitRateColor(hitRate)}20`, color: hitRateColor(hitRate) }}
             >
-              {summary.hitRate}% ({summary.hits}/{summary.totalPlays})
+              {hitRate}% ({active?.wins}/{settled})
             </span>
           )}
         </div>
@@ -190,35 +245,46 @@ function HistoricalPanel() {
                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                   />
                 </div>
-              ) : !summary || summary.totalPlays === 0 ? (
+              ) : settled === 0 ? (
                 <div className="text-center py-4">
-                  <p className="text-[oklch(0.45_0.015_255)] text-xs">No historical data yet. Results are saved automatically after games finish.</p>
+                  <p className="text-[oklch(0.45_0.015_255)] text-xs">No verified results yet. Results are saved automatically after games finish.</p>
                 </div>
               ) : (
                 <>
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      { label: "Overall", rate: summary.hitRate, detail: `${summary.hits}/${summary.totalPlays}` },
-                      { label: "Money Picks", rate: summary.moneyHitRate, detail: "money" },
-                      { label: "All Plays", rate: summary.allPlaysHitRate, detail: "all plays" },
+                      { label: "Hit Rate", rate: hitRate, detail: `${active?.wins}/${settled}` },
+                      { label: "ROI", rate: active?.roi ?? 0, detail: "at book odds", isRoi: true },
+                      { label: "Pending", rate: 0, detail: `${active?.pending ?? 0} picks`, isPending: true },
                     ].map(kpi => (
                       <div
                         key={kpi.label}
                         className="rounded-xl p-2.5 text-center border"
                         style={{ background: "oklch(0.14 0.022 255)", borderColor: "oklch(1 0 0 / 8%)" }}
                       >
-                        <div className="text-lg font-bold font-stat" style={{ color: hitRateColor(kpi.rate) }}>
-                          {kpi.rate}%
-                        </div>
+                        {kpi.isRoi ? (
+                          <div className="text-lg font-bold font-stat" style={{ color: (active?.roi ?? 0) >= 0 ? "oklch(0.72 0.18 165)" : "oklch(0.68 0.22 25)" }}>
+                            {(active?.roi ?? 0) > 0 ? "+" : ""}{active?.roi ?? 0}%
+                          </div>
+                        ) : kpi.isPending ? (
+                          <div className="text-lg font-bold font-stat" style={{ color: "oklch(0.55 0.015 255)" }}>
+                            {active?.pending ?? 0}
+                          </div>
+                        ) : (
+                          <div className="text-lg font-bold font-stat" style={{ color: hitRateColor(kpi.rate) }}>
+                            {kpi.rate}%
+                          </div>
+                        )}
                         <div className="text-[8px] text-[oklch(0.40_0.015_255)] uppercase font-semibold tracking-wider">{kpi.label}</div>
+                        <div className="text-[8px] text-[oklch(0.35_0.015_255)] mt-0.5">{kpi.detail}</div>
                       </div>
                     ))}
                   </div>
-                  {summary.byDate.length > 0 && (
+                  {byDate.length > 0 && (
                     <div>
                       <div className="text-[9px] text-[oklch(0.40_0.015_255)] uppercase font-semibold tracking-wider mb-2">Daily Hit Rate</div>
                       <div className="flex items-end gap-0.5 h-12">
-                        {summary.byDate.slice(-14).map((day, i) => (
+                        {byDate.slice(-14).map((day, i) => (
                           <div key={day.date} className="flex-1 flex flex-col items-center gap-0.5">
                             <motion.div
                               className="w-full rounded-sm"
@@ -226,14 +292,14 @@ function HistoricalPanel() {
                               initial={{ height: 0 }}
                               animate={{ height: `${Math.max(4, day.hitRate)}%` }}
                               transition={{ delay: i * 0.03, duration: 0.4, ease: "easeOut" }}
-                              title={`${day.date}: ${day.hitRate}% (${day.hits}/${day.total})`}
+                              title={`${day.date}: ${day.hitRate}% (${day.w}/${day.w + day.l})`}
                             />
                           </div>
                         ))}
                       </div>
                       <div className="flex justify-between mt-1">
-                        <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{summary.byDate.slice(-14)[0]?.date?.slice(5)}</span>
-                        <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{summary.byDate.slice(-1)[0]?.date?.slice(5)}</span>
+                        <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{byDate.slice(-14)[0]?.date?.slice(5)}</span>
+                        <span className="text-[8px] text-[oklch(0.35_0.015_255)]">{byDate.slice(-1)[0]?.date?.slice(5)}</span>
                       </div>
                     </div>
                   )}
@@ -249,15 +315,28 @@ function HistoricalPanel() {
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export function PerformanceDashboard() {
-  const { data: stats, isLoading: statsLoading } = trpc.results.getHitRateStats.useQuery(undefined, {
-    staleTime: 10 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-  });
+  // All-time record from picks_history
+  const { data: allTime, isLoading: statsLoading } = trpc.tracking.getCumulativeRecord.useQuery(
+    {},
+    { staleTime: 10 * 60 * 1000, gcTime: 30 * 60 * 1000 },
+  );
 
-  const { data: yesterday } = trpc.results.getYesterdayResults.useQuery(undefined, {
-    staleTime: 30 * 60 * 1000,
-    gcTime: 60 * 60 * 1000,
-  });
+  // Yesterday's picks from picks_history
+  const { data: yesterdayData } = trpc.tracking.getResultsForDate.useQuery(
+    { date: "yesterday" },
+    { staleTime: 30 * 60 * 1000, gcTime: 60 * 60 * 1000 },
+  );
+
+  const since7 = useMemo(() => daysAgo(7), []);
+  const since30 = useMemo(() => daysAgo(30), []);
+  const { data: last7 } = trpc.tracking.getCumulativeRecord.useQuery(
+    { sinceDate: since7 },
+    { staleTime: 5 * 60 * 1000, gcTime: 30 * 60 * 1000 },
+  );
+  const { data: last30 } = trpc.tracking.getCumulativeRecord.useQuery(
+    { sinceDate: since30 },
+    { staleTime: 5 * 60 * 1000, gcTime: 30 * 60 * 1000 },
+  );
 
   if (statsLoading) {
     return (
@@ -269,21 +348,21 @@ export function PerformanceDashboard() {
     );
   }
 
-  const s = stats?.stats;
-  // Official-only metrics (Elite + Official tier — what drives the public results page)
-  const official = (s as any)?.official ?? {};
-  const officialAll = official.all ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
-  const eliteData = official.elite ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
-  const officialTierData = official.officialTier ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
-  const leanData = official.lean ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
-  const projData = official.projection ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
-  const timeWindows = (s as any)?.timeWindows ?? {};
-  const last7 = timeWindows.last7 ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
-  const last30 = timeWindows.last30 ?? { hitRate: 0, total: 0, hits: 0, units: 0, roi: 0 };
-  const overallRate = officialAll.hitRate;
-  const totalPredictions = officialAll.total;
-  const totalHits = officialAll.hits;
-  const rateColor = overallRate >= 65 ? "oklch(0.72 0.18 165)" : overallRate >= 50 ? "oklch(0.82 0.17 85)" : "oklch(0.68 0.22 25)";
+  const totalSettled = (allTime?.wins ?? 0) + (allTime?.losses ?? 0);
+  const overallRate = allTime?.hitRate ?? 0;
+  const rateColor = hitRateColor(overallRate);
+
+  // Yesterday stats from picks_history rows
+  const yesterdayRows = [...(yesterdayData?.hrr ?? []), ...(yesterdayData?.pitcher ?? [])];
+  const ySettled = yesterdayRows.filter(r => r.result === "hit" || r.result === "miss");
+  const yHits = ySettled.filter(r => r.result === "hit").length;
+  const yHitRate = ySettled.length > 0 ? Math.round((yHits / ySettled.length) * 100) : null;
+
+  // Tier breakdown from byTier
+  const byTier = allTime?.byTier ?? {};
+  const eliteData = byTier["ELITE"] ?? { w: 0, l: 0, hitRate: 0, roi: 0 };
+  const strongData = byTier["STRONG"] ?? { w: 0, l: 0, hitRate: 0, roi: 0 };
+  const leanData = byTier["LEAN"] ?? { w: 0, l: 0, hitRate: 0, roi: 0 };
 
   return (
     <div className="p-4 space-y-4 pb-32">
@@ -293,7 +372,7 @@ export function PerformanceDashboard() {
         <h2 className="text-white font-bold text-base tracking-tight">Performance Dashboard</h2>
       </div>
       <p className="text-[10px] text-[oklch(0.45_0.015_255)] -mt-2">
-        Model accuracy — updated automatically after each game day
+        Live from picks_history — updated automatically after each game day
       </p>
 
       {/* Rolling 7-day stats */}
@@ -313,10 +392,10 @@ export function PerformanceDashboard() {
             <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">All-Time Hit Rate</span>
           </div>
           <div className="text-3xl font-bold font-stat" style={{ color: rateColor }}>
-            {totalPredictions > 0 ? `${overallRate}%` : "—"}
+            {totalSettled > 0 ? `${overallRate}%` : "—"}
           </div>
           <div className="text-[10px] text-[oklch(0.45_0.015_255)]">
-            {totalPredictions > 0 ? `${totalHits}/${totalPredictions} plays hit` : "No data yet"}
+            {totalSettled > 0 ? `${allTime?.wins}/${totalSettled} plays hit` : "No data yet"}
           </div>
         </div>
         <div
@@ -324,17 +403,17 @@ export function PerformanceDashboard() {
           style={{ background: "oklch(0.14 0.022 255)", border: "1px solid oklch(1 0 0 / 8%)" }}
         >
           <div className="flex items-center gap-2">
-            <TrendingUp size={14} style={{ color: yesterday?.hasActuals && (yesterday.hitRate ?? 0) >= 60 ? "oklch(0.72 0.18 165)" : "oklch(0.82 0.17 85)" }} />
+            <TrendingUp size={14} style={{ color: yHitRate !== null && yHitRate >= 60 ? "oklch(0.72 0.18 165)" : "oklch(0.82 0.17 85)" }} />
             <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Yesterday</span>
           </div>
           <div
             className="text-3xl font-bold font-stat"
-            style={{ color: yesterday?.hasActuals && (yesterday.hitRate ?? 0) >= 60 ? "oklch(0.72 0.18 165)" : "oklch(0.82 0.17 85)" }}
+            style={{ color: yHitRate !== null && yHitRate >= 60 ? "oklch(0.72 0.18 165)" : "oklch(0.82 0.17 85)" }}
           >
-            {yesterday?.hasActuals ? `${yesterday.hitRate}%` : "—"}
+            {yHitRate !== null ? `${yHitRate}%` : "—"}
           </div>
           <div className="text-[10px] text-[oklch(0.45_0.015_255)]">
-            {yesterday?.hasActuals ? `${yesterday.totalHits}/${yesterday.totalWithActuals ?? yesterday.totalPlays} plays` : "No results yet"}
+            {ySettled.length > 0 ? `${yHits}/${ySettled.length} plays` : "No results yet"}
           </div>
         </div>
       </div>
@@ -346,35 +425,40 @@ export function PerformanceDashboard() {
       >
         <div className="flex items-center gap-2 mb-3">
           <Zap size={13} style={{ color: "oklch(0.82 0.17 85)" }} />
-          <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Official Plays — Time Windows</span>
-          <span className="text-[9px] text-[oklch(0.40_0.015_255)] ml-1">(Elite + Official tier only)</span>
+          <span className="text-[10px] font-bold tracking-widest uppercase text-[oklch(0.45_0.015_255)]">Time Windows</span>
+          <span className="text-[9px] text-[oklch(0.40_0.015_255)] ml-1">(picks_history — verified results only)</span>
         </div>
         <div className="space-y-3">
           {[
-            { label: "Last 7 Days", rate: last7.hitRate, total: last7.total, hits: last7.hits, units: last7.units, color: "oklch(0.72 0.18 165)" },
-            { label: "Last 30 Days", rate: last30.hitRate, total: last30.total, hits: last30.hits, units: last30.units, color: "oklch(0.82 0.17 85)" },
-            { label: "All Time", rate: officialAll.hitRate, total: officialAll.total, hits: officialAll.hits, units: officialAll.units, color: "oklch(0.55 0.25 280)" },
-          ].map(({ label, rate, total, hits, units, color }) => (
-            <div key={label}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-semibold text-[oklch(0.55_0.015_255)]">{label}</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] text-[oklch(0.45_0.015_255)]">
-                    {total > 0 ? `${hits}/${total}` : "—"}
-                  </span>
-                  <span className="text-[10px] font-bold" style={{ color }}>
-                    {total > 0 ? `${rate}%` : "—"}
-                  </span>
-                  {total > 0 && (
-                    <span className={`text-[10px] font-bold ${units >= 0 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.68_0.22_25)]"}`}>
-                      {units >= 0 ? "+" : ""}{units.toFixed(1)}u
+            { label: "Last 7 Days", data: last7, color: "oklch(0.72 0.18 165)" },
+            { label: "Last 30 Days", data: last30, color: "oklch(0.82 0.17 85)" },
+            { label: "All Time", data: allTime, color: "oklch(0.55 0.25 280)" },
+          ].map(({ label, data: d, color }) => {
+            const s = (d?.wins ?? 0) + (d?.losses ?? 0);
+            const rate = d?.hitRate ?? 0;
+            const units = d ? d.roiDollars / 100 : 0;
+            return (
+              <div key={label}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold text-[oklch(0.55_0.015_255)]">{label}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-[oklch(0.45_0.015_255)]">
+                      {s > 0 ? `${d?.wins}/${s}` : "—"}
                     </span>
-                  )}
+                    <span className="text-[10px] font-bold" style={{ color }}>
+                      {s > 0 ? `${rate}%` : "—"}
+                    </span>
+                    {s > 0 && (
+                      <span className={`text-[10px] font-bold ${units >= 0 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.68_0.22_25)]"}`}>
+                        {units >= 0 ? "+" : ""}{units.toFixed(1)}u
+                      </span>
+                    )}
+                  </div>
                 </div>
+                {s > 0 && <StatBar value={rate} color={color} />}
               </div>
-              {total > 0 && <StatBar value={rate} color={color} />}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -389,42 +473,40 @@ export function PerformanceDashboard() {
         </div>
         <div className="space-y-3">
           {[
-            { emoji: "🏆", label: "Elite Plays", desc: "75%+ prob, 5+ factors", rate: eliteData.hitRate, total: eliteData.total, hits: eliteData.hits, units: eliteData.units, color: "oklch(0.82 0.17 85)", tracked: true },
-            { emoji: "🔥", label: "Official Plays", desc: "70%+ prob, 4+ factors", rate: officialTierData.hitRate, total: officialTierData.total, hits: officialTierData.hits, units: officialTierData.units, color: "oklch(0.55 0.25 280)", tracked: true },
-            { emoji: "🛡", label: "Qualified Leans", desc: "65–69% — not in official results", rate: leanData.hitRate, total: leanData.total, hits: leanData.hits, units: leanData.units, color: "oklch(0.55 0.14 240)", tracked: false },
-            { emoji: "🧪", label: "Projection Only", desc: "Below 65% — research use only", rate: projData.hitRate, total: projData.total, hits: projData.hits, units: projData.units, color: "oklch(0.40 0.04 255)", tracked: false },
-          ].map(({ emoji, label, desc, rate, total, hits, units, color, tracked }) => (
-            <div key={label}>
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">{emoji}</span>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-white">{label}</span>
-                      {!tracked && (
-                        <span className="text-[8px] px-1 py-0.5 rounded" style={{ background: "oklch(0.20 0.02 255)", color: "oklch(0.45 0.015 255)" }}>not tracked</span>
-                      )}
+            { emoji: "🏆", label: "Elite Picks", desc: "Highest-confidence plays", data: eliteData, color: "oklch(0.82 0.17 85)" },
+            { emoji: "🔥", label: "Strong Picks", desc: "High-confidence plays", data: strongData, color: "oklch(0.55 0.25 280)" },
+            { emoji: "🛡", label: "Lean Picks", desc: "Moderate confidence", data: leanData, color: "oklch(0.55 0.14 240)" },
+          ].map(({ emoji, label, desc, data: d, color }) => {
+            const total = d.w + d.l;
+            const units = d.roi / 100;
+            return (
+              <div key={label}>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">{emoji}</span>
+                    <div>
+                      <div className="text-[10px] font-bold text-white">{label}</div>
+                      <div className="text-[9px] text-[oklch(0.40_0.015_255)]">{desc}</div>
                     </div>
-                    <div className="text-[9px] text-[oklch(0.40_0.015_255)]">{desc}</div>
+                  </div>
+                  <div className="flex items-center gap-2 text-right">
+                    <span className="text-[10px] text-[oklch(0.45_0.015_255)]">
+                      {total > 0 ? `${d.w}/${total}` : "—"}
+                    </span>
+                    <span className="text-[10px] font-bold" style={{ color }}>
+                      {total > 0 ? `${d.hitRate}%` : "—"}
+                    </span>
+                    {total > 0 && (
+                      <span className={`text-[10px] font-bold ${units >= 0 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.68_0.22_25)]"}`}>
+                        {units >= 0 ? "+" : ""}{units.toFixed(1)}u
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-right">
-                  <span className="text-[10px] text-[oklch(0.45_0.015_255)]">
-                    {total > 0 ? `${hits}/${total}` : "—"}
-                  </span>
-                  <span className="text-[10px] font-bold" style={{ color }}>
-                    {total > 0 ? `${rate}%` : "—"}
-                  </span>
-                  {total > 0 && (
-                    <span className={`text-[10px] font-bold ${units >= 0 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.68_0.22_25)]"}`}>
-                      {units >= 0 ? "+" : ""}{units.toFixed(1)}u
-                    </span>
-                  )}
-                </div>
+                {total > 0 && <StatBar value={d.hitRate} color={color} />}
               </div>
-              {total > 0 && <StatBar value={rate} color={color} />}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -440,19 +522,19 @@ export function PerformanceDashboard() {
             <p className="text-[9px] text-[oklch(0.45_0.015_255)] leading-relaxed">
               Diamond Edge uses a 10-factor Poisson model combining Statcast xwOBA, rolling contact metrics,
               projected plate appearances, pitcher matchup, park factors, weather, bullpen fatigue, and betting edge.
-              Results are tracked automatically from MLB boxscores. All picks are pre-game projections — actual outcomes
-              depend on game conditions. Always bet responsibly.
+              Results are tracked automatically from MLB boxscores via picks_history — only picks locked before game
+              time are counted. All picks are pre-game projections. Always bet responsibly.
             </p>
           </div>
         </div>
       </div>
 
       {/* No data state */}
-      {totalPredictions === 0 && (
+      {totalSettled === 0 && (
         <div className="text-center py-8">
           <BarChart3 size={32} className="mx-auto mb-3" style={{ color: "oklch(0.35 0.015 255)" }} />
-          <p className="text-[oklch(0.45_0.015_255)] text-sm font-semibold">No historical data yet</p>
-          <p className="text-[oklch(0.35_0.015_255)] text-xs mt-1">Results will appear here after game days complete</p>
+          <p className="text-[oklch(0.45_0.015_255)] text-sm font-semibold">No verified results yet</p>
+          <p className="text-[oklch(0.35_0.015_255)] text-xs mt-1">Results appear here after picks are locked and games complete</p>
         </div>
       )}
     </div>
