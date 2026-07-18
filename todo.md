@@ -1805,3 +1805,4 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Surface fatigueLabel and relieverAppearances in BUL tooltip in MoneyPicksTab and scoring matrix UI
 - [x] TypeScript check, tests, save checkpoint
 - [x] Fix hit/miss comparison in progressiveTrackingService.verifyResultsForDate: use actual >= line for whole-number lines (actual > line for half-point lines). Re-verified Ben Rice O2 pick (actual=2) from miss → hit. Audited all picks_history rows — 1 affected row corrected.
+- [x] Consolidate hit/miss grading into shared/pickGrading.ts gradePickResult() helper. Updated autoGradeResults.ts, progressiveTrackingService.ts, routers/results.ts, pitcherLearningEngine.ts, and routes/scheduledBackfill.ts to all call the single helper. prop-model.ts wasOver kept as strict > with clarifying comment (legacy over/under utility, not live grading path). TypeScript: 0 errors. Tests: 229/231 (2 pre-existing parlays.test.ts failures).

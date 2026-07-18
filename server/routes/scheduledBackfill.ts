@@ -15,6 +15,7 @@ import { getDb } from "../db";
 import { propPredictions } from "../../drizzle/schema";
 import { and, gte, lt, eq } from "drizzle-orm";
 import { sdk } from "../_core/sdk";
+import { gradePickResult } from "../../shared/pickGrading";
 
 const router = Router();
 
@@ -187,15 +188,15 @@ router.post("/backfill-results", async (req, res) => {
         rbiActual: playerStats.rbi,
       };
 
-      // Determine if each prediction was correct (OVER = actual > line)
+      // Determine if each prediction was correct
       if (hitsPred) {
-        updateData.hitsCorrect = playerStats.hits > hitsPred.line ? 1 : 0;
+        updateData.hitsCorrect = gradePickResult(playerStats.hits, hitsPred.line) ? 1 : 0;
       }
       if (runsPred) {
-        updateData.runsCorrect = playerStats.runs > runsPred.line ? 1 : 0;
+        updateData.runsCorrect = gradePickResult(playerStats.runs, runsPred.line) ? 1 : 0;
       }
       if (rbiPred) {
-        updateData.rbiCorrect = playerStats.rbi > rbiPred.line ? 1 : 0;
+        updateData.rbiCorrect = gradePickResult(playerStats.rbi, rbiPred.line) ? 1 : 0;
       }
 
       await db

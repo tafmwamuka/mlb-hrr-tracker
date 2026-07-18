@@ -227,6 +227,10 @@ export function calculateModelPerformance(
 } {
   const totalPredictions = predictions.length;
   const correctPredictions = predictions.filter((p) => {
+    // NOTE: This is a legacy model-accuracy utility that handles both over AND under
+    // predictions. It intentionally uses strict > because a push (actual === line)
+    // is treated as neither correct for over nor for under. This is NOT the live
+    // grading path — live grading uses gradePickResult() from shared/pickGrading.ts.
     const wasOver = p.actual > p.line;
     return (wasOver && p.prediction === "over") ||
       (!wasOver && p.prediction === "under")

@@ -14,6 +14,7 @@
 import { getDb } from '../db';
 import { picksHistory } from '../../drizzle/schema';
 import { eq, and, gte } from 'drizzle-orm';
+import { gradePickResult } from '../../shared/pickGrading';
 
 const MLB_API = 'https://statsapi.mlb.com/api/v1';
 
@@ -179,10 +180,7 @@ export async function verifyResultsForDate(slateDate: string): Promise<{ verifie
     }
 
     const actual = actualForProp(stats, pick.propType);
-    // Whole-number lines (e.g. O2): actual >= line is a hit (push counts as win)
-    // Half-point lines (e.g. O1.5): actual > line is required (no push possible)
-    const isHalfLine = !Number.isInteger(pick.line);
-    const hit = isHalfLine ? actual > pick.line : actual >= pick.line;
+    const hit = gradePickResult(actual, pick.line);
 
     await db.update(picksHistory)
       .set({ actual, result: hit ? 'hit' : 'miss', verifiedAt: new Date() })

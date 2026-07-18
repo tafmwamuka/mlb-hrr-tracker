@@ -14,6 +14,7 @@
 import { getDb } from "../db";
 import { pitcherRecommendationHistory } from "../../drizzle/schema";
 import { and, eq, desc } from "drizzle-orm";
+import { gradePickResult } from "../../shared/pickGrading";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface RecommendationRecord {
@@ -92,7 +93,7 @@ export async function gradeRecommendation(params: {
     if (!db) return;
 
     const { gameDate, pitcherName, propType, actualValue, line } = params;
-    const result = actualValue > line ? "hit" : "miss";
+    const result = gradePickResult(actualValue, line) ? "hit" : "miss";
 
     await db
       .update(pitcherRecommendationHistory)
