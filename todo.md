@@ -1804,3 +1804,4 @@ Solution: scheduled task saves data to DB → live server reads from DB.
 - [x] Add bulRaw, relieverAppearances, fatigueLabel to factorBreakdown in aiRankingService.ts
 - [x] Surface fatigueLabel and relieverAppearances in BUL tooltip in MoneyPicksTab and scoring matrix UI
 - [x] TypeScript check, tests, save checkpoint
+- [x] Fix hit/miss comparison in progressiveTrackingService.verifyResultsForDate: use actual >= line for whole-number lines (actual > line for half-point lines). Re-verified Ben Rice O2 pick (actual=2) from miss → hit. Audited all picks_history rows — 1 affected row corrected.

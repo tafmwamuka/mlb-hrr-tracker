@@ -179,7 +179,10 @@ export async function verifyResultsForDate(slateDate: string): Promise<{ verifie
     }
 
     const actual = actualForProp(stats, pick.propType);
-    const hit = actual > pick.line; // OVER props: strictly greater than the .5 line
+    // Whole-number lines (e.g. O2): actual >= line is a hit (push counts as win)
+    // Half-point lines (e.g. O1.5): actual > line is required (no push possible)
+    const isHalfLine = !Number.isInteger(pick.line);
+    const hit = isHalfLine ? actual > pick.line : actual >= pick.line;
 
     await db.update(picksHistory)
       .set({ actual, result: hit ? 'hit' : 'miss', verifiedAt: new Date() })
