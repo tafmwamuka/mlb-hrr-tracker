@@ -59,11 +59,11 @@ interface PitcherEdgePick {
   gameTime: string;
   propType: "strikeouts" | "walks";
   line: number;
-  bookOdds: number;
+  bookOdds: number | null;  // null when no market data
   fairOdds: number;
   modelProbability: number;
   impliedProbability: number;
-  edge: number;
+  edge: number | null;       // null when no market data
   pitcherEdgeScore: number;
   tms: number;
   tier: PitcherPropTier;
@@ -285,7 +285,7 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
           {/* Book odds */}
           <div className="flex flex-col items-center">
             <span className="font-stat text-lg font-bold leading-none text-white">
-              {pick.bookOdds !== 0 ? formatOdds(pick.bookOdds) : "—"}
+              {pick.bookOdds != null ? formatOdds(pick.bookOdds) : "N/A"}
             </span>
             <span className="text-[oklch(0.45_0.015_255)] text-[9px] mt-0.5">Book</span>
           </div>
@@ -304,9 +304,13 @@ function PitcherPickCard({ pick }: { pick: PitcherEdgePick }) {
 
           {/* Edge */}
           <div className="flex flex-col items-center">
-            <span className={`font-stat text-lg font-bold leading-none ${pick.edge > 0 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.60_0.20_0)]"}`}>
-              {pick.edge > 0 ? "+" : ""}{pick.edge.toFixed(1)}%
-            </span>
+            {pick.edge != null ? (
+              <span className={`font-stat text-lg font-bold leading-none ${pick.edge > 0 ? "text-[oklch(0.72_0.18_165)]" : "text-[oklch(0.60_0.20_0)]"}`}>
+                {pick.edge > 0 ? "+" : ""}{pick.edge.toFixed(1)}%
+              </span>
+            ) : (
+              <span className="font-stat text-lg font-bold leading-none text-[oklch(0.40_0.015_255)]">N/A</span>
+            )}
             <span className="text-[oklch(0.45_0.015_255)] text-[9px] mt-0.5">Edge</span>
           </div>
 

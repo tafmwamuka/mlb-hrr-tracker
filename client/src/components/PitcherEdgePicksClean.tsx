@@ -29,9 +29,9 @@ interface PitcherPick {
   gameTime: string;
   propType: 'strikeouts' | 'walks';
   line: number;
-  bookOdds: number;
+  bookOdds: number | null;  // null when no market data available
   modelProbability: number;  // already %-scaled (e.g. 86.5)
-  edge: number;              // already %-scaled (e.g. 45.4)
+  edge: number | null;       // null when no market data available
   tms: number;
   tier: string;
   hasDisciplineEdge: boolean;
@@ -199,15 +199,27 @@ function PitcherPickCard({
             <p className="text-[9px] text-zinc-600 mt-0.5">Model</p>
           </div>
           <div className="flex-1 text-center px-3">
-            <p className={`text-lg font-bold leading-none ${oddsColor(pick.bookOdds)}`}>
-              {formatOdds(pick.bookOdds)}
-            </p>
+            {pick.bookOdds != null ? (
+              <p className={`text-lg font-bold leading-none ${oddsColor(pick.bookOdds)}`}>
+                {formatOdds(pick.bookOdds)}
+              </p>
+            ) : (
+              <p className="text-sm font-semibold leading-none text-zinc-500">
+                N/A
+              </p>
+            )}
             <p className="text-[9px] text-zinc-600 mt-0.5">Book</p>
           </div>
           <div className="flex-1 text-center pl-3">
-            <p className={`text-lg font-bold leading-none ${pick.edge > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {pick.edge > 0 ? '+' : ''}{pick.edge.toFixed(1)}%
-            </p>
+            {pick.edge != null ? (
+              <p className={`text-lg font-bold leading-none ${pick.edge > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {pick.edge > 0 ? '+' : ''}{pick.edge.toFixed(1)}%
+              </p>
+            ) : (
+              <p className="text-sm font-semibold leading-none text-zinc-500">
+                N/A
+              </p>
+            )}
             <p className="text-[9px] text-zinc-600 mt-0.5">Edge</p>
           </div>
         </div>

@@ -236,11 +236,13 @@ export const disciplineRouter = router({
       gameTime: p.gameTime,
       propType: p.propType,
       line: p.line,
-      bookOdds: p.bookOdds,
+      // Null-guard: when no market data exists the engine uses 0 as a sentinel.
+      // Propagate null so the UI can render "Odds unavailable" instead of "+0".
+      bookOdds: p.hasMarketData ? p.bookOdds : null,
       fairOdds: p.fairOdds,
       modelProbability: Math.round(p.modelProbability * 1000) / 10,
       impliedProbability: Math.round(p.impliedProbability * 1000) / 10,
-      edge: Math.round(p.edge * 1000) / 10,
+      edge: p.hasMarketData && p.edge != null ? Math.round(p.edge * 1000) / 10 : null,
       pitcherEdgeScore: p.pitcherEdgeScore,
       tms: p.tms,
       tier: p.tier,

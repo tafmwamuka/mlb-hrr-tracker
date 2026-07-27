@@ -237,13 +237,13 @@ export interface PitcherEdgePick {
   // Prop
   propType: 'strikeouts' | 'walks';
   line: number;
-  bookOdds: number;
+  bookOdds: number;          // 0 when no market data (check hasMarketData before display)
   fairOdds: number;
 
   // Scores
   modelProbability: number;   // 0-1
   impliedProbability: number; // vig-free 0-1
-  edge: number;               // modelProb - impliedProb
+  edge: number;               // modelProb - impliedProb (0 when no market data)
   pitcherEdgeScore: number;   // 0-100 composite
   tms: number;                // Team Matchup Score 0-100
 
