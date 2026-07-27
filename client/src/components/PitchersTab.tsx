@@ -286,8 +286,8 @@ export default function PitchersTab() {
   const isLoading = matchupsLoading || gradesLoading || lbLoading || histLoading;
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto pb-6">
-      {/* Header */}
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header — fixed, never scrolls */}
       <div className="px-4 pt-4 pb-3 shrink-0">
         <div className="flex items-center gap-2 mb-1">
           <FlaskConical className="w-5 h-5 text-purple-400" />
@@ -298,11 +298,14 @@ export default function PitchersTab() {
         </p>
       </div>
 
-      {/* ── Pitcher Edge Picks (hero board) ─────────────────────────────── */}
-      <PitcherEdgePicksClean />
+      {/* ── Pitcher Edge Picks (hero board) — scrolls internally if tall */}
+      <div className="shrink-0 max-h-[40%] overflow-y-auto">
+        <PitcherEdgePicksClean />
+      </div>
 
-      <Tabs defaultValue="intel" className="flex-1 flex flex-col">
-        <TabsList className="mx-4 mb-3 grid grid-cols-5 bg-white/8 rounded-xl h-9 shrink-0 relative z-10">
+      {/* ── Tabs — fills remaining height, each panel scrolls independently */}
+      <Tabs defaultValue="intel" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="mx-4 mb-3 grid grid-cols-5 bg-white/8 rounded-xl h-9 shrink-0">
           <TabsTrigger value="intel" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-300 data-[state=active]:font-bold">
             ⚡ Intel
           </TabsTrigger>
