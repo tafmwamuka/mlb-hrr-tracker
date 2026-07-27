@@ -302,26 +302,23 @@ export default function PitchersTab() {
       <PitcherEdgePicksClean />
 
       <Tabs defaultValue="intel" className="flex-1 flex flex-col">
-        {/* sticky + z-20 ensures the tab bar sits above the lean/parlay collapsible section above it */}
-        <div className="sticky top-0 z-20 bg-[oklch(0.09_0.020_255)] pb-2 shrink-0">
-          <TabsList className="mx-4 grid grid-cols-5 bg-white/8 rounded-xl h-9">
-            <TabsTrigger value="intel" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-300 data-[state=active]:font-bold">
-              ⚡ Intel
-            </TabsTrigger>
-            <TabsTrigger value="matchups" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300 data-[state=active]:font-bold">
-              Today
-            </TabsTrigger>
-            <TabsTrigger value="grades" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300 data-[state=active]:font-bold">
-              Grades
-            </TabsTrigger>
-            <TabsTrigger value="leaderboards" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300 data-[state=active]:font-bold">
-              Leaders
-            </TabsTrigger>
-            <TabsTrigger value="history" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300 data-[state=active]:font-bold">
-              Edge Log
-            </TabsTrigger>
-          </TabsList>
-        </div>
+        <TabsList className="mx-4 mb-3 grid grid-cols-5 bg-white/8 rounded-xl h-9 shrink-0 relative z-10">
+          <TabsTrigger value="intel" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-300 data-[state=active]:font-bold">
+            ⚡ Intel
+          </TabsTrigger>
+          <TabsTrigger value="matchups" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300 data-[state=active]:font-bold">
+            Today
+          </TabsTrigger>
+          <TabsTrigger value="grades" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300 data-[state=active]:font-bold">
+            Grades
+          </TabsTrigger>
+          <TabsTrigger value="leaderboards" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300 data-[state=active]:font-bold">
+            Leaders
+          </TabsTrigger>
+          <TabsTrigger value="history" className="text-[10px] font-semibold rounded-lg text-white/60 data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300 data-[state=active]:font-bold">
+            Edge Log
+          </TabsTrigger>
+        </TabsList>
 
         {/* ── Pitcher Intel (ATTACK/NEUTRAL/AVOID profiles) ─────────────── */}
         <TabsContent value="intel" className="flex-1 overflow-y-auto mt-0">
